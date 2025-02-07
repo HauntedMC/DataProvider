@@ -96,12 +96,12 @@
             <version>5.1.0</version>
         </dependency>
 
-<!--        &lt;!&ndash; MongoDB Driver &ndash;&gt;-->
-<!--        <dependency>-->
-<!--            <groupId>org.mongodb</groupId>-->
-<!--            <artifactId>mongodb-driver-sync</artifactId>-->
-<!--            <version>4.11.4</version>-->
-<!--        </dependency>-->
+        <!-- MongoDB Driver -->
+        <dependency>
+            <groupId>org.mongodb</groupId>
+            <artifactId>mongodb-driver-sync</artifactId>
+            <version>4.11.4</version>
+        </dependency>
 
 <!--        &lt;!&ndash; Redis (Jedis Client) &ndash;&gt;-->
 <!--        <dependency>-->

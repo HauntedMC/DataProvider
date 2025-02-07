@@ -1,0 +1,7 @@
+host: "localhost"
+port: 27017
+database: "minecraft"
+username: ""
+password: ""
+authSource: "admin"  # or "minecraft", depending on your setup
+pool_size: 10

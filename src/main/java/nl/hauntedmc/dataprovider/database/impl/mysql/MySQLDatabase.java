@@ -42,11 +42,11 @@ public class MySQLDatabase implements DatabaseProvider {
             HikariConfig hikariConfig = new HikariConfig();
 
             // Reading from config or environment variables
-            String host = getEnvOrConfig("DB_MYSQL_HOST", config.getString("host", "localhost"));
-            int port = Integer.parseInt(getEnvOrConfig("DB_MYSQL_PORT", String.valueOf(config.getInt("port", 3306))));
-            String databaseName = getEnvOrConfig("DB_MYSQL_DATABASE", config.getString("database", "minecraft"));
-            String user = getEnvOrConfig("DB_MYSQL_USER", config.getString("username", "root"));
-            String password = getEnvOrConfig("DB_MYSQL_PASS", config.getString("password", ""));
+            String host = config.getString("host", "localhost");
+            int port = Integer.parseInt(String.valueOf(config.getInt("port", 3306)));
+            String databaseName = config.getString("database", "minecraft");
+            String user = config.getString("username", "root");
+            String password = config.getString("password", "");
 
             String jdbcUrl = "jdbc:mysql://" + host + ":" + port + "/" + databaseName + "?useSSL=false&characterEncoding=UTF-8";
 
@@ -119,11 +119,4 @@ public class MySQLDatabase implements DatabaseProvider {
         return dataAccess;
     }
 
-    /**
-     * Utility: returns the environment variable if present, otherwise the fallback value.
-     */
-    private String getEnvOrConfig(String envKey, String fallback) {
-        String envValue = System.getenv(envKey);
-        return (envValue != null && !envValue.isEmpty()) ? envValue : fallback;
-    }
 }
