@@ -7,8 +7,9 @@ import nl.hauntedmc.dataprovider.database.config.DatabaseConfigManager;
 import nl.hauntedmc.dataprovider.config.MainConfigManager;
 import org.bukkit.plugin.java.JavaPlugin;
 
-import java.util.HashMap;
 import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentMap;
 import java.util.logging.Level;
 
 public class DataProvider extends JavaPlugin {
@@ -16,33 +17,26 @@ public class DataProvider extends JavaPlugin {
     private MainConfigManager mainConfigManager;
     private DatabaseConfigManager databaseConfigManager;
 
-    /**
-     * Maps plugin names to their associated database connections.
-     * Each plugin can have multiple database connections (e.g., MySQL, MongoDB).
-     */
-    private final Map<String, Map<DatabaseType, DatabaseProvider>> activeDatabases = new HashMap<>();
+    private final ConcurrentMap<String, ConcurrentMap<DatabaseType, DatabaseProvider>> activeDatabases
+            = new ConcurrentHashMap<>();
 
     @Override
     public void onEnable() {
         instance = this;
-        saveDefaultConfig(); // Ensures config.yml exists
+        saveDefaultConfig();
 
-        // Initialize Config Managers
         this.mainConfigManager = new MainConfigManager(this);
         this.databaseConfigManager = new DatabaseConfigManager(this);
 
-        getLogger().info("DataProvider plugin has been enabled.");
+        getLogger().info("[DataProvider] Plugin enabled. Version: " + getDescription().getVersion());
     }
 
     @Override
     public void onDisable() {
         shutdownAllDatabases();
-        getLogger().info("DataProvider plugin has been disabled.");
+        getLogger().info("[DataProvider] Plugin disabled.");
     }
 
-    /**
-     * Returns the singleton instance of DataProvider.
-     */
     public static DataProvider getInstance() {
         return instance;
     }
@@ -70,27 +64,32 @@ public class DataProvider extends JavaPlugin {
      * @return DatabaseProvider instance, or null if the database type is disabled or connection fails.
      */
     public DatabaseProvider registerDatabase(String pluginName, DatabaseType databaseType) {
-        // Ensure this DatabaseType is enabled in config
+        // Ensure DatabaseType is enabled
         if (!mainConfigManager.isDatabaseTypeEnabled(databaseType)) {
             getLogger().warning("Database type " + databaseType.name() + " is disabled in config.yml.");
             return null;
         }
+        activeDatabases.putIfAbsent(pluginName, new ConcurrentHashMap<>());
 
-        // Ensure plugin's map exists
-        activeDatabases.putIfAbsent(pluginName, new HashMap<>());
-
-        // Check if the database is already registered
-        if (activeDatabases.get(pluginName).containsKey(databaseType)) {
-            getLogger().info(pluginName + " already has a connection to " + databaseType.name());
-            return activeDatabases.get(pluginName).get(databaseType);
+        // Return existing if already registered
+        Map<DatabaseType, DatabaseProvider> pluginDatabases = activeDatabases.get(pluginName);
+        if (pluginDatabases.containsKey(databaseType)) {
+            return pluginDatabases.get(databaseType);
         }
 
+        // Create and connect
         try {
-            DatabaseProvider databaseProvider = DatabaseFactory.createDatabaseProvider(databaseType);
-            databaseProvider.connect();
-            activeDatabases.get(pluginName).put(databaseType, databaseProvider);
+            DatabaseProvider dbProvider = DatabaseFactory.createDatabaseProvider(databaseType);
+            dbProvider.connect();
+
+            if (!dbProvider.isConnected()) {
+                getLogger().severe("Failed to establish connection for " + pluginName + " with " + databaseType.name());
+                return null;
+            }
+
+            pluginDatabases.put(databaseType, dbProvider);
             getLogger().info(pluginName + " registered database: " + databaseType.name());
-            return databaseProvider;
+            return dbProvider;
         } catch (Exception e) {
             getLogger().log(Level.SEVERE, "Failed to register database for " + pluginName, e);
             return null;
@@ -105,7 +104,7 @@ public class DataProvider extends JavaPlugin {
      * @return DatabaseProvider instance or null if not found.
      */
     public DatabaseProvider getDatabase(String pluginName, DatabaseType databaseType) {
-        return activeDatabases.getOrDefault(pluginName, new HashMap<>()).get(databaseType);
+        return activeDatabases.getOrDefault(pluginName, new ConcurrentHashMap<>()).get(databaseType);
     }
 
     /**
@@ -145,8 +144,14 @@ public class DataProvider extends JavaPlugin {
      * Closes all active database connections when the plugin is disabled.
      */
     private void shutdownAllDatabases() {
-        for (String pluginName : activeDatabases.keySet()) {
-            unregisterAllDatabases(pluginName);
+        for (Map.Entry<String, ConcurrentMap<DatabaseType, DatabaseProvider>> entry : activeDatabases.entrySet()) {
+            for (Map.Entry<DatabaseType, DatabaseProvider> dbEntry : entry.getValue().entrySet()) {
+                try {
+                    dbEntry.getValue().disconnect();
+                } catch (Exception e) {
+                    getLogger().log(Level.SEVERE, "Error disconnecting " + dbEntry.getKey() + " for plugin " + entry.getKey(), e);
+                }
+            }
         }
         activeDatabases.clear();
         getLogger().info("All database connections have been closed.");
