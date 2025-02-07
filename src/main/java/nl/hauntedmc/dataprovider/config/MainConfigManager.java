@@ -4,9 +4,6 @@ import nl.hauntedmc.dataprovider.DataProvider;
 import nl.hauntedmc.dataprovider.database.DatabaseType;
 import org.bukkit.configuration.file.FileConfiguration;
 
-import java.util.HashMap;
-import java.util.Map;
-
 public class MainConfigManager {
     private final DataProvider plugin;
     private FileConfiguration config;
@@ -31,10 +28,8 @@ public class MainConfigManager {
     private void injectMissingKeys() {
         boolean changed = false;
 
-        // General Settings
         changed |= injectDefault("debug", false);
 
-        // Database Type Settings (Enable/Disable Databases)
         for (DatabaseType type : DatabaseType.values()) {
             String path = "databases." + type.name().toLowerCase() + ".enabled";
             changed |= injectDefault(path, true); // Default: true (all databases enabled)

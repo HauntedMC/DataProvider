@@ -3,37 +3,33 @@ package nl.hauntedmc.dataprovider.database;
 import nl.hauntedmc.dataprovider.database.access.DataAccess;
 import nl.hauntedmc.dataprovider.database.schema.SchemaManager;
 
+/**
+ * Represents a single database connection/provider.
+ */
 public interface DatabaseProvider {
+
     /**
-     * Establishes a connection to the database.
+     * Establish a connection to the database.
      */
     void connect();
 
     /**
-     * Closes the database connection.
+     * Close the database connection.
      */
     void disconnect();
 
     /**
-     * Checks if the database is currently connected.
-     *
-     * @return true if connected, false otherwise.
+     * Check if the database is connected.
      */
     boolean isConnected();
 
     /**
-     * Retrieves the SchemaManager for this database.
-     * Used for creating and modifying database structures (tables, indexes, etc.).
-     *
-     * @return SchemaManager instance.
+     * Returns the SchemaManager to handle schema-level tasks (table creation, indexes, etc.).
      */
     SchemaManager getSchemaManager();
 
     /**
-     * Retrieves the DataAccess for this database.
-     * Used for querying and updating data within the database.
-     *
-     * @return DataAccess instance.
+     * Returns the DataAccess for DML operations (CRUD queries, transactions, etc.).
      */
     DataAccess getDataAccess();
 }

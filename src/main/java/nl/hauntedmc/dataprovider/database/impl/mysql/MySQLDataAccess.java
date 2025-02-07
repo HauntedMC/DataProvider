@@ -2,16 +2,24 @@ package nl.hauntedmc.dataprovider.database.impl.mysql;
 
 import com.zaxxer.hikari.HikariDataSource;
 import nl.hauntedmc.dataprovider.database.access.DataAccess;
+import nl.hauntedmc.dataprovider.database.access.TransactionCallback;
 
 import java.sql.*;
 import java.util.*;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutorService;
 
+/**
+ * MySQL implementation of DataAccess (CRUD/Queries).
+ */
 public class MySQLDataAccess implements DataAccess {
-    private final HikariDataSource dataSource;
 
-    public MySQLDataAccess(HikariDataSource dataSource) {
+    private final HikariDataSource dataSource;
+    private final ExecutorService executor;
+
+    public MySQLDataAccess(HikariDataSource dataSource, ExecutorService executor) {
         this.dataSource = dataSource;
+        this.executor = executor;
     }
 
     @Override
@@ -22,9 +30,9 @@ public class MySQLDataAccess implements DataAccess {
                 setParameters(stmt, params);
                 stmt.executeUpdate();
             } catch (SQLException e) {
-                throw new RuntimeException("Failed to execute update: " + e.getMessage(), e);
+                throw new RuntimeException("Failed to execute update", e);
             }
-        });
+        }, executor);
     }
 
     @Override
@@ -34,31 +42,34 @@ public class MySQLDataAccess implements DataAccess {
                  PreparedStatement stmt = connection.prepareStatement(query)) {
                 setParameters(stmt, params);
                 try (ResultSet rs = stmt.executeQuery()) {
-                    return rs.next() ? mapRow(rs) : null;
+                    if (rs.next()) {
+                        return mapRow(rs);
+                    }
                 }
             } catch (SQLException e) {
-                throw new RuntimeException("Failed to execute query: " + e.getMessage(), e);
+                throw new RuntimeException("Failed to execute queryForSingle", e);
             }
-        });
+            return null;
+        }, executor);
     }
 
     @Override
     public CompletableFuture<List<Map<String, Object>>> queryForList(String query, Object... params) {
         return CompletableFuture.supplyAsync(() -> {
-            List<Map<String, Object>> results = new ArrayList<>();
+            List<Map<String, Object>> result = new ArrayList<>();
             try (Connection connection = dataSource.getConnection();
                  PreparedStatement stmt = connection.prepareStatement(query)) {
                 setParameters(stmt, params);
                 try (ResultSet rs = stmt.executeQuery()) {
                     while (rs.next()) {
-                        results.add(mapRow(rs));
+                        result.add(mapRow(rs));
                     }
                 }
             } catch (SQLException e) {
-                throw new RuntimeException("Failed to execute query: " + e.getMessage(), e);
+                throw new RuntimeException("Failed to execute queryForList", e);
             }
-            return results;
-        });
+            return result;
+        }, executor);
     }
 
     @Override
@@ -68,12 +79,15 @@ public class MySQLDataAccess implements DataAccess {
                  PreparedStatement stmt = connection.prepareStatement(query)) {
                 setParameters(stmt, params);
                 try (ResultSet rs = stmt.executeQuery()) {
-                    return rs.next() ? rs.getObject(1) : null;
+                    if (rs.next()) {
+                        return rs.getObject(1);
+                    }
                 }
             } catch (SQLException e) {
-                throw new RuntimeException("Failed to execute query: " + e.getMessage(), e);
+                throw new RuntimeException("Failed to execute queryForSingleValue", e);
             }
-        });
+            return null;
+        }, executor);
     }
 
     @Override
@@ -87,48 +101,35 @@ public class MySQLDataAccess implements DataAccess {
                 }
                 stmt.executeBatch();
             } catch (SQLException e) {
-                throw new RuntimeException("Failed to execute batch update: " + e.getMessage(), e);
+                throw new RuntimeException("Failed to execute batch update", e);
             }
-        });
+        }, executor);
     }
 
     @Override
-    public CompletableFuture<Void> beginTransaction() {
-        return CompletableFuture.runAsync(() -> {
+    public <T> CompletableFuture<T> executeTransactionally(TransactionCallback<T> callback) {
+        return CompletableFuture.supplyAsync(() -> {
             try (Connection connection = dataSource.getConnection()) {
+                boolean oldAutoCommit = connection.getAutoCommit();
                 connection.setAutoCommit(false);
+                try {
+                    T result = callback.doInTransaction(connection);
+                    connection.commit();
+                    return result;
+                } catch (Exception e) {
+                    connection.rollback();
+                    throw new RuntimeException("Transaction failed, rolled back.", e);
+                } finally {
+                    connection.setAutoCommit(oldAutoCommit);
+                }
             } catch (SQLException e) {
-                throw new RuntimeException("Failed to begin transaction: " + e.getMessage(), e);
+                throw new RuntimeException("Failed to execute transactionally", e);
             }
-        });
-    }
-
-    @Override
-    public CompletableFuture<Void> commitTransaction() {
-        return CompletableFuture.runAsync(() -> {
-            try (Connection connection = dataSource.getConnection()) {
-                connection.commit();
-                connection.setAutoCommit(true);
-            } catch (SQLException e) {
-                throw new RuntimeException("Failed to commit transaction: " + e.getMessage(), e);
-            }
-        });
-    }
-
-    @Override
-    public CompletableFuture<Void> rollbackTransaction() {
-        return CompletableFuture.runAsync(() -> {
-            try (Connection connection = dataSource.getConnection()) {
-                connection.rollback();
-                connection.setAutoCommit(true);
-            } catch (SQLException e) {
-                throw new RuntimeException("Failed to rollback transaction: " + e.getMessage(), e);
-            }
-        });
+        }, executor);
     }
 
     /**
-     * Sets parameters for a prepared statement.
+     * Helper to set parameters on PreparedStatement.
      */
     private void setParameters(PreparedStatement stmt, Object... params) throws SQLException {
         for (int i = 0; i < params.length; i++) {
@@ -137,13 +138,14 @@ public class MySQLDataAccess implements DataAccess {
     }
 
     /**
-     * Maps a row from a ResultSet to a Map.
+     * Helper to map a ResultSet row to a Map.
      */
     private Map<String, Object> mapRow(ResultSet rs) throws SQLException {
-        Map<String, Object> row = new HashMap<>();
-        ResultSetMetaData metaData = rs.getMetaData();
-        for (int i = 1; i <= metaData.getColumnCount(); i++) {
-            row.put(metaData.getColumnName(i), rs.getObject(i));
+        Map<String, Object> row = new LinkedHashMap<>();
+        ResultSetMetaData md = rs.getMetaData();
+        int columns = md.getColumnCount();
+        for (int i = 1; i <= columns; i++) {
+            row.put(md.getColumnName(i), rs.getObject(i));
         }
         return row;
     }

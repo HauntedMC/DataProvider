@@ -6,20 +6,24 @@ import nl.hauntedmc.dataprovider.DataProvider;
 import nl.hauntedmc.dataprovider.database.DatabaseProvider;
 import nl.hauntedmc.dataprovider.database.access.DataAccess;
 import nl.hauntedmc.dataprovider.database.schema.SchemaManager;
-import org.bukkit.Bukkit;
 import org.bukkit.configuration.file.FileConfiguration;
 
-import java.sql.Connection;
-import java.sql.SQLException;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
+/**
+ * MySQL implementation of DatabaseProvider.
+ */
 public class MySQLDatabase implements DatabaseProvider {
-    private HikariDataSource dataSource;
-    private DataAccess dataAccess;
-    private SchemaManager schemaManager;
+
     private final FileConfiguration config;
     private final Logger logger;
+    private HikariDataSource dataSource;
+    private ExecutorService executor;
+    private DataAccess dataAccess;
+    private SchemaManager schemaManager;
 
     public MySQLDatabase(FileConfiguration config) {
         this.config = config;
@@ -29,31 +33,48 @@ public class MySQLDatabase implements DatabaseProvider {
     @Override
     public void connect() {
         if (dataSource != null && !dataSource.isClosed()) {
-            logger.info("MySQL is already connected.");
+            logger.info("[MySQLDatabase] Already connected, skipping re-initialization.");
             return;
         }
 
         try {
+            // Build the HikariCP config
             HikariConfig hikariConfig = new HikariConfig();
-            hikariConfig.setJdbcUrl("jdbc:mysql://" + config.getString("host") + ":" +
-                    config.getInt("port") + "/" + config.getString("database"));
-            hikariConfig.setUsername(config.getString("username"));
-            hikariConfig.setPassword(config.getString("password"));
-            hikariConfig.setMaximumPoolSize(config.getInt("pool_size", 10));
+
+            // Reading from config or environment variables
+            String host = getEnvOrConfig("DB_MYSQL_HOST", config.getString("host", "localhost"));
+            int port = Integer.parseInt(getEnvOrConfig("DB_MYSQL_PORT", String.valueOf(config.getInt("port", 3306))));
+            String databaseName = getEnvOrConfig("DB_MYSQL_DATABASE", config.getString("database", "minecraft"));
+            String user = getEnvOrConfig("DB_MYSQL_USER", config.getString("username", "root"));
+            String password = getEnvOrConfig("DB_MYSQL_PASS", config.getString("password", ""));
+
+            String jdbcUrl = "jdbc:mysql://" + host + ":" + port + "/" + databaseName + "?useSSL=false&characterEncoding=UTF-8";
+
+            hikariConfig.setJdbcUrl(jdbcUrl);
+            hikariConfig.setUsername(user);
+            hikariConfig.setPassword(password);
+
+            // Additional Hikari settings
+            int poolSize = config.getInt("pool_size", 10);
+            hikariConfig.setMaximumPoolSize(poolSize);
             hikariConfig.setConnectionTimeout(30000);
             hikariConfig.setIdleTimeout(600000);
             hikariConfig.setMaxLifetime(1800000);
-            hikariConfig.setLeakDetectionThreshold(2000); // Detects connection leaks
+            hikariConfig.setLeakDetectionThreshold(2000);
 
-            this.dataSource = new HikariDataSource(hikariConfig);
+            // Initialize the connection pool
+            dataSource = new HikariDataSource(hikariConfig);
 
-            // Initialize only after successful connection
-            this.dataAccess = new MySQLDataAccess(dataSource);
-            this.schemaManager = new MySQLSchemaManager(dataSource);
+            // Create an ExecutorService for DB queries
+            executor = Executors.newFixedThreadPool(poolSize);
 
-            logger.info("Connected to MySQL database successfully.");
+            // Initialize DataAccess and SchemaManager
+            this.dataAccess = new MySQLDataAccess(dataSource, executor);
+            this.schemaManager = new MySQLSchemaManager(dataSource, executor);
+
+            logger.info("[MySQLDatabase] Connected successfully to " + jdbcUrl);
         } catch (Exception e) {
-            logger.log(Level.SEVERE, "Failed to connect to MySQL database!", e);
+            logger.log(Level.SEVERE, "[MySQLDatabase] Connection failed!", e);
         }
     }
 
@@ -61,30 +82,31 @@ public class MySQLDatabase implements DatabaseProvider {
     public void disconnect() {
         if (dataSource != null && !dataSource.isClosed()) {
             dataSource.close();
-            logger.info("Disconnected from MySQL database.");
-        } else {
-            logger.warning("Attempted to disconnect, but MySQL was already closed.");
+            logger.info("[MySQLDatabase] DataSource closed.");
+        }
+        if (executor != null && !executor.isShutdown()) {
+            executor.shutdown();
+            logger.info("[MySQLDatabase] ExecutorService shut down.");
         }
     }
 
     @Override
     public boolean isConnected() {
-        try {
-            if (dataSource != null && !dataSource.isClosed()) {
-                try (Connection conn = dataSource.getConnection()) {
-                    return conn.isValid(2);
-                }
-            }
-        } catch (SQLException e) {
-            logger.log(Level.WARNING, "Database connection check failed.", e);
+        if (dataSource == null || dataSource.isClosed()) {
+            return false;
         }
-        return false;
+        try (var conn = dataSource.getConnection()) {
+            return conn.isValid(2);
+        } catch (Exception e) {
+            logger.log(Level.WARNING, "[MySQLDatabase] Connection validation failed.", e);
+            return false;
+        }
     }
 
     @Override
     public SchemaManager getSchemaManager() {
         if (schemaManager == null) {
-            throw new IllegalStateException("SchemaManager is not initialized. Is MySQL connected?");
+            throw new IllegalStateException("[MySQLDatabase] SchemaManager not initialized!");
         }
         return schemaManager;
     }
@@ -92,8 +114,16 @@ public class MySQLDatabase implements DatabaseProvider {
     @Override
     public DataAccess getDataAccess() {
         if (dataAccess == null) {
-            throw new IllegalStateException("DataAccess is not initialized. Is MySQL connected?");
+            throw new IllegalStateException("[MySQLDatabase] DataAccess not initialized!");
         }
         return dataAccess;
+    }
+
+    /**
+     * Utility: returns the environment variable if present, otherwise the fallback value.
+     */
+    private String getEnvOrConfig(String envKey, String fallback) {
+        String envValue = System.getenv(envKey);
+        return (envValue != null && !envValue.isEmpty()) ? envValue : fallback;
     }
 }

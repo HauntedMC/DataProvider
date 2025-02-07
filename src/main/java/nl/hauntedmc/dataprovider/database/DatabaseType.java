@@ -1,5 +1,8 @@
 package nl.hauntedmc.dataprovider.database;
 
+/**
+ * Supported database types.
+ */
 public enum DatabaseType {
     MYSQL("mysql.yml"),
     MONGODB("mongodb.yml"),

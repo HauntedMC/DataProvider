@@ -1,35 +1,35 @@
 package nl.hauntedmc.dataprovider.database.schema;
 
+/**
+ * Represents a single column in a table.
+ */
 public class ColumnDefinition {
+
     private final String name;
     private final String type;
-    private boolean notNull;
-    private boolean autoIncrement;
-    private String defaultValue;
+    private final boolean notNull;
+    private final boolean autoIncrement;
 
-    public ColumnDefinition(String name, String type) {
+    public ColumnDefinition(String name, String type, boolean notNull, boolean autoIncrement) {
         this.name = name;
         this.type = type;
+        this.notNull = notNull;
+        this.autoIncrement = autoIncrement;
     }
 
-    public ColumnDefinition notNull() {
-        this.notNull = true;
-        return this;
+    public String getName() {
+        return name;
     }
 
-    public ColumnDefinition autoIncrement() {
-        this.autoIncrement = true;
-        return this;
+    public String getType() {
+        return type;
     }
 
-    public ColumnDefinition defaultValue(String defaultValue) {
-        this.defaultValue = defaultValue;
-        return this;
+    public boolean isNotNull() {
+        return notNull;
     }
 
-    public String getName() { return name; }
-    public String getType() { return type; }
-    public boolean isNotNull() { return notNull; }
-    public boolean isAutoIncrement() { return autoIncrement; }
-    public String getDefaultValue() { return defaultValue; }
+    public boolean isAutoIncrement() {
+        return autoIncrement;
+    }
 }

@@ -11,8 +11,13 @@ import java.io.InputStream;
 import java.nio.file.Files;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.logging.Level;
 
+/**
+ * Manages individual database config files (e.g. mysql.yml, mongodb.yml, etc.).
+ */
 public class DatabaseConfigManager {
+
     private final DataProvider plugin;
     private final File databasesFolder;
     private final Map<DatabaseType, FileConfiguration> configMap = new HashMap<>();
@@ -23,10 +28,6 @@ public class DatabaseConfigManager {
         initializeConfigs();
     }
 
-    /**
-     * Ensures all database configuration files are created at startup.
-     * Loads all configurations into memory.
-     */
     private void initializeConfigs() {
         if (!databasesFolder.exists()) {
             databasesFolder.mkdirs();
@@ -35,12 +36,13 @@ public class DatabaseConfigManager {
 
         for (DatabaseType type : DatabaseType.values()) {
             File configFile = new File(databasesFolder, type.getConfigFileName());
-
-            boolean isConfigValid = true;
             if (!configFile.exists()) {
-                isConfigValid = copyDefaultConfigFromResources(type.getConfigFileName(), configFile);
+                if (!copyDefaultConfigFromResources(type.getConfigFileName(), configFile)) {
+                    plugin.getLogger().warning("No default config found for " + type.name()
+                            + ". Make sure to create " + configFile.getName() + " manually if needed.");
+                }
             }
-            if (isConfigValid) {
+            if (configFile.exists()) {
                 configMap.put(type, YamlConfiguration.loadConfiguration(configFile));
             }
         }
@@ -48,31 +50,27 @@ public class DatabaseConfigManager {
     }
 
     /**
-     * Retrieves the configuration for the specified database type.
-     *
-     * @param type DatabaseType (MYSQL, MONGODB, etc.)
-     * @return FileConfiguration instance
+     * Retrieves the config for a given DatabaseType.
      */
     public FileConfiguration getConfig(DatabaseType type) {
         return configMap.get(type);
     }
 
     /**
-     * Copies the default config from resources to the databases folder.
+     * Copies a default config from resources to the plugin folder.
      */
     private boolean copyDefaultConfigFromResources(String resourcePath, File destinationFile) {
-        try (InputStream inputStream = plugin.getResource("databases/" + resourcePath)) {
-            if (inputStream == null) {
-                plugin.getLogger().warning("Could not find default config in resources: " + resourcePath);
+        try (InputStream in = plugin.getResource("databases/" + resourcePath)) {
+            if (in == null) {
                 return false;
             }
-            Files.copy(inputStream, destinationFile.toPath());
+            Files.copy(in, destinationFile.toPath());
             plugin.getLogger().info("Copied default config: " + resourcePath);
             return true;
         } catch (IOException e) {
-            plugin.getLogger().severe("Failed to copy default config: " + resourcePath);
-            e.printStackTrace();
+            plugin.getLogger().log(Level.SEVERE,
+                    "Failed to copy default config: " + resourcePath, e);
+            return false;
         }
-        return false;
     }
 }

@@ -1,28 +1,31 @@
 package nl.hauntedmc.dataprovider.database.schema;
 
-import java.util.ArrayList;
 import java.util.List;
 
+/**
+ * Represents a table schema definition.
+ */
 public class TableDefinition {
+
     private final String tableName;
-    private final List<ColumnDefinition> columns = new ArrayList<>();
-    private String primaryKey;
+    private final List<ColumnDefinition> columns;
+    private final String primaryKey;
 
-    public TableDefinition(String tableName) {
+    public TableDefinition(String tableName, List<ColumnDefinition> columns, String primaryKey) {
         this.tableName = tableName;
-    }
-
-    public TableDefinition addColumn(ColumnDefinition column) {
-        columns.add(column);
-        return this;
-    }
-
-    public TableDefinition primaryKey(String primaryKey) {
+        this.columns = columns;
         this.primaryKey = primaryKey;
-        return this;
     }
 
-    public String getTableName() { return tableName; }
-    public List<ColumnDefinition> getColumns() { return columns; }
-    public String getPrimaryKey() { return primaryKey; }
+    public String getTableName() {
+        return tableName;
+    }
+
+    public List<ColumnDefinition> getColumns() {
+        return columns;
+    }
+
+    public String getPrimaryKey() {
+        return primaryKey;
+    }
 }
