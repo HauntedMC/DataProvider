@@ -2,7 +2,7 @@ package nl.hauntedmc.dataprovider.database;
 
 import nl.hauntedmc.dataprovider.DataProvider;
 import nl.hauntedmc.dataprovider.database.config.DatabaseConfigManager;
-import nl.hauntedmc.dataprovider.database.impl.MySQLDatabase;
+import nl.hauntedmc.dataprovider.database.impl.mysql.MySQLDatabase;
 import org.bukkit.configuration.file.FileConfiguration;
 
 public class DatabaseFactory {

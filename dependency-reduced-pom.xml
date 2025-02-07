@@ -4,7 +4,7 @@
   <groupId>nl.hauntedmc.dataprovider</groupId>
   <artifactId>dataprovider</artifactId>
   <name>DataProvider</name>
-  <version>1.1.0</version>
+  <version>1.2.0</version>
   <url>http://maven.apache.org</url>
   <build>
     <resources>
