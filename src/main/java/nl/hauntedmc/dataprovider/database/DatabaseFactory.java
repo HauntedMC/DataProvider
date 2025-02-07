@@ -4,6 +4,7 @@ import nl.hauntedmc.dataprovider.DataProvider;
 import nl.hauntedmc.dataprovider.database.config.DatabaseConfigManager;
 import nl.hauntedmc.dataprovider.database.impl.mongodb.MongoDBDatabase;
 import nl.hauntedmc.dataprovider.database.impl.mysql.MySQLDatabase;
+import nl.hauntedmc.dataprovider.database.impl.redis.RedisDatabase;
 import org.bukkit.configuration.file.FileConfiguration;
 
 /**
@@ -18,7 +19,7 @@ public class DatabaseFactory {
         return switch (type) {
             case MYSQL -> new MySQLDatabase(config);
             case MONGODB -> new MongoDBDatabase(config);
-            case REDIS -> throw new UnsupportedOperationException("Redis support is not yet implemented.");
+            case REDIS -> new RedisDatabase(config);
         };
     }
 }

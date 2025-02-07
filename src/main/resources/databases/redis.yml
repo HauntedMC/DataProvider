@@ -1,0 +1,5 @@
+host: "localhost"
+port: 6379
+password: ""   # or null if no auth
+database: 0    # Redis database index
+pool_size: 8
