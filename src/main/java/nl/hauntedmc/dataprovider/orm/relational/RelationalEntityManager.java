@@ -79,11 +79,9 @@ public class RelationalEntityManager implements EntityManager {
         String sql = "SELECT * FROM " + quote(meta.getEntityName()) +
                 " WHERE " + pkCol + "=? " + dialect.getLimitClause(1);
         return dataAccess.queryForSingle(sql, id)
-                .thenApply(row -> {
-                    if (row == null) return null;
-                    T instance = EntityMapper.mapRowToEntity(row, clazz, meta);
-                    EntityLifecycle.callPostLoad(instance);
-                    return instance;
+                .thenCompose(row -> {
+                    if (row == null) return CompletableFuture.completedFuture(null);
+                    return EntityMapper.mapRowToEntity(row, clazz, meta, this);
                 });
     }
 
@@ -92,14 +90,13 @@ public class RelationalEntityManager implements EntityManager {
         EntityMetadata meta = EntityIntrospector.introspect(clazz);
         String sql = "SELECT * FROM " + quote(meta.getEntityName());
         return dataAccess.queryForList(sql)
-                .thenApply(rows -> {
-                    List<T> result = new ArrayList<>();
+                .thenCompose(rows -> {
+                    List<CompletableFuture<T>> futures = new ArrayList<>();
                     for (Map<String, Object> row : rows) {
-                        T instance = EntityMapper.mapRowToEntity(row, clazz, meta);
-                        EntityLifecycle.callPostLoad(instance);
-                        result.add(instance);
+                        futures.add(EntityMapper.mapRowToEntity(row, clazz, meta, this));
                     }
-                    return result;
+                    return CompletableFuture.allOf(futures.toArray(new CompletableFuture[0]))
+                            .thenApply(v -> futures.stream().map(CompletableFuture::join).collect(Collectors.toList()));
                 });
     }
 
@@ -136,11 +133,36 @@ public class RelationalEntityManager implements EntityManager {
                 .thenCompose(Function.identity());
     }
 
+    /**
+     * Finds all entities of the given class where the specified column matches the provided value.
+     * This method is primarily used for OneToMany relationship loading.
+     *
+     * @param clazz  The entity class.
+     * @param column The column name to filter on.
+     * @param value  The value to match.
+     * @param <T>    The type of the entity.
+     * @return A CompletableFuture with the list of matching entities.
+     */
+    public <T> CompletableFuture<List<T>> findByColumn(Class<T> clazz, String column, Object value) {
+        EntityIntrospector.EntityMetadata meta = EntityIntrospector.introspect(clazz);
+        String sql = "SELECT * FROM " + quote(meta.getEntityName()) +
+                " WHERE " + quote(column) + "=?";
+        return dataAccess.queryForList(sql, value)
+                .thenCompose(rows -> {
+                    List<CompletableFuture<T>> futures = new ArrayList<>();
+                    for (Map<String, Object> row : rows) {
+                        futures.add(EntityMapper.mapRowToEntity(row, clazz, meta, this));
+                    }
+                    return CompletableFuture.allOf(futures.toArray(new CompletableFuture[0]))
+                            .thenApply(v -> futures.stream().map(CompletableFuture::join).collect(Collectors.toList()));
+                });
+    }
+
     // ----------------------------------------------------------------
     // Helper methods to build SQL queries
     // ----------------------------------------------------------------
 
-    private CompletableFuture<Void> insertRow(EntityMetadata meta, Map<String, Object> row) {
+    private CompletableFuture<Void> insertRow(EntityIntrospector.EntityMetadata meta, Map<String, Object> row) {
         String tableName = quote(meta.getEntityName());
         List<Object> params = new ArrayList<>();
         StringJoiner columns = new StringJoiner(", ");
@@ -160,7 +182,7 @@ public class RelationalEntityManager implements EntityManager {
      * Updates a row based on the provided metadata and row map.
      * The primary key is extracted from the row map.
      */
-    private CompletableFuture<Void> updateRow(EntityMetadata meta, Map<String, Object> row) {
+    private CompletableFuture<Void> updateRow(EntityIntrospector.EntityMetadata meta, Map<String, Object> row) {
         String tableName = quote(meta.getEntityName());
         Field idField = meta.getIdField();
         String idKey = EntityMapper.getDatabaseFieldName(idField);

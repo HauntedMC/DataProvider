@@ -3,6 +3,8 @@ package nl.hauntedmc.dataprovider.orm.introspection;
 import nl.hauntedmc.dataprovider.orm.annotations.Entity;
 import nl.hauntedmc.dataprovider.orm.annotations.FieldMapping;
 import nl.hauntedmc.dataprovider.orm.annotations.Id;
+import nl.hauntedmc.dataprovider.orm.annotations.ManyToOne;
+import nl.hauntedmc.dataprovider.orm.annotations.OneToMany;
 
 import java.lang.reflect.Field;
 import java.util.LinkedHashMap;
@@ -21,6 +23,8 @@ public class EntityIntrospector {
         private final String entityName;
         private Field idField; // The field annotated with @Id
         private final Map<Field, FieldMapping> mappedFields = new LinkedHashMap<>();
+        private final Map<Field, ManyToOneMapping> manyToOneMappings = new LinkedHashMap<>();
+        private final Map<Field, OneToManyMapping> oneToManyMappings = new LinkedHashMap<>();
 
         public EntityMetadata(Class<?> clazz, String entityName) {
             this.clazz = clazz;
@@ -46,10 +50,19 @@ public class EntityIntrospector {
         public Map<Field, FieldMapping> getMappedFields() {
             return mappedFields;
         }
+
+        public Map<Field, ManyToOneMapping> getManyToOneMappings() {
+            return manyToOneMappings;
+        }
+
+        public Map<Field, OneToManyMapping> getOneToManyMappings() {
+            return oneToManyMappings;
+        }
     }
 
     /**
      * Parses the entity class, extracting the @Entity name, @Id field, and all @FieldMapping fields.
+     * Also extracts relationship annotations (@ManyToOne and @OneToMany).
      */
     public static EntityMetadata introspect(Class<?> clazz) {
         return cache.computeIfAbsent(clazz, clz -> {
@@ -76,6 +89,22 @@ public class EntityIntrospector {
                         meta.getMappedFields().put(f, f.getAnnotation(FieldMapping.class));
                         f.setAccessible(true);
                     }
+                    if (f.isAnnotationPresent(ManyToOne.class)) {
+                        ManyToOne annotation = f.getAnnotation(ManyToOne.class);
+                        String columnName = annotation.columnName();
+                        if (columnName.isEmpty()) {
+                            columnName = f.getName() + "_id";
+                        }
+                        meta.getManyToOneMappings().put(f, new ManyToOneMapping(columnName, f.getType()));
+                        f.setAccessible(true);
+                    }
+                    if (f.isAnnotationPresent(OneToMany.class)) {
+                        OneToMany annotation = f.getAnnotation(OneToMany.class);
+                        Class<?> targetEntity = annotation.targetEntity();
+                        String mappedBy = annotation.mappedBy();
+                        meta.getOneToManyMappings().put(f, new OneToManyMapping(mappedBy, targetEntity));
+                        f.setAccessible(true);
+                    }
                 }
                 current = current.getSuperclass();
             }
@@ -85,5 +114,41 @@ public class EntityIntrospector {
             }
             return meta;
         });
+    }
+
+    public static class ManyToOneMapping {
+        private final String columnName;
+        private final Class<?> targetEntity;
+
+        public ManyToOneMapping(String columnName, Class<?> targetEntity) {
+            this.columnName = columnName;
+            this.targetEntity = targetEntity;
+        }
+
+        public String getColumnName() {
+            return columnName;
+        }
+
+        public Class<?> getTargetEntity() {
+            return targetEntity;
+        }
+    }
+
+    public static class OneToManyMapping {
+        private final String mappedBy;
+        private final Class<?> targetEntity;
+
+        public OneToManyMapping(String mappedBy, Class<?> targetEntity) {
+            this.mappedBy = mappedBy;
+            this.targetEntity = targetEntity;
+        }
+
+        public String getMappedBy() {
+            return mappedBy;
+        }
+
+        public Class<?> getTargetEntity() {
+            return targetEntity;
+        }
     }
 }
