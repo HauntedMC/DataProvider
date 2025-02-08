@@ -18,17 +18,18 @@ import java.util.concurrent.ConcurrentMap;
 public class DataProviderCommand implements CommandExecutor, TabCompleter {
 
     @Override
-    public boolean onCommand(@NotNull CommandSender sender, @NotNull Command command, @NotNull String label, String[] args) {
-        // Show usage if no subcommand or "help" is provided
+    public boolean onCommand(@NotNull CommandSender sender, @NotNull Command command,
+                             @NotNull String label, String[] args) {
+        // Show usage if no subcommand or "help" is provided.
         if (args.length == 0 || args[0].equalsIgnoreCase("help")) {
             sender.sendMessage(ChatColor.YELLOW + "Usage: /dataprovider status");
             return true;
         }
 
         if (args[0].equalsIgnoreCase("status")) {
-            // Retrieve the active databases map from the main plugin instance
+            // Retrieve the active databases map via the registry.
             ConcurrentMap<String, ConcurrentMap<DatabaseType, BaseDatabaseProvider>> activeDatabases =
-                    DataProvider.getInstance().getActiveDatabases();
+                    DataProvider.getInstance().getRegistry().getActiveDatabases();
 
             if (activeDatabases.isEmpty()) {
                 sender.sendMessage(ChatColor.YELLOW + "No active database connections found.");
@@ -47,7 +48,9 @@ public class DataProviderCommand implements CommandExecutor, TabCompleter {
                 for (Map.Entry<DatabaseType, BaseDatabaseProvider> dbEntry : databases.entrySet()) {
                     DatabaseType type = dbEntry.getKey();
                     BaseDatabaseProvider provider = dbEntry.getValue();
-                    String connectionStatus = provider.isConnected() ? ChatColor.GREEN + "Connected" : ChatColor.RED + "Disconnected";
+                    String connectionStatus = provider.isConnected()
+                            ? ChatColor.GREEN + "Connected"
+                            : ChatColor.RED + "Disconnected";
                     sender.sendMessage(ChatColor.YELLOW + "  " + type.name() + ": " + connectionStatus);
                 }
             }
@@ -59,7 +62,8 @@ public class DataProviderCommand implements CommandExecutor, TabCompleter {
     }
 
     @Override
-    public List<String> onTabComplete(@NotNull CommandSender sender, @NotNull Command command, @NotNull String alias, String[] args) {
+    public List<String> onTabComplete(@NotNull CommandSender sender, @NotNull Command command,
+                                      @NotNull String alias, String[] args) {
         List<String> completions = new ArrayList<>();
         // Provide suggestions for the first argument
         if (args.length == 1) {
