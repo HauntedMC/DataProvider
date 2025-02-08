@@ -2,12 +2,12 @@ package nl.hauntedmc.dataprovider.orm.relational;
 
 import nl.hauntedmc.dataprovider.database.relational.RelationalDataAccess;
 import nl.hauntedmc.dataprovider.orm.EntityManager;
+import nl.hauntedmc.dataprovider.orm.dialect.MySQLDialect;
 import nl.hauntedmc.dataprovider.orm.introspection.EntityIntrospector;
 import nl.hauntedmc.dataprovider.orm.introspection.EntityIntrospector.EntityMetadata;
 import nl.hauntedmc.dataprovider.orm.lifecycle.EntityLifecycle;
 import nl.hauntedmc.dataprovider.orm.util.EntityMapper;
 import nl.hauntedmc.dataprovider.orm.dialect.SQLDialect;
-import nl.hauntedmc.dataprovider.orm.dialect.DefaultSQLDialect;
 
 import java.lang.reflect.Field;
 import java.util.*;
@@ -22,7 +22,7 @@ public class RelationalEntityManager implements EntityManager {
 
     public RelationalEntityManager(RelationalDataAccess dataAccess) {
         this.dataAccess = dataAccess;
-        this.dialect = new DefaultSQLDialect(); // Can be injected/configured as needed.
+        this.dialect = new MySQLDialect(); // Can be injected/configured as needed.
     }
 
     @Override
