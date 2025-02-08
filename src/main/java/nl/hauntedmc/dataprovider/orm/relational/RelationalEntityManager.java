@@ -3,112 +3,101 @@ package nl.hauntedmc.dataprovider.orm.relational;
 import nl.hauntedmc.dataprovider.database.relational.RelationalDataAccess;
 import nl.hauntedmc.dataprovider.orm.EntityManager;
 import nl.hauntedmc.dataprovider.orm.introspection.EntityIntrospector;
+import nl.hauntedmc.dataprovider.orm.introspection.EntityIntrospector.EntityMetadata;
+import nl.hauntedmc.dataprovider.orm.lifecycle.EntityLifecycle;
 import nl.hauntedmc.dataprovider.orm.util.EntityMapper;
-import org.bukkit.configuration.file.FileConfiguration;
 
 import java.lang.reflect.Field;
 import java.util.*;
 import java.util.concurrent.CompletableFuture;
+import java.util.stream.Collectors;
 
 public class RelationalEntityManager implements EntityManager {
 
     private final RelationalDataAccess dataAccess;
-    // You might store a config if needed for table creation logic
-    private final FileConfiguration config; // optional
 
-    public RelationalEntityManager(RelationalDataAccess dataAccess, FileConfiguration config) {
+    public RelationalEntityManager(RelationalDataAccess dataAccess) {
         this.dataAccess = dataAccess;
-        this.config = config;
     }
 
     @Override
     public <T> CompletableFuture<Void> save(T entity) {
         return CompletableFuture.runAsync(() -> {
-            try {
-                var meta = EntityIntrospector.introspect(entity.getClass());
-                // build an INSERT or UPDATE
-                Map<String, Object> columnValues = EntityMapper.entityToMap(entity, meta);
+            EntityMetadata meta = EntityIntrospector.introspect(entity.getClass());
+            // 1) call @PreSave
+            EntityLifecycle.callPreSave(entity);
 
-                // figure out ID value
-                Field idField = meta.getIdField();
-                Object idValue = idField.get(entity);
+            Map<String,Object> row = EntityMapper.entityToMap(entity, meta);
 
-                // build an upsert style SQL, for example:
-                // INSERT INTO table (col1, col2, ...) VALUES (...)
-                // ON DUPLICATE KEY UPDATE colX=VALUES(colX), ...
-                // simplified example:
-                StringJoiner cols = new StringJoiner(", ");
-                StringJoiner placeholders = new StringJoiner(", ");
-                List<Object> params = new ArrayList<>();
-
-                for (var entry : columnValues.entrySet()) {
-                    cols.add(entry.getKey());
-                    placeholders.add("?");
-                    params.add(entry.getValue());
-                }
-
-                String tableName = meta.getEntityName();
-                // Possibly you read config to prefix table or something
-
-                String sql = "INSERT INTO " + tableName +
-                        " (" + cols + ") VALUES (" + placeholders + ") " +
-                        " ON DUPLICATE KEY UPDATE " + buildUpdatePart(columnValues);
-
-                dataAccess.executeUpdate(sql, params.toArray()).join();
-
-            } catch (Exception e) {
-                throw new RuntimeException("Save failed", e);
+            // 2) build an "INSERT... ON DUPLICATE KEY UPDATE" style or do a separate logic if ID is null
+            List<Object> paramValues = new ArrayList<>();
+            StringJoiner columns = new StringJoiner(", ");
+            StringJoiner placeholders = new StringJoiner(", ");
+            for (Map.Entry<String, Object> e : row.entrySet()) {
+                columns.add(e.getKey());
+                placeholders.add("?");
+                paramValues.add(e.getValue());
             }
-        });
-    }
+            String tableName = meta.getEntityName();
+            // Build the "ON DUPLICATE KEY UPDATE" part
+            String updatePart = row.keySet().stream()
+                    .map(k -> k + " = VALUES(" + k + ")")
+                    .collect(Collectors.joining(", "));
 
-    private String buildUpdatePart(Map<String, Object> columns) {
-        StringJoiner joiner = new StringJoiner(", ");
-        for (String col : columns.keySet()) {
-            joiner.add(col + " = VALUES(" + col + ")");
-        }
-        return joiner.toString();
+            String sql = "INSERT INTO " + tableName +
+                    " (" + columns + ") VALUES (" + placeholders + ") " +
+                    "ON DUPLICATE KEY UPDATE " + updatePart;
+
+            // 3) execute
+            dataAccess.executeUpdate(sql, paramValues.toArray()).join();
+        });
     }
 
     @Override
     public <T> CompletableFuture<T> findById(Class<T> clazz, Object id) {
         return CompletableFuture.supplyAsync(() -> {
-            var meta = EntityIntrospector.introspect(clazz);
-            String tableName = meta.getEntityName();
-            String primaryKey = meta.getIdField().getAnnotation(nl.hauntedmc.dataprovider.orm.annotations.Id.class).autoGenerate()
-                    ? meta.getIdField().getName().toLowerCase()
-                    : meta.getIdField().getName().toLowerCase(); // or we store the mapped column name
+            EntityMetadata meta = EntityIntrospector.introspect(clazz);
+            Field idField = meta.getIdField();
+            String idCol = (idField.getName().toLowerCase());
+            // or read from FieldMapping if needed
 
-            // e.g. SELECT * FROM table WHERE pk = ?
-            String sql = "SELECT * FROM " + tableName + " WHERE " + primaryKey + " = ?";
+            String sql = "SELECT * FROM " + meta.getEntityName() +
+                    " WHERE " + idCol + " = ? LIMIT 1";
+
             Map<String, Object> row = dataAccess.queryForSingle(sql, id).join();
             if (row == null) return null;
 
-            return EntityMapper.mapRowToEntity(row, clazz, meta);
+            T entity = EntityMapper.mapRowToEntity(row, clazz, meta);
+            // call @PostLoad
+            EntityLifecycle.callPostLoad(entity);
+            return entity;
         });
     }
 
     @Override
     public <T> CompletableFuture<List<T>> findAll(Class<T> clazz) {
         return CompletableFuture.supplyAsync(() -> {
-            var meta = EntityIntrospector.introspect(clazz);
+            EntityMetadata meta = EntityIntrospector.introspect(clazz);
             String sql = "SELECT * FROM " + meta.getEntityName();
-            List<Map<String, Object>> results = dataAccess.queryForList(sql).join();
-            List<T> entities = new ArrayList<>();
-            for (var row : results) {
-                entities.add(EntityMapper.mapRowToEntity(row, clazz, meta));
+            List<Map<String,Object>> rows = dataAccess.queryForList(sql).join();
+            List<T> result = new ArrayList<>();
+            for (Map<String,Object> row : rows) {
+                T entity = EntityMapper.mapRowToEntity(row, clazz, meta);
+                EntityLifecycle.callPostLoad(entity);
+                result.add(entity);
             }
-            return entities;
+            return result;
         });
     }
 
     @Override
     public <T> CompletableFuture<Void> deleteById(Class<T> clazz, Object id) {
         return CompletableFuture.runAsync(() -> {
-            var meta = EntityIntrospector.introspect(clazz);
-            // figure out pk name
-            String pkCol = meta.getIdField().getName().toLowerCase();
-            String sql = "DELETE FROM " + meta.getEntityName() + " WHERE " + pkCol + " = ?";
+            EntityMetadata meta = EntityIntrospector.introspect(clazz);
+            Field idField = meta.getIdField();
+            String idCol = idField.getName().toLowerCase();
+
+            String sql = "DELETE FROM " + meta.getEntityName() + " WHERE " + idCol + " = ?";
             dataAccess.executeUpdate(sql, id).join();
         });
     }

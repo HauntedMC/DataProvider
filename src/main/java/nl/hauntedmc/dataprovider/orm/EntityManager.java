@@ -3,25 +3,29 @@ package nl.hauntedmc.dataprovider.orm;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
 
+/**
+ * Common interface for storing & retrieving entities, either relational or doc-based.
+ */
 public interface EntityManager {
 
     /**
-     * Saves or updates an entity instance, based on its @Id field.
+     * Save or update the entity.
      */
     <T> CompletableFuture<Void> save(T entity);
 
     /**
-     * Finds an entity by its primary ID.
+     * Find by the primary key / ID. Returns null if not found.
      */
     <T> CompletableFuture<T> findById(Class<T> clazz, Object id);
 
     /**
-     * Finds all entities of a given type.
+     * Find all entities of this class.
+     * For large sets, be mindful of performance or add filtering.
      */
     <T> CompletableFuture<List<T>> findAll(Class<T> clazz);
 
     /**
-     * Deletes an entity by ID.
+     * Delete an entity by ID.
      */
     <T> CompletableFuture<Void> deleteById(Class<T> clazz, Object id);
 }

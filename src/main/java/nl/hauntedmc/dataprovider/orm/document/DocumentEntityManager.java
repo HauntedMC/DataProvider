@@ -6,6 +6,8 @@ import nl.hauntedmc.dataprovider.database.document.model.DocumentUpdate;
 import nl.hauntedmc.dataprovider.database.document.model.DocumentUpdateOptions;
 import nl.hauntedmc.dataprovider.orm.EntityManager;
 import nl.hauntedmc.dataprovider.orm.introspection.EntityIntrospector;
+import nl.hauntedmc.dataprovider.orm.introspection.EntityIntrospector.EntityMetadata;
+import nl.hauntedmc.dataprovider.orm.lifecycle.EntityLifecycle;
 import nl.hauntedmc.dataprovider.orm.util.EntityMapper;
 
 import java.lang.reflect.Field;
@@ -23,45 +25,45 @@ public class DocumentEntityManager implements EntityManager {
     @Override
     public <T> CompletableFuture<Void> save(T entity) {
         return CompletableFuture.runAsync(() -> {
-            var meta = EntityIntrospector.introspect(entity.getClass());
-            String collection = meta.getEntityName();
+            EntityMetadata meta = EntityIntrospector.introspect(entity.getClass());
+            // call PreSave
+            EntityLifecycle.callPreSave(entity);
 
-            // Convert entity -> Map
-            Map<String, Object> doc = null;
+            Map<String, Object> doc = EntityMapper.entityToMap(entity, meta);
+
+            // get ID
+            Field idField = meta.getIdField();
+            Object idValue;
             try {
-                doc = EntityMapper.entityToMap(entity, meta);
+                idValue = idField.get(entity);
             } catch (IllegalAccessException e) {
                 throw new RuntimeException(e);
             }
-
-            // figure out _id or ID
-            Field idField = meta.getIdField();
-            try {
-                Object idValue = idField.get(entity);
-                if (idValue == null && idField.getAnnotation(nl.hauntedmc.dataprovider.orm.annotations.Id.class).autoGenerate()) {
-                    // we might generate an ID if doc DB doesn't do it automatically, e.g. a UUID
+            if (idValue == null) {
+                // auto-generate if needed
+                if (idField.getAnnotation(nl.hauntedmc.dataprovider.orm.annotations.Id.class).autoGenerate()) {
                     idValue = UUID.randomUUID().toString();
-                    idField.set(entity, idValue);
-                    doc.put(idField.getName(), idValue);
+                    try {
+                        idField.set(entity, idValue);
+                    } catch (IllegalAccessException e) {
+                        throw new RuntimeException(e);
+                    }
+                    doc.put(idField.getName().toLowerCase(), idValue);
                 }
-                // Check if doc already exists
-                var query = new DocumentQuery().eq(idField.getName(), idValue);
-                var existing = dataAccess.findOne(collection, query).join();
-                if (existing == null) {
-                    // Insert
-                    dataAccess.insertOne(collection, doc).join();
-                } else {
-                    // Update
-                    var updateMap = new HashMap<String, Object>();
-                    updateMap.put("$set", doc);
-                    // or build a DocumentUpdate DSL 
-                    DocumentUpdate documentUpdate = new DocumentUpdate();
-                    doc.forEach((k,v)-> documentUpdate.set(k,v));
-                    DocumentUpdateOptions opts = new DocumentUpdateOptions().upsert(true);
-                    dataAccess.updateOne(collection, query, documentUpdate, opts).join();
-                }
-            } catch (IllegalAccessException e) {
-                throw new RuntimeException(e);
+            }
+
+            // see if doc exists
+            DocumentQuery query = new DocumentQuery().eq(idField.getName().toLowerCase(), idValue);
+            Map<String, Object> existing = dataAccess.findOne(meta.getEntityName(), query).join();
+            if (existing == null) {
+                // insert
+                dataAccess.insertOne(meta.getEntityName(), doc).join();
+            } else {
+                // update
+                DocumentUpdate update = new DocumentUpdate();
+                doc.forEach((k, v) -> update.set(k, v));
+                DocumentUpdateOptions opts = new DocumentUpdateOptions().upsert(true);
+                dataAccess.updateOne(meta.getEntityName(), query, update, opts).join();
             }
         });
     }
@@ -69,22 +71,29 @@ public class DocumentEntityManager implements EntityManager {
     @Override
     public <T> CompletableFuture<T> findById(Class<T> clazz, Object id) {
         return CompletableFuture.supplyAsync(() -> {
-            var meta = EntityIntrospector.introspect(clazz);
-            var query = new DocumentQuery().eq(meta.getIdField().getName(), id);
-            var doc = dataAccess.findOne(meta.getEntityName(), query).join();
-            if (doc == null) return null;
-            return EntityMapper.mapDocumentToEntity(doc, clazz, meta);
+            EntityMetadata meta = EntityIntrospector.introspect(clazz);
+            String idFieldName = meta.getIdField().getName().toLowerCase();
+            DocumentQuery query = new DocumentQuery().eq(idFieldName, id);
+
+            Map<String, Object> found = dataAccess.findOne(meta.getEntityName(), query).join();
+            if (found == null) return null;
+            T entity = EntityMapper.mapRowToEntity(found, clazz, meta);
+            EntityLifecycle.callPostLoad(entity);
+            return entity;
         });
     }
 
     @Override
     public <T> CompletableFuture<List<T>> findAll(Class<T> clazz) {
         return CompletableFuture.supplyAsync(() -> {
-            var meta = EntityIntrospector.introspect(clazz);
-            var docs = dataAccess.findMany(meta.getEntityName(), new DocumentQuery()).join();
+            EntityMetadata meta = EntityIntrospector.introspect(clazz);
+            // findAll => we do an empty query
+            List<Map<String,Object>> docs = dataAccess.findMany(meta.getEntityName(), new DocumentQuery()).join();
             List<T> result = new ArrayList<>();
-            for (var d : docs) {
-                result.add(EntityMapper.mapDocumentToEntity(d, clazz, meta));
+            for (var doc : docs) {
+                T entity = EntityMapper.mapRowToEntity(doc, clazz, meta);
+                EntityLifecycle.callPostLoad(entity);
+                result.add(entity);
             }
             return result;
         });
@@ -93,8 +102,9 @@ public class DocumentEntityManager implements EntityManager {
     @Override
     public <T> CompletableFuture<Void> deleteById(Class<T> clazz, Object id) {
         return CompletableFuture.runAsync(() -> {
-            var meta = EntityIntrospector.introspect(clazz);
-            var query = new DocumentQuery().eq(meta.getIdField().getName(), id);
+            EntityMetadata meta = EntityIntrospector.introspect(clazz);
+            String idFieldName = meta.getIdField().getName().toLowerCase();
+            DocumentQuery query = new DocumentQuery().eq(idFieldName, id);
             dataAccess.deleteOne(meta.getEntityName(), query).join();
         });
     }
