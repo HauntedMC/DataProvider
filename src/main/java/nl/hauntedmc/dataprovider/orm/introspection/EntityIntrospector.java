@@ -7,13 +7,19 @@ import nl.hauntedmc.dataprovider.orm.annotations.Id;
 import java.lang.reflect.Field;
 import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 
+/**
+ * This class now caches the introspected metadata to avoid repeated reflection.
+ * It also looks at superclass fields.
+ */
 public class EntityIntrospector {
+
+    private static final Map<Class<?>, EntityMetadata> cache = new ConcurrentHashMap<>();
 
     public static class EntityMetadata {
         private final Class<?> clazz;
         private final String entityName;
-
         private Field idField; // The field annotated with @Id
         private final Map<Field, FieldMapping> mappedFields = new LinkedHashMap<>();
 
@@ -44,36 +50,41 @@ public class EntityIntrospector {
     }
 
     /**
-     * Parses the entity class, extracts the @Entity name, @Id field, and all @FieldMapping fields.
+     * Parses the entity class, extracting the @Entity name, @Id field, and all @FieldMapping fields.
      */
     public static EntityMetadata introspect(Class<?> clazz) {
-        Entity entityAnno = clazz.getAnnotation(Entity.class);
-        if (entityAnno == null) {
-            throw new IllegalArgumentException("Class " + clazz.getName() + " is not annotated with @Entity");
-        }
-
-        String entityName = entityAnno.name().isEmpty()
-                ? clazz.getSimpleName().toLowerCase()
-                : entityAnno.name();
-
-        EntityMetadata meta = new EntityMetadata(clazz, entityName);
-
-        for (Field f : clazz.getDeclaredFields()) {
-            if (f.isAnnotationPresent(Id.class)) {
-                // The ID field
-                meta.setIdField(f);
-                f.setAccessible(true);
+        return cache.computeIfAbsent(clazz, clz -> {
+            Entity entityAnno = clz.getAnnotation(Entity.class);
+            if (entityAnno == null) {
+                throw new IllegalArgumentException("Class " + clz.getName() + " is not annotated with @Entity");
             }
-            FieldMapping fm = f.getAnnotation(FieldMapping.class);
-            if (fm != null) {
-                meta.getMappedFields().put(f, fm);
-                f.setAccessible(true);
-            }
-        }
 
-        if (meta.getIdField() == null) {
-            throw new IllegalStateException("No @Id field found in " + clazz.getName());
-        }
-        return meta;
+            String entityName = entityAnno.name().isEmpty()
+                    ? clz.getSimpleName().toLowerCase()
+                    : entityAnno.name();
+
+            EntityMetadata meta = new EntityMetadata(clz, entityName);
+
+            // Look at declared fields from this class and its superclasses
+            Class<?> current = clz;
+            while (current != null && current != Object.class) {
+                for (Field f : current.getDeclaredFields()) {
+                    if (f.isAnnotationPresent(Id.class) && meta.getIdField() == null) {
+                        meta.setIdField(f);
+                        f.setAccessible(true);
+                    }
+                    if (f.isAnnotationPresent(FieldMapping.class)) {
+                        meta.getMappedFields().put(f, f.getAnnotation(FieldMapping.class));
+                        f.setAccessible(true);
+                    }
+                }
+                current = current.getSuperclass();
+            }
+
+            if (meta.getIdField() == null) {
+                throw new IllegalStateException("No @Id field found in " + clz.getName());
+            }
+            return meta;
+        });
     }
 }
