@@ -1,7 +1,6 @@
-package nl.hauntedmc.dataprovider.database.config;
+package nl.hauntedmc.dataprovider.database;
 
 import nl.hauntedmc.dataprovider.DataProvider;
-import nl.hauntedmc.dataprovider.database.DatabaseType;
 import org.bukkit.configuration.file.FileConfiguration;
 import org.bukkit.configuration.file.YamlConfiguration;
 

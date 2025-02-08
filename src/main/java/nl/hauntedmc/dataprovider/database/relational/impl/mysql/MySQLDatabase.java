@@ -1,11 +1,11 @@
-package nl.hauntedmc.dataprovider.database.impl.mysql;
+package nl.hauntedmc.dataprovider.database.relational.impl.mysql;
 
 import com.zaxxer.hikari.HikariConfig;
 import com.zaxxer.hikari.HikariDataSource;
 import nl.hauntedmc.dataprovider.DataProvider;
-import nl.hauntedmc.dataprovider.database.DatabaseProvider;
-import nl.hauntedmc.dataprovider.database.access.DataAccess;
-import nl.hauntedmc.dataprovider.database.schema.SchemaManager;
+import nl.hauntedmc.dataprovider.database.relational.RelationalDataAccess;
+import nl.hauntedmc.dataprovider.database.relational.RelationalDatabaseProvider;
+import nl.hauntedmc.dataprovider.database.relational.schema.SchemaManager;
 import org.bukkit.configuration.file.FileConfiguration;
 
 import java.util.concurrent.ExecutorService;
@@ -16,13 +16,13 @@ import java.util.logging.Logger;
 /**
  * MySQL implementation of DatabaseProvider.
  */
-public class MySQLDatabase implements DatabaseProvider {
+public class MySQLDatabase implements RelationalDatabaseProvider {
 
     private final FileConfiguration config;
     private final Logger logger;
     private HikariDataSource dataSource;
     private ExecutorService executor;
-    private DataAccess dataAccess;
+    private RelationalDataAccess dataAccess;
     private SchemaManager schemaManager;
 
     public MySQLDatabase(FileConfiguration config) {
@@ -112,7 +112,7 @@ public class MySQLDatabase implements DatabaseProvider {
     }
 
     @Override
-    public DataAccess getDataAccess() {
+    public RelationalDataAccess getDataAccess() {
         if (dataAccess == null) {
             throw new IllegalStateException("[MySQLDatabase] DataAccess not initialized!");
         }

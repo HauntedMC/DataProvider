@@ -1,4 +1,4 @@
-package nl.hauntedmc.dataprovider.database.schema;
+package nl.hauntedmc.dataprovider.database.relational.schema;
 
 /**
  * Represents a single column in a table.

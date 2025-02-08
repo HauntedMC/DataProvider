@@ -1,4 +1,4 @@
-package nl.hauntedmc.dataprovider.database.access;
+package nl.hauntedmc.dataprovider.database.relational;
 
 import java.sql.Connection;
 

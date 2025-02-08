@@ -1,6 +1,6 @@
 package nl.hauntedmc.dataprovider.orm.adapters.sql;
 
-import nl.hauntedmc.dataprovider.database.access.DataAccess;
+import nl.hauntedmc.dataprovider.database.relational.RelationalDataAccess;
 import nl.hauntedmc.dataprovider.orm.adapters.StorageAdapter;
 
 import java.util.List;
@@ -9,9 +9,9 @@ import java.util.concurrent.CompletableFuture;
 import java.util.StringJoiner;
 
 public class MySQLStorageAdapter implements StorageAdapter {
-    private final DataAccess dataAccess;
+    private final RelationalDataAccess dataAccess;
 
-    public MySQLStorageAdapter(DataAccess dataAccess) {
+    public MySQLStorageAdapter(RelationalDataAccess dataAccess) {
         this.dataAccess = dataAccess;
     }
 

@@ -1,10 +1,10 @@
 package nl.hauntedmc.dataprovider;
 
 import nl.hauntedmc.dataprovider.config.MainConfigManager;
+import nl.hauntedmc.dataprovider.database.DatabaseConfigManager;
 import nl.hauntedmc.dataprovider.database.DatabaseFactory;
-import nl.hauntedmc.dataprovider.database.DatabaseProvider;
 import nl.hauntedmc.dataprovider.database.DatabaseType;
-import nl.hauntedmc.dataprovider.database.config.DatabaseConfigManager;
+import nl.hauntedmc.dataprovider.database.base.BaseDatabaseProvider;
 import org.bukkit.plugin.java.JavaPlugin;
 
 import java.util.Map;
@@ -21,8 +21,12 @@ public class DataProvider extends JavaPlugin {
     /**
      * Maps plugin names to their associated database connections.
      * Each plugin can have multiple database types (e.g., MySQL, MongoDB).
+     *
+     * Using the BaseDatabaseProvider interface allows us to store both
+     * relational (e.g. MySQL) and non-relational (e.g. Redis, MongoDB)
+     * implementations under one map.
      */
-    private final ConcurrentMap<String, ConcurrentMap<DatabaseType, DatabaseProvider>> activeDatabases
+    private final ConcurrentMap<String, ConcurrentMap<DatabaseType, BaseDatabaseProvider>> activeDatabases
             = new ConcurrentHashMap<>();
 
     @Override
@@ -68,9 +72,9 @@ public class DataProvider extends JavaPlugin {
      *
      * @param pluginName   The name of the requesting plugin.
      * @param databaseType The type of database to register.
-     * @return DatabaseProvider instance, or null if disabled or connection fails.
+     * @return BaseDatabaseProvider instance, or null if disabled or connection fails.
      */
-    public DatabaseProvider registerDatabase(String pluginName, DatabaseType databaseType) {
+    public BaseDatabaseProvider registerDatabase(String pluginName, DatabaseType databaseType) {
         // Check if this DatabaseType is enabled in config
         if (!mainConfigManager.isDatabaseTypeEnabled(databaseType)) {
             getLogger().warning("Database type " + databaseType.name() + " is disabled in config.yml.");
@@ -80,7 +84,7 @@ public class DataProvider extends JavaPlugin {
         // Ensure the map for pluginName exists
         activeDatabases.putIfAbsent(pluginName, new ConcurrentHashMap<>());
 
-        ConcurrentMap<DatabaseType, DatabaseProvider> pluginDatabases = activeDatabases.get(pluginName);
+        ConcurrentMap<DatabaseType, BaseDatabaseProvider> pluginDatabases = activeDatabases.get(pluginName);
 
         // If already registered, return the existing provider
         if (pluginDatabases.containsKey(databaseType)) {
@@ -89,8 +93,8 @@ public class DataProvider extends JavaPlugin {
         }
 
         try {
-            // Create the DatabaseProvider from our factory
-            DatabaseProvider databaseProvider = DatabaseFactory.createDatabaseProvider(databaseType);
+            // Create the provider from our factory
+            BaseDatabaseProvider databaseProvider = DatabaseFactory.createDatabaseProvider(databaseType);
             databaseProvider.connect();
 
             if (!databaseProvider.isConnected()) {
@@ -110,8 +114,12 @@ public class DataProvider extends JavaPlugin {
 
     /**
      * Retrieves an active database connection for a plugin.
+     *
+     * @param pluginName   The plugin that owns the connection
+     * @param databaseType The type of database (MySQL, MongoDB, etc.)
+     * @return The BaseDatabaseProvider if present, otherwise null
      */
-    public DatabaseProvider getDatabase(String pluginName, DatabaseType databaseType) {
+    public BaseDatabaseProvider getDatabase(String pluginName, DatabaseType databaseType) {
         return activeDatabases
                 .getOrDefault(pluginName, new ConcurrentHashMap<>())
                 .get(databaseType);
@@ -121,9 +129,9 @@ public class DataProvider extends JavaPlugin {
      * Unregisters (and disconnects) a specific database for a plugin.
      */
     public void unregisterDatabase(String pluginName, DatabaseType databaseType) {
-        ConcurrentMap<DatabaseType, DatabaseProvider> pluginDatabases = activeDatabases.get(pluginName);
+        ConcurrentMap<DatabaseType, BaseDatabaseProvider> pluginDatabases = activeDatabases.get(pluginName);
         if (pluginDatabases != null) {
-            DatabaseProvider provider = pluginDatabases.remove(databaseType);
+            BaseDatabaseProvider provider = pluginDatabases.remove(databaseType);
             if (provider != null) {
                 provider.disconnect();
                 getLogger().info(pluginName + " unregistered database: " + databaseType.name());
@@ -149,9 +157,9 @@ public class DataProvider extends JavaPlugin {
      * Closes all active database connections.
      */
     private void shutdownAllDatabases() {
-        for (Map.Entry<String, ConcurrentMap<DatabaseType, DatabaseProvider>> entry : activeDatabases.entrySet()) {
+        for (Map.Entry<String, ConcurrentMap<DatabaseType, BaseDatabaseProvider>> entry : activeDatabases.entrySet()) {
             String pluginName = entry.getKey();
-            for (Map.Entry<DatabaseType, DatabaseProvider> dbEntry : entry.getValue().entrySet()) {
+            for (Map.Entry<DatabaseType, BaseDatabaseProvider> dbEntry : entry.getValue().entrySet()) {
                 try {
                     dbEntry.getValue().disconnect();
                 } catch (Exception e) {

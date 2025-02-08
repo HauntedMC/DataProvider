@@ -1,4 +1,4 @@
-package nl.hauntedmc.dataprovider.database.schema;
+package nl.hauntedmc.dataprovider.database.relational.schema;
 
 import java.util.concurrent.CompletableFuture;
 

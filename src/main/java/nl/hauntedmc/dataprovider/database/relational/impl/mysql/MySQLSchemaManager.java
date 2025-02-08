@@ -1,9 +1,9 @@
-package nl.hauntedmc.dataprovider.database.impl.mysql;
+package nl.hauntedmc.dataprovider.database.relational.impl.mysql;
 
 import com.zaxxer.hikari.HikariDataSource;
-import nl.hauntedmc.dataprovider.database.schema.ColumnDefinition;
-import nl.hauntedmc.dataprovider.database.schema.SchemaManager;
-import nl.hauntedmc.dataprovider.database.schema.TableDefinition;
+import nl.hauntedmc.dataprovider.database.relational.schema.ColumnDefinition;
+import nl.hauntedmc.dataprovider.database.relational.schema.SchemaManager;
+import nl.hauntedmc.dataprovider.database.relational.schema.TableDefinition;
 
 import java.sql.*;
 import java.util.concurrent.CompletableFuture;

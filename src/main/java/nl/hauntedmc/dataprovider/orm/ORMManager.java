@@ -1,6 +1,6 @@
 package nl.hauntedmc.dataprovider.orm;
 
-import nl.hauntedmc.dataprovider.database.DatabaseProvider;
+import nl.hauntedmc.dataprovider.database.base.BaseDatabaseProvider;
 import nl.hauntedmc.dataprovider.database.DatabaseType;
 import nl.hauntedmc.dataprovider.orm.adapters.StorageAdapter;
 import nl.hauntedmc.dataprovider.orm.adapters.StorageAdapterFactory;
@@ -21,7 +21,7 @@ public class ORMManager {
      * @param databaseType The type of database (MYSQL, MONGODB, etc.).
      * @param logger Bukkit/Java Logger for logging.
      */
-    public ORMManager(DatabaseProvider databaseProvider, DatabaseType databaseType, Logger logger) {
+    public ORMManager(BaseDatabaseProvider databaseProvider, DatabaseType databaseType, Logger logger) {
         this.logger = logger;
 
         // Automatically determine the correct StorageAdapter
