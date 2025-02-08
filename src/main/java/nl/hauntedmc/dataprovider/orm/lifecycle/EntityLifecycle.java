@@ -40,19 +40,23 @@ public class EntityLifecycle {
         invokeAnnotatedMethods(entity, PostDelete.class);
     }
 
-    // ---------------------------------------------------------------------
-    // Helper to reflect and invoke methods on the entity with given annotation
-    // ---------------------------------------------------------------------
-    private static void invokeAnnotatedMethods(Object entity, Class<?> annotationClass) {
-        Method[] methods = entity.getClass().getDeclaredMethods();
-        for (Method m : methods) {
-            if (m.isAnnotationPresent((Class) annotationClass)) {
+    /**
+     * Invokes all methods on the entity that are annotated with the given annotation.
+     * Each such method is required to have no parameters.
+     */
+    private static <A extends java.lang.annotation.Annotation> void invokeAnnotatedMethods(Object entity, Class<A> annotationClass) {
+        for (Method m : entity.getClass().getDeclaredMethods()) {
+            if (m.isAnnotationPresent(annotationClass)) {
+                if (m.getParameterCount() != 0) {
+                    throw new IllegalStateException("Method " + m.getName() + " annotated with @"
+                            + annotationClass.getSimpleName() + " must have no parameters.");
+                }
                 try {
                     m.setAccessible(true);
                     m.invoke(entity);
                 } catch (Exception e) {
-                    throw new RuntimeException("Error calling @" + annotationClass.getSimpleName()
-                            + " on " + entity.getClass().getSimpleName(), e);
+                    throw new RuntimeException("Error calling @" + annotationClass.getSimpleName() +
+                            " on " + entity.getClass().getSimpleName(), e);
                 }
             }
         }

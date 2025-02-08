@@ -5,7 +5,7 @@ package nl.hauntedmc.dataprovider.orm.dialect;
  */
 public interface SQLDialect {
     /**
-     * Returns the quote string to wrap SQL identifiers (e.g. backtick for MySQL or double quote for PostgreSQL).
+     * Returns the quote string to wrap SQL identifiers.
      */
     String getIdentifierQuoteString();
 

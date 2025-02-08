@@ -20,17 +20,15 @@ public class EntityMapper {
             Field idField = meta.getIdField();
             Object idVal = idField.get(entity);
 
-            // if name() not in FieldMapping, default is the field name (lowercased).
-            String idName = getFieldName(idField);
+            // Use getDatabaseFieldName to ensure proper mapping (including custom names)
+            String idName = getDatabaseFieldName(idField);
             result.put(idName, idVal);
 
-            // other fields
+            // Other fields
             for (Map.Entry<Field, FieldMapping> e : meta.getMappedFields().entrySet()) {
                 Field f = e.getKey();
-                // skip if it's the same as idField
                 if (f == idField) continue;
-
-                String colName = getFieldName(f);
+                String colName = getDatabaseFieldName(f);
                 Object val = f.get(entity);
                 result.put(colName, val);
             }
@@ -48,19 +46,18 @@ public class EntityMapper {
         try {
             T instance = clazz.getDeclaredConstructor().newInstance();
 
-            // ID
+            // Map the ID field
             Field idField = meta.getIdField();
-            Object rawId = data.get(getFieldName(idField));
+            Object rawId = data.get(getDatabaseFieldName(idField));
             if (rawId != null) {
                 setFieldValue(idField, instance, rawId);
             }
 
-            // other fields
+            // Map other fields
             for (Map.Entry<Field, FieldMapping> e : meta.getMappedFields().entrySet()) {
                 Field f = e.getKey();
                 if (f == idField) continue;
-
-                Object rawVal = data.get(getFieldName(f));
+                Object rawVal = data.get(getDatabaseFieldName(f));
                 if (rawVal != null) {
                     setFieldValue(f, instance, rawVal);
                 }
@@ -71,12 +68,15 @@ public class EntityMapper {
         }
     }
 
-    private static String getFieldName(Field f) {
+    /**
+     * Returns the database field name for the given field.
+     * If the FieldMapping annotation specifies a name, use it; otherwise, fallback to the field name in lower case.
+     */
+    public static String getDatabaseFieldName(Field f) {
         FieldMapping fm = f.getAnnotation(FieldMapping.class);
         if (fm != null && !fm.name().isEmpty()) {
             return fm.name();
         }
-        // fallback: field name in lower case
         return f.getName().toLowerCase();
     }
 
@@ -97,7 +97,6 @@ public class EntityMapper {
         } else if ((targetType == double.class || targetType == Double.class) && rawValue instanceof Number) {
             field.set(instance, ((Number) rawValue).doubleValue());
         } else if (targetType == boolean.class || targetType == Boolean.class) {
-            // if raw is Number, interpret 0/1
             if (rawValue instanceof Boolean) {
                 field.set(instance, rawValue);
             } else if (rawValue instanceof Number) {
@@ -106,7 +105,6 @@ public class EntityMapper {
                 field.set(instance, Boolean.parseBoolean(rawValue.toString()));
             }
         } else {
-            // fallback
             field.set(instance, rawValue);
         }
     }

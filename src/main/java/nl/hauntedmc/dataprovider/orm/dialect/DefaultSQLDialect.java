@@ -8,8 +8,8 @@ public class DefaultSQLDialect implements SQLDialect {
 
     @Override
     public String getIdentifierQuoteString() {
-        // For example, use backticks for MySQL/MariaDB or double quotes for PostgreSQL.
-        return "\""; // Change this if needed.
+        // Default to double quotes; adjust as needed (e.g., backticks for MySQL/MariaDB).
+        return "\"";
     }
 
     @Override

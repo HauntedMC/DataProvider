@@ -4,7 +4,7 @@ import java.util.List;
 import java.util.concurrent.CompletableFuture;
 
 /**
- * Common interface for storing & retrieving entities, either relational or doc-based.
+ * Common interface for storing & retrieving entities, either relational or document-based.
  */
 public interface EntityManager {
 

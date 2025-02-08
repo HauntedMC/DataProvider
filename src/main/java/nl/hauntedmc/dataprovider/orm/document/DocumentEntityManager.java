@@ -35,8 +35,9 @@ public class DocumentEntityManager implements EntityManager {
         }
         boolean isInsert = (idVal == null);
         CompletableFuture<Boolean> existenceFuture;
+        String idFieldName = EntityMapper.getDatabaseFieldName(idField);
         if (!isInsert) {
-            DocumentQuery query = new DocumentQuery().eq(idField.getName().toLowerCase(), idVal);
+            DocumentQuery query = new DocumentQuery().eq(idFieldName, idVal);
             existenceFuture = dataAccess.findOne(meta.getEntityName(), query)
                     .thenApply(doc -> doc == null);
         } else {
@@ -55,7 +56,7 @@ public class DocumentEntityManager implements EntityManager {
                     } catch (IllegalAccessException e) {
                         return CompletableFuture.failedFuture(e);
                     }
-                    doc.put(idField.getName().toLowerCase(), effectiveId);
+                    doc.put(idFieldName, effectiveId);
                 } else {
                     effectiveId = idVal;
                 }
@@ -63,7 +64,7 @@ public class DocumentEntityManager implements EntityManager {
                         .thenRun(() -> EntityLifecycle.callPostInsert(entity));
             } else {
                 EntityLifecycle.callPreUpdate(entity);
-                DocumentQuery query = new DocumentQuery().eq(idField.getName().toLowerCase(), idVal);
+                DocumentQuery query = new DocumentQuery().eq(idFieldName, idVal);
                 DocumentUpdate update = new DocumentUpdate();
                 doc.forEach(update::set);
                 DocumentUpdateOptions opts = new DocumentUpdateOptions().upsert(false);
@@ -76,7 +77,7 @@ public class DocumentEntityManager implements EntityManager {
     @Override
     public <T> CompletableFuture<T> findById(Class<T> clazz, Object id) {
         EntityMetadata meta = EntityIntrospector.introspect(clazz);
-        String idFieldName = meta.getIdField().getName().toLowerCase();
+        String idFieldName = EntityMapper.getDatabaseFieldName(meta.getIdField());
         DocumentQuery query = new DocumentQuery().eq(idFieldName, id);
         return dataAccess.findOne(meta.getEntityName(), query)
                 .thenApply(doc -> {
@@ -109,7 +110,7 @@ public class DocumentEntityManager implements EntityManager {
             if (entity == null) return CompletableFuture.completedFuture(null);
             EntityLifecycle.callPreDelete(entity);
             EntityMetadata meta = EntityIntrospector.introspect(clazz);
-            String idFieldName = meta.getIdField().getName().toLowerCase();
+            String idFieldName = EntityMapper.getDatabaseFieldName(meta.getIdField());
             DocumentQuery query = new DocumentQuery().eq(idFieldName, id);
             return dataAccess.deleteOne(meta.getEntityName(), query)
                     .thenRun(() -> EntityLifecycle.callPostDelete(entity));

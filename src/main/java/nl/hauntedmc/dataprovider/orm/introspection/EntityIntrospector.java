@@ -10,8 +10,7 @@ import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
- * This class now caches the introspected metadata to avoid repeated reflection.
- * It also looks at superclass fields.
+ * This class caches introspected metadata and looks at superclass fields.
  */
 public class EntityIntrospector {
 
@@ -65,7 +64,7 @@ public class EntityIntrospector {
 
             EntityMetadata meta = new EntityMetadata(clz, entityName);
 
-            // Look at declared fields from this class and its superclasses
+            // Traverse class hierarchy
             Class<?> current = clz;
             while (current != null && current != Object.class) {
                 for (Field f : current.getDeclaredFields()) {

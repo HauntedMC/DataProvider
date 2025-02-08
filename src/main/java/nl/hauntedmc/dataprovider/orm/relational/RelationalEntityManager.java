@@ -22,7 +22,7 @@ public class RelationalEntityManager implements EntityManager {
 
     public RelationalEntityManager(RelationalDataAccess dataAccess) {
         this.dataAccess = dataAccess;
-        this.dialect = new DefaultSQLDialect();
+        this.dialect = new DefaultSQLDialect(); // Can be injected/configured as needed.
     }
 
     @Override
@@ -36,7 +36,8 @@ public class RelationalEntityManager implements EntityManager {
             return CompletableFuture.failedFuture(e);
         }
 
-        String pkCol = quote(idField.getName().toLowerCase());
+        // Use the centralized method to obtain the correct column name.
+        String pkCol = quote(EntityMapper.getDatabaseFieldName(idField));
         String checkSql = "SELECT 1 FROM " + quote(meta.getEntityName()) +
                 " WHERE " + pkCol + "=? " + dialect.getLimitClause(1);
 
@@ -61,7 +62,7 @@ public class RelationalEntityManager implements EntityManager {
                         return future;
                     });
         } else {
-            // id is null, assume insert
+            // ID is null; assume insert.
             EntityLifecycle.callPreInsert(entity);
             Map<String, Object> row = EntityMapper.entityToMap(entity, meta);
             return insertRow(meta, row)
@@ -73,7 +74,7 @@ public class RelationalEntityManager implements EntityManager {
     public <T> CompletableFuture<T> findById(Class<T> clazz, Object id) {
         EntityMetadata meta = EntityIntrospector.introspect(clazz);
         Field idField = meta.getIdField();
-        String pkCol = quote(idField.getName().toLowerCase());
+        String pkCol = quote(EntityMapper.getDatabaseFieldName(idField));
 
         String sql = "SELECT * FROM " + quote(meta.getEntityName()) +
                 " WHERE " + pkCol + "=? " + dialect.getLimitClause(1);
@@ -109,7 +110,7 @@ public class RelationalEntityManager implements EntityManager {
             EntityLifecycle.callPreDelete(existing);
             EntityMetadata meta = EntityIntrospector.introspect(clazz);
             Field idField = meta.getIdField();
-            String pkCol = quote(idField.getName().toLowerCase());
+            String pkCol = quote(EntityMapper.getDatabaseFieldName(idField));
             String sql = "DELETE FROM " + quote(meta.getEntityName()) +
                     " WHERE " + pkCol + "=?";
             return dataAccess.executeUpdate(sql, id)
@@ -119,8 +120,6 @@ public class RelationalEntityManager implements EntityManager {
 
     /**
      * Runs multiple ORM operations within one transaction.
-     * The work function now returns a CompletableFuture so that the entire chain stays asynchronous.
-     *
      * Example:
      * <pre>
      *   entityManager.runInTransaction(em -> {
@@ -128,7 +127,6 @@ public class RelationalEntityManager implements EntityManager {
      *                .thenCompose(v -> em.save(player2));
      *   });
      * </pre>
-     *
      * @param work A function accepting this EntityManager and returning a CompletableFuture.
      * @param <T>  The type of the result.
      * @return A CompletableFuture with the result.
@@ -165,8 +163,9 @@ public class RelationalEntityManager implements EntityManager {
     private CompletableFuture<Void> updateRow(EntityMetadata meta, Map<String, Object> row) {
         String tableName = quote(meta.getEntityName());
         Field idField = meta.getIdField();
-        String idCol = quote(idField.getName().toLowerCase());
-        Object idVal = row.remove(idField.getName().toLowerCase()); // Remove ID from update values
+        String idKey = EntityMapper.getDatabaseFieldName(idField);
+        String idCol = quote(idKey);
+        Object idVal = row.remove(idKey); // Remove ID from update values
 
         List<Object> params = new ArrayList<>();
         String setClause = row.entrySet().stream()
