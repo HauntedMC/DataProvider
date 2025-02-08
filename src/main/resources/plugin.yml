@@ -3,3 +3,7 @@ main: ${project.groupId}.${project.name}
 version: ${project.version}
 author: HauntedMC
 api-version: 1.19
+commands:
+  dataprovider:
+    description: Displays status of active database connections.
+    usage: /dataprovider <status>

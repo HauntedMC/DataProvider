@@ -1,6 +1,7 @@
 package nl.hauntedmc.dataprovider;
 
 import nl.hauntedmc.dataprovider.config.MainConfigManager;
+import nl.hauntedmc.dataprovider.command.DataProviderCommand;
 import nl.hauntedmc.dataprovider.database.DatabaseConfigManager;
 import nl.hauntedmc.dataprovider.database.DatabaseFactory;
 import nl.hauntedmc.dataprovider.database.DatabaseType;
@@ -8,6 +9,7 @@ import nl.hauntedmc.dataprovider.database.base.BaseDatabaseProvider;
 import org.bukkit.plugin.java.JavaPlugin;
 
 import java.util.Map;
+import java.util.Objects;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 import java.util.logging.Level;
@@ -38,6 +40,11 @@ public class DataProvider extends JavaPlugin {
         this.databaseConfigManager = new DatabaseConfigManager(this);
 
         getLogger().info("[DataProvider] Enabled (v" + getDescription().getVersion() + ").");
+
+        // Register the /dataprovider command and its tab completer
+        DataProviderCommand commandExecutor = new DataProviderCommand();
+        Objects.requireNonNull(getCommand("dataprovider")).setExecutor(commandExecutor);
+        Objects.requireNonNull(getCommand("dataprovider")).setTabCompleter(commandExecutor);
     }
 
     @Override
@@ -65,6 +72,14 @@ public class DataProvider extends JavaPlugin {
      */
     public DatabaseConfigManager getDatabaseConfigManager() {
         return databaseConfigManager;
+    }
+
+
+    /**
+     * Returns the active Databases.
+     */
+    public ConcurrentMap<String, ConcurrentMap<DatabaseType, BaseDatabaseProvider>> getActiveDatabases() {
+        return activeDatabases;
     }
 
     /**
