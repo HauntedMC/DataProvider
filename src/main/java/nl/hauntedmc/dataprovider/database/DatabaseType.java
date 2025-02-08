@@ -8,7 +8,10 @@ public enum DatabaseType {
     MARIADB("mariadb.yml"),
     POSTGRES("postgres.yml"),
     MONGODB("mongodb.yml"),
-    REDIS("redis.yml");
+    REDIS("redis.yml"),
+    RABBITMQ("rabbitmq.yml"),
+    KAFKA("kafka.yml"),
+    REDIS_MESSAGING("redis_messaging.yml");
 
     private final String configFileName;
 

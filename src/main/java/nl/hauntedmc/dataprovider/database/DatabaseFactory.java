@@ -7,6 +7,9 @@ import nl.hauntedmc.dataprovider.database.keyvalue.impl.redis.RedisDatabase;
 import nl.hauntedmc.dataprovider.database.relational.impl.mysql.MySQLDatabase;
 import nl.hauntedmc.dataprovider.database.relational.impl.mariadb.MariaDBDatabase;
 import nl.hauntedmc.dataprovider.database.relational.impl.postgresql.PostgreSQLDatabase;
+import nl.hauntedmc.dataprovider.database.messaging.impl.rabbitmq.RabbitMQMessagingDatabase;
+import nl.hauntedmc.dataprovider.database.messaging.impl.kafka.KafkaMessagingDatabase;
+import nl.hauntedmc.dataprovider.database.messaging.impl.redis.RedisMessagingDatabase;
 import org.bukkit.configuration.file.FileConfiguration;
 
 /**
@@ -24,6 +27,9 @@ public class DatabaseFactory {
             case POSTGRES -> new PostgreSQLDatabase(config);
             case MONGODB -> new MongoDBDatabase(config);
             case REDIS -> new RedisDatabase(config);
+            case RABBITMQ -> new RabbitMQMessagingDatabase(config);
+            case KAFKA -> new KafkaMessagingDatabase(config);
+            case REDIS_MESSAGING -> new RedisMessagingDatabase(config);
         };
     }
 }

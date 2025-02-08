@@ -4,7 +4,7 @@
   <groupId>nl.hauntedmc.dataprovider</groupId>
   <artifactId>dataprovider</artifactId>
   <name>DataProvider</name>
-  <version>1.6.0</version>
+  <version>1.7.0</version>
   <url>http://maven.apache.org</url>
   <build>
     <resources>
@@ -61,12 +61,6 @@
     </repository>
   </repositories>
   <dependencies>
-    <dependency>
-      <groupId>mysql</groupId>
-      <artifactId>mysql-connector-java</artifactId>
-      <version>8.0.33</version>
-      <scope>compile</scope>
-    </dependency>
     <dependency>
       <groupId>io.papermc.paper</groupId>
       <artifactId>paper-api</artifactId>

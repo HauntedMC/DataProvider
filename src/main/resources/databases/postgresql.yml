@@ -1,6 +1,6 @@
 host: localhost
-port: 3306
+port: 5432
 database: minecraft
-username: root
+username: postgres
 password: ""
 pool_size: 10

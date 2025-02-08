@@ -1,7 +1,7 @@
-host: "localhost"
+host: localhost
 port: 27017
-database: "minecraft"
+database: minecraft
 username: ""
 password: ""
-authSource: "admin"  # or "minecraft", depending on your setup
-pool_size: 10
+authSource: minecraft
+pool_size: 8
