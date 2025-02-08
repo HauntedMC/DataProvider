@@ -17,9 +17,9 @@ public class DatabaseFactory {
         FileConfiguration config = configManager.getConfig(type);
 
         return switch (type) {
-            case MYSQL -> new MySQLDatabase(config);   // implements RelationalDatabaseProvider
-            case MONGODB -> new MongoDBDatabase(config); // implements NoSQLDatabaseProvider
-            case REDIS -> new RedisDatabase(config);     // implements NoSQLDatabaseProvider
+            case MYSQL -> new MySQLDatabase(config);
+            case MONGODB -> new MongoDBDatabase(config);
+            case REDIS -> new RedisDatabase(config);
         };
     }
 }

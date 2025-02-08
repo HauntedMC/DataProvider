@@ -5,12 +5,15 @@ import nl.hauntedmc.dataprovider.database.relational.schema.ColumnDefinition;
 import nl.hauntedmc.dataprovider.database.relational.schema.SchemaManager;
 import nl.hauntedmc.dataprovider.database.relational.schema.TableDefinition;
 
-import java.sql.*;
+import java.sql.Connection;
+import java.sql.PreparedStatement;
+import java.sql.ResultSet;
+import java.sql.SQLException;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
 
 /**
- * Handles schema operations (DDL) for MySQL.
+ * Handles schema (DDL) operations for MySQL.
  */
 public class MySQLSchemaManager implements SchemaManager {
 
@@ -80,7 +83,7 @@ public class MySQLSchemaManager implements SchemaManager {
     @Override
     public CompletableFuture<Void> dropTable(String tableName) {
         return CompletableFuture.runAsync(() -> {
-            String query = "DROP TABLE IF EXISTS " + tableName;
+            final String query = "DROP TABLE IF EXISTS " + tableName;
             try (Connection connection = dataSource.getConnection();
                  PreparedStatement stmt = connection.prepareStatement(query)) {
                 stmt.executeUpdate();
@@ -93,11 +96,7 @@ public class MySQLSchemaManager implements SchemaManager {
     @Override
     public CompletableFuture<Boolean> tableExists(String tableName) {
         return CompletableFuture.supplyAsync(() -> {
-            String query = """
-                    SELECT COUNT(*)
-                    FROM information_schema.tables
-                    WHERE table_schema = DATABASE() AND table_name = ?
-                    """;
+            final String query = "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = DATABASE() AND table_name = ?";
             try (Connection connection = dataSource.getConnection();
                  PreparedStatement stmt = connection.prepareStatement(query)) {
                 stmt.setString(1, tableName);
@@ -117,9 +116,9 @@ public class MySQLSchemaManager implements SchemaManager {
     @Override
     public CompletableFuture<Void> addIndex(String tableName, String column, boolean unique) {
         return CompletableFuture.runAsync(() -> {
-            String indexType = unique ? "UNIQUE " : "";
-            String indexName = "idx_" + column;
-            String query = "CREATE " + indexType + "INDEX " + indexName + " ON " + tableName + " (" + column + ")";
+            final String indexType = unique ? "UNIQUE " : "";
+            final String indexName = "idx_" + column;
+            final String query = "CREATE " + indexType + "INDEX " + indexName + " ON " + tableName + " (" + column + ")";
             try (Connection connection = dataSource.getConnection();
                  PreparedStatement stmt = connection.prepareStatement(query)) {
                 stmt.executeUpdate();
@@ -132,7 +131,7 @@ public class MySQLSchemaManager implements SchemaManager {
     @Override
     public CompletableFuture<Void> removeIndex(String tableName, String indexName) {
         return CompletableFuture.runAsync(() -> {
-            String query = "DROP INDEX " + indexName + " ON " + tableName;
+            final String query = "DROP INDEX " + indexName + " ON " + tableName;
             try (Connection connection = dataSource.getConnection();
                  PreparedStatement stmt = connection.prepareStatement(query)) {
                 stmt.executeUpdate();
@@ -145,8 +144,8 @@ public class MySQLSchemaManager implements SchemaManager {
     @Override
     public CompletableFuture<Void> addForeignKey(String table, String column, String referenceTable, String referenceColumn) {
         return CompletableFuture.runAsync(() -> {
-            String constraintName = "fk_" + table + "_" + column;
-            String query = "ALTER TABLE " + table + " ADD CONSTRAINT " + constraintName +
+            final String constraintName = "fk_" + table + "_" + column;
+            final String query = "ALTER TABLE " + table + " ADD CONSTRAINT " + constraintName +
                     " FOREIGN KEY (" + column + ") REFERENCES " + referenceTable + " (" + referenceColumn + ")";
             try (Connection connection = dataSource.getConnection();
                  PreparedStatement stmt = connection.prepareStatement(query)) {
@@ -160,7 +159,7 @@ public class MySQLSchemaManager implements SchemaManager {
     @Override
     public CompletableFuture<Void> removeForeignKey(String table, String constraintName) {
         return CompletableFuture.runAsync(() -> {
-            String query = "ALTER TABLE " + table + " DROP FOREIGN KEY " + constraintName;
+            final String query = "ALTER TABLE " + table + " DROP FOREIGN KEY " + constraintName;
             try (Connection connection = dataSource.getConnection();
                  PreparedStatement stmt = connection.prepareStatement(query)) {
                 stmt.executeUpdate();

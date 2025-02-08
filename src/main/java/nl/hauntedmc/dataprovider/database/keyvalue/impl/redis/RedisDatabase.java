@@ -11,12 +11,7 @@ import java.util.concurrent.Executors;
 import java.util.logging.Logger;
 
 /**
- * RedisDatabase implements KeyValueDatabaseProvider, managing:
- *  - A JedisPool for connections
- *  - An ExecutorService for async tasks
- *  - A RedisDataAccess for actual read/write ops
- *
- * This lets us store data in Redis without blocking the main thread.
+ * RedisDatabase implements KeyValueDatabaseProvider, managing a JedisPool and an ExecutorService.
  */
 public class RedisDatabase implements KeyValueDatabaseProvider {
 
@@ -27,19 +22,13 @@ public class RedisDatabase implements KeyValueDatabaseProvider {
     private ExecutorService executor;
     private RedisDataAccess dataAccess;
 
-    private boolean connected = false;
+    private boolean connected;
 
-    /**
-     * Constructor using FileConfiguration from "redis.yml"
-     */
     public RedisDatabase(FileConfiguration config, Logger logger) {
         this.config = config;
         this.logger = logger;
     }
 
-    /**
-     * Convenience constructor if you don't want to pass a logger separately.
-     */
     public RedisDatabase(FileConfiguration config) {
         this(config, Logger.getLogger("RedisDatabase"));
     }
@@ -47,37 +36,30 @@ public class RedisDatabase implements KeyValueDatabaseProvider {
     @Override
     public void connect() {
         if (connected && jedisPool != null) {
-            logger.info("[RedisDatabase] Already connected; skipping re-initialization.");
+            logger.info("[RedisDatabase] Already connected; skipping re–initialization.");
             return;
         }
         try {
-            // Read config
-            String host = config.getString("host", "localhost");
-            int port = config.getInt("port", 6379);
-            String password = config.getString("password", null);
-            int databaseIndex = config.getInt("database", 0);
+            final String host = config.getString("host", "localhost");
+            final int port = config.getInt("port", 6379);
+            final String password = config.getString("password", null);
+            final int databaseIndex = config.getInt("database", 0);
+            final int poolSize = config.getInt("pool_size", 8);
 
-            // Pool size
-            int poolSize = config.getInt("pool_size", 8);
             JedisPoolConfig poolConfig = new JedisPoolConfig();
             poolConfig.setMaxTotal(poolSize);
 
-            // Create JedisPool
             if (password != null && !password.isEmpty()) {
                 jedisPool = new JedisPool(poolConfig, host, port, 2000, password, databaseIndex);
             } else {
                 jedisPool = new JedisPool(poolConfig, host, port, 2000, null, databaseIndex);
             }
 
-            // Executor for async
             executor = Executors.newFixedThreadPool(poolSize);
-
-            // DataAccess
             dataAccess = new RedisDataAccess(jedisPool, executor);
 
             connected = true;
-            logger.info("[RedisDatabase] Connected to Redis at " + host + ":" + port
-                    + " (DB " + databaseIndex + "), poolSize=" + poolSize);
+            logger.info(String.format("[RedisDatabase] Connected to Redis at %s:%d (DB %d), poolSize=%d", host, port, databaseIndex, poolSize));
         } catch (Exception e) {
             logger.severe("[RedisDatabase] Connection failed: " + e.getMessage());
             e.printStackTrace();

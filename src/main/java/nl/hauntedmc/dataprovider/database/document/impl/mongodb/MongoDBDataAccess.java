@@ -12,14 +12,16 @@ import nl.hauntedmc.dataprovider.database.document.model.DocumentUpdateOptions;
 import org.bson.Document;
 import org.bson.conversions.Bson;
 
-import java.util.*;
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
 
 /**
- * MongoDBDataAccess:
- * Converts our custom "DocumentQuery", "DocumentUpdate", etc. into
- * MongoDB Bson objects. Also does everything asynchronously via ExecutorService.
+ * MongoDBDataAccess converts our custom DSL objects into MongoDB Bson objects
+ * and performs asynchronous operations via an ExecutorService.
  */
 public class MongoDBDataAccess implements DocumentDataAccess {
 
@@ -41,46 +43,31 @@ public class MongoDBDataAccess implements DocumentDataAccess {
         return getDatabase().getCollection(collection);
     }
 
-    // ----------------------------------------------------------------
-    // Convert from user-defined DSL to Bson
-    // ----------------------------------------------------------------
-
     private Bson toBsonQuery(DocumentQuery query) {
-        // E.g. the user stored everything in a Map<String,Object>.
-        // We'll convert that map to a Mongo Document, which implements Bson.
         return new Document(query.toMap());
     }
 
     private Bson toBsonUpdate(DocumentUpdate update) {
-        // The user has a top-level map like { "$set": {...}, "$inc": {...} }.
         return new Document(update.toMap());
     }
 
     private UpdateOptions toMongoUpdateOptions(DocumentUpdateOptions opts) {
-        UpdateOptions res = new UpdateOptions();
-        res.upsert(opts.isUpsert());
-        return res;
+        return new UpdateOptions().upsert(opts.isUpsert());
     }
 
     private Document toMongoDocument(Map<String, Object> doc) {
-        // Convert a Map to a Document
         return new Document(doc);
     }
 
-    // ----------------------------------------------------------------
-    // 1) insertOne
-    // ----------------------------------------------------------------
+    private Map<String, Object> documentToMap(Document doc) {
+        return new LinkedHashMap<>(doc);
+    }
 
     @Override
     public CompletableFuture<Void> insertOne(String collection, Map<String, Object> document) {
-        return CompletableFuture.runAsync(() -> {
-            getCollection(collection).insertOne(toMongoDocument(document));
-        }, executor);
+        return CompletableFuture.runAsync(() ->
+                getCollection(collection).insertOne(toMongoDocument(document)), executor);
     }
-
-    // ----------------------------------------------------------------
-    // 2) findOne
-    // ----------------------------------------------------------------
 
     @Override
     public CompletableFuture<Map<String, Object>> findOne(String collection, DocumentQuery query) {
@@ -88,15 +75,9 @@ public class MongoDBDataAccess implements DocumentDataAccess {
             Document found = getCollection(collection)
                     .find(toBsonQuery(query))
                     .first();
-            if (found == null) return null;
-            // Convert Document back to Map
-            return documentToMap(found);
+            return (found != null) ? documentToMap(found) : null;
         }, executor);
     }
-
-    // ----------------------------------------------------------------
-    // 3) findMany
-    // ----------------------------------------------------------------
 
     @Override
     public CompletableFuture<List<Map<String, Object>>> findMany(String collection, DocumentQuery query) {
@@ -109,126 +90,60 @@ public class MongoDBDataAccess implements DocumentDataAccess {
         }, executor);
     }
 
-    // ----------------------------------------------------------------
-    // 4) updateOne
-    // ----------------------------------------------------------------
-
     @Override
-    public CompletableFuture<Void> updateOne(String collection,
-                                             DocumentQuery query,
-                                             DocumentUpdate update,
-                                             DocumentUpdateOptions options) {
-        return CompletableFuture.runAsync(() -> {
-            getCollection(collection)
-                    .updateOne(
-                            toBsonQuery(query),
-                            toBsonUpdate(update),
-                            toMongoUpdateOptions(options)
-                    );
-        }, executor);
+    public CompletableFuture<Void> updateOne(String collection, DocumentQuery query, DocumentUpdate update, DocumentUpdateOptions options) {
+        return CompletableFuture.runAsync(() ->
+                getCollection(collection)
+                        .updateOne(toBsonQuery(query), toBsonUpdate(update), toMongoUpdateOptions(options)), executor);
     }
 
-    // ----------------------------------------------------------------
-    // 5) updateMany
-    // ----------------------------------------------------------------
-
     @Override
-    public CompletableFuture<Void> updateMany(String collection,
-                                              DocumentQuery query,
-                                              DocumentUpdate update,
-                                              DocumentUpdateOptions options) {
-        return CompletableFuture.runAsync(() -> {
-            getCollection(collection)
-                    .updateMany(
-                            toBsonQuery(query),
-                            toBsonUpdate(update),
-                            toMongoUpdateOptions(options)
-                    );
-        }, executor);
+    public CompletableFuture<Void> updateMany(String collection, DocumentQuery query, DocumentUpdate update, DocumentUpdateOptions options) {
+        return CompletableFuture.runAsync(() ->
+                getCollection(collection)
+                        .updateMany(toBsonQuery(query), toBsonUpdate(update), toMongoUpdateOptions(options)), executor);
     }
-
-    // ----------------------------------------------------------------
-    // 6) deleteOne
-    // ----------------------------------------------------------------
 
     @Override
     public CompletableFuture<Void> deleteOne(String collection, DocumentQuery query) {
-        return CompletableFuture.runAsync(() -> {
-            getCollection(collection).deleteOne(toBsonQuery(query));
-        }, executor);
+        return CompletableFuture.runAsync(() ->
+                getCollection(collection).deleteOne(toBsonQuery(query)), executor);
     }
-
-    // ----------------------------------------------------------------
-    // 7) deleteMany
-    // ----------------------------------------------------------------
 
     @Override
     public CompletableFuture<Void> deleteMany(String collection, DocumentQuery query) {
-        return CompletableFuture.runAsync(() -> {
-            getCollection(collection).deleteMany(toBsonQuery(query));
-        }, executor);
+        return CompletableFuture.runAsync(() ->
+                getCollection(collection).deleteMany(toBsonQuery(query)), executor);
     }
 
-    // ----------------------------------------------------------------
-    // 8) createIndex
-    // ----------------------------------------------------------------
-
     @Override
-    public CompletableFuture<Void> createIndex(String collection,
-                                               Map<String, Object> indexSpec,
-                                               Map<String, Object> indexOptions) {
+    public CompletableFuture<Void> createIndex(String collection, Map<String, Object> indexSpec, Map<String, Object> indexOptions) {
         return CompletableFuture.runAsync(() -> {
-            // Convert indexSpec to a Document
             Document idxSpecDoc = new Document(indexSpec);
-
-            // Convert indexOptions to IndexOptions
             IndexOptions options = mapToIndexOptions(indexOptions);
-
-            // Use the createIndex(Bson, IndexOptions) method
             getCollection(collection).createIndex(idxSpecDoc, options);
         }, executor);
     }
 
-
-    // ----------------------------------------------------------------
-    // 9) dropIndex
-    // ----------------------------------------------------------------
-
     @Override
     public CompletableFuture<Void> dropIndex(String collection, String indexName) {
-        return CompletableFuture.runAsync(() -> {
-            getCollection(collection).dropIndex(indexName);
-        }, executor);
-    }
-
-    // ----------------------------------------------------------------
-    // Helpers
-    // ----------------------------------------------------------------
-
-    private Map<String, Object> documentToMap(Document doc) {
-        // Convert from org.bson.Document to a plain Map<String,Object>
-        return new LinkedHashMap<>(doc);
+        return CompletableFuture.runAsync(() ->
+                getCollection(collection).dropIndex(indexName), executor);
     }
 
     private IndexOptions mapToIndexOptions(Map<String, Object> indexOptionsMap) {
         IndexOptions indexOptions = new IndexOptions();
-
-        if (indexOptionsMap == null) {
-            return indexOptions; // no options to set
+        if (indexOptionsMap != null) {
+            if (indexOptionsMap.containsKey("unique")) {
+                indexOptions.unique(Boolean.TRUE.equals(indexOptionsMap.get("unique")));
+            }
+            if (indexOptionsMap.containsKey("background")) {
+                indexOptions.background(Boolean.TRUE.equals(indexOptionsMap.get("background")));
+            }
+            if (indexOptionsMap.containsKey("name")) {
+                indexOptions.name(String.valueOf(indexOptionsMap.get("name")));
+            }
         }
-
-        // Just examples of setting fields — adapt to your needs:
-        if (indexOptionsMap.containsKey("unique")) {
-            indexOptions.unique((Boolean) indexOptionsMap.get("unique"));
-        }
-        if (indexOptionsMap.containsKey("background")) {
-            indexOptions.background((Boolean) indexOptionsMap.get("background"));
-        }
-        if (indexOptionsMap.containsKey("name")) {
-            indexOptions.name((String) indexOptionsMap.get("name"));
-        }
-        // ... set any other options similarly
-
         return indexOptions;
     }
 }

@@ -2,9 +2,7 @@ package nl.hauntedmc.dataprovider.database.base;
 
 /**
  * The minimal shared parent for all database providers (relational or NoSQL).
- * Allows your plugin to store them all in a common map.
- *
- * You may add more common methods (like debug logging) here if you wish.
+ * Allows storing them in a common map.
  */
 public interface BaseDatabaseProvider {
 
@@ -27,8 +25,8 @@ public interface BaseDatabaseProvider {
 
     /**
      * Returns a BaseDataAccess object for this database.
-     * Relational providers will return a RelationalDataAccess,
-     * NoSQL providers will return a NoSQLDataAccess, etc.
+     *
+     * @return the data access object
      */
     BaseDataAccess getDataAccess();
 }

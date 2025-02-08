@@ -11,8 +11,7 @@ import java.util.concurrent.Executors;
 import java.util.logging.Logger;
 
 /**
- * MemcachedDatabase implements KeyValueDatabaseProvider,
- * using Spymemcached to handle the underlying connections.
+ * MemcachedDatabase implements KeyValueDatabaseProvider using Spymemcached.
  */
 public class MemcachedDatabase implements KeyValueDatabaseProvider {
 
@@ -22,7 +21,7 @@ public class MemcachedDatabase implements KeyValueDatabaseProvider {
     private MemcachedClient memcachedClient;
     private ExecutorService executor;
     private MemcachedDataAccess dataAccess;
-    private boolean connected = false;
+    private boolean connected;
 
     public MemcachedDatabase(FileConfiguration config, Logger logger) {
         this.config = config;
@@ -36,22 +35,18 @@ public class MemcachedDatabase implements KeyValueDatabaseProvider {
     @Override
     public void connect() {
         if (connected && memcachedClient != null) {
-            logger.info("[MemcachedDatabase] Already connected; skipping re-initialization.");
+            logger.info("[MemcachedDatabase] Already connected; skipping re–initialization.");
             return;
         }
         try {
-            String host = config.getString("host", "localhost");
-            int port = config.getInt("port", 11211);
-            int poolSize = config.getInt("pool_size", 8);
+            final String host = config.getString("host", "localhost");
+            final int port = config.getInt("port", 11211);
+            final int poolSize = config.getInt("pool_size", 8);
 
-            // Create the Spymemcached client
             memcachedClient = new MemcachedClient(new InetSocketAddress(host, port));
-            logger.info("[MemcachedDatabase] Connected to Memcached at " + host + ":" + port);
+            logger.info(String.format("[MemcachedDatabase] Connected to Memcached at %s:%d", host, port));
 
-            // Executor for async
             executor = Executors.newFixedThreadPool(poolSize);
-
-            // Create DataAccess
             dataAccess = new MemcachedDataAccess(memcachedClient, executor);
 
             connected = true;

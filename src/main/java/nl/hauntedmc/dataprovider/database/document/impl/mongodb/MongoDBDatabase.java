@@ -12,11 +12,13 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.logging.Logger;
 
+/**
+ * MongoDBDatabase implements DocumentDatabaseProvider for MongoDB.
+ */
 public class MongoDBDatabase implements DocumentDatabaseProvider {
 
     private final FileConfiguration config;
     private final Logger logger;
-
     private MongoClient mongoClient;
     private ExecutorService executor;
     private MongoDBDataAccess dataAccess;
@@ -34,18 +36,18 @@ public class MongoDBDatabase implements DocumentDatabaseProvider {
     @Override
     public void connect() {
         if (connected && mongoClient != null) {
-            logger.info("[MongoDBDatabase] Already connected; skipping re-init.");
+            logger.info("[MongoDBDatabase] Already connected; skipping re–initialization.");
             return;
         }
         try {
-            String host = config.getString("host", "localhost");
-            int port = config.getInt("port", 27017);
-            String databaseName = config.getString("database", "minecraft");
-            String user = config.getString("username", "");
-            String password = config.getString("password", "");
-            String authSource = config.getString("authSource", databaseName);
+            final String host = config.getString("host", "localhost");
+            final int port = config.getInt("port", 27017);
+            final String databaseName = config.getString("database", "minecraft");
+            final String user = config.getString("username", "");
+            final String password = config.getString("password", "");
+            final String authSource = config.getString("authSource", databaseName);
 
-            String connectionString;
+            final String connectionString;
             if (!user.isEmpty() && !password.isEmpty()) {
                 connectionString = String.format("mongodb://%s:%s@%s:%d/%s?authSource=%s",
                         user, password, host, port, databaseName, authSource);
@@ -63,13 +65,13 @@ public class MongoDBDatabase implements DocumentDatabaseProvider {
 
             mongoClient = MongoClients.create(settings);
 
-            int poolSize = config.getInt("pool_size", 8);
+            final int poolSize = config.getInt("pool_size", 8);
             executor = Executors.newFixedThreadPool(poolSize);
 
             dataAccess = new MongoDBDataAccess(mongoClient, databaseName, executor);
 
             connected = true;
-            logger.info("[MongoDBDatabase] Connected successfully to Mongo at " + host + ":" + port);
+            logger.info(String.format("[MongoDBDatabase] Connected successfully to Mongo at %s:%d", host, port));
         } catch (Exception e) {
             logger.severe("[MongoDBDatabase] Connection failed: " + e.getMessage());
             e.printStackTrace();

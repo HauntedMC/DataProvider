@@ -8,7 +8,6 @@ import java.util.concurrent.CompletableFuture;
 
 /**
  * DataAccess methods specific to relational (SQL) usage.
- * This aligns with your existing methods for CRUD queries, transactions, etc.
  */
 public interface RelationalDataAccess extends BaseDataAccess {
 

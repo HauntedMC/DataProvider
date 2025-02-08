@@ -13,7 +13,7 @@ import java.util.Map;
 import java.util.logging.Level;
 
 /**
- * Manages individual database config files (e.g. mysql.yml, mongodb.yml, etc.).
+ * Manages individual database configuration files (e.g. mysql.yml, mongodb.yml, etc.).
  */
 public class DatabaseConfigManager {
 
@@ -28,9 +28,10 @@ public class DatabaseConfigManager {
     }
 
     private void initializeConfigs() {
-        if (!databasesFolder.exists()) {
-            databasesFolder.mkdirs();
-            plugin.getLogger().info("Created databases folder at: " + databasesFolder.getAbsolutePath());
+        if (!databasesFolder.exists() && !databasesFolder.mkdirs()) {
+            plugin.getLogger().warning("Failed to create databases folder at: " + databasesFolder.getAbsolutePath());
+        } else {
+            plugin.getLogger().info("Databases folder located at: " + databasesFolder.getAbsolutePath());
         }
 
         for (DatabaseType type : DatabaseType.values()) {
@@ -38,7 +39,7 @@ public class DatabaseConfigManager {
             if (!configFile.exists()) {
                 if (!copyDefaultConfigFromResources(type.getConfigFileName(), configFile)) {
                     plugin.getLogger().warning("No default config found for " + type.name()
-                            + ". Make sure to create " + configFile.getName() + " manually if needed.");
+                            + ". Please create " + configFile.getName() + " manually if needed.");
                 }
             }
             if (configFile.exists()) {
@@ -48,16 +49,10 @@ public class DatabaseConfigManager {
         plugin.getLogger().info("Loaded " + configMap.size() + " database configurations.");
     }
 
-    /**
-     * Retrieves the config for a given DatabaseType.
-     */
     public FileConfiguration getConfig(DatabaseType type) {
         return configMap.get(type);
     }
 
-    /**
-     * Copies a default config from resources to the plugin folder.
-     */
     private boolean copyDefaultConfigFromResources(String resourcePath, File destinationFile) {
         try (InputStream in = plugin.getResource("databases/" + resourcePath)) {
             if (in == null) {
@@ -67,8 +62,7 @@ public class DatabaseConfigManager {
             plugin.getLogger().info("Copied default config: " + resourcePath);
             return true;
         } catch (IOException e) {
-            plugin.getLogger().log(Level.SEVERE,
-                    "Failed to copy default config: " + resourcePath, e);
+            plugin.getLogger().log(Level.SEVERE, "Failed to copy default config: " + resourcePath, e);
             return false;
         }
     }

@@ -5,12 +5,15 @@ import nl.hauntedmc.dataprovider.database.relational.RelationalDataAccess;
 import nl.hauntedmc.dataprovider.database.relational.TransactionCallback;
 
 import java.sql.*;
-import java.util.*;
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
 
 /**
- * MySQL implementation of DataAccess (CRUD/Queries).
+ * MySQL implementation of RelationalDataAccess (CRUD and query operations).
  */
 public class MySQLDataAccess implements RelationalDataAccess {
 
@@ -128,18 +131,12 @@ public class MySQLDataAccess implements RelationalDataAccess {
         }, executor);
     }
 
-    /**
-     * Helper to set parameters on PreparedStatement.
-     */
     private void setParameters(PreparedStatement stmt, Object... params) throws SQLException {
         for (int i = 0; i < params.length; i++) {
             stmt.setObject(i + 1, params[i]);
         }
     }
 
-    /**
-     * Helper to map a ResultSet row to a Map.
-     */
     private Map<String, Object> mapRow(ResultSet rs) throws SQLException {
         Map<String, Object> row = new LinkedHashMap<>();
         ResultSetMetaData md = rs.getMetaData();

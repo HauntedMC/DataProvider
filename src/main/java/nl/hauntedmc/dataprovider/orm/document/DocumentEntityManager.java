@@ -67,7 +67,7 @@ public class DocumentEntityManager implements EntityManager {
                 DocumentQuery query = new DocumentQuery().eq(idFieldName, idVal);
                 DocumentUpdate update = new DocumentUpdate();
                 doc.forEach(update::set);
-                DocumentUpdateOptions opts = new DocumentUpdateOptions().upsert(false);
+                DocumentUpdateOptions opts = new DocumentUpdateOptions().setUpsert(false);
                 return dataAccess.updateOne(meta.getEntityName(), query, update, opts)
                         .thenRun(() -> EntityLifecycle.callPostUpdate(entity));
             }

@@ -10,11 +10,7 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
 
 /**
- * RedisDataAccess implements KeyValueDataAccess, providing synchronous
- * Redis calls off-thread via ExecutorService and returning CompletableFuture results.
- *
- * Basic GET/SET, plus advanced features like TTL, pipelines, watch-based concurrency,
- * and data-structure operations (hash, set, sorted set).
+ * RedisDataAccess implements KeyValueDataAccess using Jedis.
  */
 public class RedisDataAccess implements KeyValueDataAccess {
 
@@ -25,10 +21,6 @@ public class RedisDataAccess implements KeyValueDataAccess {
         this.jedisPool = jedisPool;
         this.executor = executor;
     }
-
-    // -------------------------------------------------------
-    // 1) Basic Key-Value
-    // -------------------------------------------------------
 
     @Override
     public CompletableFuture<Void> setKey(String key, String value) {
@@ -83,10 +75,6 @@ public class RedisDataAccess implements KeyValueDataAccess {
         }, executor);
     }
 
-    // -------------------------------------------------------
-    // 2) Expiry
-    // -------------------------------------------------------
-
     @Override
     public CompletableFuture<Void> setKeyWithExpiry(String key, String value, int ttlSeconds) {
         return CompletableFuture.runAsync(() -> {
@@ -95,10 +83,6 @@ public class RedisDataAccess implements KeyValueDataAccess {
             }
         }, executor);
     }
-
-    // -------------------------------------------------------
-    // 3) Pipelining
-    // -------------------------------------------------------
 
     @Override
     public CompletableFuture<Void> pipelineSet(Map<String, String> entries) {
@@ -112,10 +96,6 @@ public class RedisDataAccess implements KeyValueDataAccess {
             }
         }, executor);
     }
-
-    // -------------------------------------------------------
-    // 4) WATCH-based concurrency
-    // -------------------------------------------------------
 
     @Override
     public CompletableFuture<Boolean> watchCompareAndSet(String key, String oldValue, String newValue) {
@@ -134,10 +114,6 @@ public class RedisDataAccess implements KeyValueDataAccess {
             }
         }, executor);
     }
-
-    // -------------------------------------------------------
-    // 5) Hash Operations
-    // -------------------------------------------------------
 
     @Override
     public CompletableFuture<Void> hset(String hashKey, Map<String, String> fields) {
@@ -166,10 +142,6 @@ public class RedisDataAccess implements KeyValueDataAccess {
         }, executor);
     }
 
-    // -------------------------------------------------------
-    // 6) Set Operations
-    // -------------------------------------------------------
-
     @Override
     public CompletableFuture<Void> sadd(String key, String... members) {
         return CompletableFuture.runAsync(() -> {
@@ -197,10 +169,6 @@ public class RedisDataAccess implements KeyValueDataAccess {
         }, executor);
     }
 
-    // -------------------------------------------------------
-    // 7) Sorted Set Operations
-    // -------------------------------------------------------
-
     @Override
     public CompletableFuture<Void> zadd(String key, double score, String member) {
         return CompletableFuture.runAsync(() -> {
@@ -214,7 +182,6 @@ public class RedisDataAccess implements KeyValueDataAccess {
     public CompletableFuture<List<String>> zrangeByScore(String key, double min, double max) {
         return CompletableFuture.supplyAsync(() -> {
             try (Jedis jedis = jedisPool.getResource()) {
-                // Jedis returns a Set, but we want a List for guaranteed ordering
                 Set<String> rawSet = (Set<String>) jedis.zrangeByScore(key, min, max);
                 return new ArrayList<>(rawSet);
             }
