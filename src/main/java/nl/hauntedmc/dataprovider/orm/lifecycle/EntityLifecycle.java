@@ -1,39 +1,58 @@
 package nl.hauntedmc.dataprovider.orm.lifecycle;
 
-import nl.hauntedmc.dataprovider.orm.annotations.PostLoad;
-import nl.hauntedmc.dataprovider.orm.annotations.PreSave;
+import nl.hauntedmc.dataprovider.orm.annotations.*;
 
 import java.lang.reflect.Method;
 
 public class EntityLifecycle {
 
-    /**
-     * Call any @PreSave methods on the entity (before saving).
-     */
+    // --- Existing or previously-defined hooks ---
     public static void callPreSave(Object entity) {
-        for (Method m : entity.getClass().getDeclaredMethods()) {
-            if (m.isAnnotationPresent(PreSave.class)) {
-                try {
-                    m.setAccessible(true);
-                    m.invoke(entity);
-                } catch (Exception e) {
-                    throw new RuntimeException("Error calling @PreSave on " + entity.getClass(), e);
-                }
-            }
-        }
+        invokeAnnotatedMethods(entity, PreSave.class);
     }
 
-    /**
-     * Call any @PostLoad methods on the entity (after loading from DB).
-     */
     public static void callPostLoad(Object entity) {
-        for (Method m : entity.getClass().getDeclaredMethods()) {
-            if (m.isAnnotationPresent(PostLoad.class)) {
+        invokeAnnotatedMethods(entity, PostLoad.class);
+    }
+
+    // --- New fine-grained hooks ---
+    public static void callPreInsert(Object entity) {
+        invokeAnnotatedMethods(entity, PreInsert.class);
+    }
+
+    public static void callPostInsert(Object entity) {
+        invokeAnnotatedMethods(entity, PostInsert.class);
+    }
+
+    public static void callPreUpdate(Object entity) {
+        invokeAnnotatedMethods(entity, PreUpdate.class);
+    }
+
+    public static void callPostUpdate(Object entity) {
+        invokeAnnotatedMethods(entity, PostUpdate.class);
+    }
+
+    public static void callPreDelete(Object entity) {
+        invokeAnnotatedMethods(entity, PreDelete.class);
+    }
+
+    public static void callPostDelete(Object entity) {
+        invokeAnnotatedMethods(entity, PostDelete.class);
+    }
+
+    // ---------------------------------------------------------------------
+    // Helper to reflect and invoke methods on the entity with given annotation
+    // ---------------------------------------------------------------------
+    private static void invokeAnnotatedMethods(Object entity, Class<?> annotationClass) {
+        Method[] methods = entity.getClass().getDeclaredMethods();
+        for (Method m : methods) {
+            if (m.isAnnotationPresent((Class) annotationClass)) {
                 try {
                     m.setAccessible(true);
                     m.invoke(entity);
                 } catch (Exception e) {
-                    throw new RuntimeException("Error calling @PostLoad on " + entity.getClass(), e);
+                    throw new RuntimeException("Error calling @" + annotationClass.getSimpleName()
+                            + " on " + entity.getClass().getSimpleName(), e);
                 }
             }
         }
