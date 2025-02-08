@@ -5,6 +5,7 @@ import nl.hauntedmc.dataprovider.database.base.BaseDatabaseProvider;
 import nl.hauntedmc.dataprovider.database.document.impl.mongodb.MongoDBDatabase;
 import nl.hauntedmc.dataprovider.database.keyvalue.impl.redis.RedisDatabase;
 import nl.hauntedmc.dataprovider.database.relational.impl.mysql.MySQLDatabase;
+import nl.hauntedmc.dataprovider.database.relational.impl.mariadb.MariaDBDatabase;
 import org.bukkit.configuration.file.FileConfiguration;
 
 /**
@@ -18,6 +19,7 @@ public class DatabaseFactory {
 
         return switch (type) {
             case MYSQL -> new MySQLDatabase(config);
+            case MARIADB -> new MariaDBDatabase(config);
             case MONGODB -> new MongoDBDatabase(config);
             case REDIS -> new RedisDatabase(config);
         };
