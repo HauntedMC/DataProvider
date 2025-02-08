@@ -6,6 +6,7 @@ package nl.hauntedmc.dataprovider.database;
 public enum DatabaseType {
     MYSQL("mysql.yml"),
     MARIADB("mariadb.yml"),
+    POSTGRES("postgres.yml"),
     MONGODB("mongodb.yml"),
     REDIS("redis.yml");
 
