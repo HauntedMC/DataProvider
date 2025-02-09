@@ -2,7 +2,7 @@ package nl.hauntedmc.dataprovider.command;
 
 import nl.hauntedmc.dataprovider.DataProvider;
 import nl.hauntedmc.dataprovider.database.base.BaseDatabaseProvider;
-import nl.hauntedmc.dataprovider.registry.DatabaseConnectionKey;
+import nl.hauntedmc.dataprovider.database.DatabaseConnectionKey;
 import org.bukkit.ChatColor;
 import org.bukkit.command.Command;
 import org.bukkit.command.CommandExecutor;
@@ -44,9 +44,9 @@ public class DataProviderCommand implements CommandExecutor, TabCompleter {
                 String connectionStatus = provider.isConnected()
                         ? ChatColor.GREEN + "Connected"
                         : ChatColor.RED + "Disconnected";
-                sender.sendMessage(ChatColor.YELLOW + "Plugin: " + key.getPluginName() +
-                        ", Type: " + key.getType().name() +
-                        ", Identifier: " + key.getConnectionIdentifier() +
+                sender.sendMessage(ChatColor.YELLOW + "Plugin: " + key.pluginName() +
+                        ", Type: " + key.type().name() +
+                        ", Identifier: " + key.connectionIdentifier() +
                         " -> " + connectionStatus);
             }
             return true;

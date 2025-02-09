@@ -1,7 +1,5 @@
-package nl.hauntedmc.dataprovider.registry;
+package nl.hauntedmc.dataprovider.database;
 
-import nl.hauntedmc.dataprovider.database.DatabaseFactory;
-import nl.hauntedmc.dataprovider.database.DatabaseType;
 import nl.hauntedmc.dataprovider.database.base.BaseDatabaseProvider;
 import nl.hauntedmc.dataprovider.logging.DPLogger;
 
@@ -57,7 +55,7 @@ public class DataProviderRegistry {
 
     public void unregisterAllDatabases(String pluginName) {
         activeDatabases.entrySet().removeIf(entry -> {
-            if (entry.getKey().getPluginName().equals(pluginName)) {
+            if (entry.getKey().pluginName().equals(pluginName)) {
                 try {
                     entry.getValue().disconnect();
                 } catch (Exception e) {

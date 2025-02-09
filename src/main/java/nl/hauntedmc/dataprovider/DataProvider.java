@@ -4,7 +4,7 @@ import nl.hauntedmc.dataprovider.config.MainConfigManager;
 import nl.hauntedmc.dataprovider.command.DataProviderCommand;
 import nl.hauntedmc.dataprovider.database.DatabaseConfigManager;
 import nl.hauntedmc.dataprovider.logging.DPLogger;
-import nl.hauntedmc.dataprovider.registry.DataProviderRegistry;
+import nl.hauntedmc.dataprovider.database.DataProviderRegistry;
 import org.bukkit.plugin.java.JavaPlugin;
 
 import java.util.Objects;

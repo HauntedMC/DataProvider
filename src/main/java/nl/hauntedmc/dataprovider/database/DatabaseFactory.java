@@ -19,7 +19,7 @@ import org.bukkit.configuration.file.FileConfiguration;
  */
 public class DatabaseFactory {
 
-    public static BaseDatabaseProvider createDatabaseProvider(DatabaseType type, String connectionIdentifier) {
+    protected static BaseDatabaseProvider createDatabaseProvider(DatabaseType type, String connectionIdentifier) {
         DatabaseConfigManager configManager = DataProvider.getInstance().getDatabaseConfigManager();
         // Get only the section for the specified connection
         ConfigurationSection connectionConfig = configManager.getConfig(type, connectionIdentifier);
