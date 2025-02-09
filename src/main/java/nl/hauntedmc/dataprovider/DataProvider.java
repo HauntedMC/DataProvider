@@ -3,6 +3,7 @@ package nl.hauntedmc.dataprovider;
 import nl.hauntedmc.dataprovider.config.MainConfigManager;
 import nl.hauntedmc.dataprovider.command.DataProviderCommand;
 import nl.hauntedmc.dataprovider.database.DatabaseConfigManager;
+import nl.hauntedmc.dataprovider.logging.DPLogger;
 import nl.hauntedmc.dataprovider.registry.DataProviderRegistry;
 import org.bukkit.plugin.java.JavaPlugin;
 
@@ -18,14 +19,14 @@ public class DataProvider extends JavaPlugin {
     @Override
     public void onEnable() {
         instance = this;
-        saveDefaultConfig(); // ensure config.yml exists
+        saveDefaultConfig();
+        DPLogger.initialize();
 
         this.mainConfigManager = new MainConfigManager(this);
         this.databaseConfigManager = new DatabaseConfigManager(this);
 
-        getLogger().info("[DataProvider] Enabled (v" + getDescription().getVersion() + ").");
+        DPLogger.info("Enabled (v" + getDescription().getVersion() + ").");
 
-        // Register the /dataprovider command and its tab completer
         DataProviderCommand commandExecutor = new DataProviderCommand();
         Objects.requireNonNull(getCommand("dataprovider")).setExecutor(commandExecutor);
         Objects.requireNonNull(getCommand("dataprovider")).setTabCompleter(commandExecutor);
@@ -34,7 +35,7 @@ public class DataProvider extends JavaPlugin {
     @Override
     public void onDisable() {
         registry.shutdownAllDatabases();
-        getLogger().info("[DataProvider] Disabled.");
+        DPLogger.info("Disabled.");
     }
 
     /**
@@ -64,4 +65,5 @@ public class DataProvider extends JavaPlugin {
     public DataProviderRegistry getRegistry() {
         return registry;
     }
+    
 }

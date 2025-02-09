@@ -4,11 +4,11 @@ import nl.hauntedmc.dataprovider.DataProvider;
 import nl.hauntedmc.dataprovider.database.DatabaseFactory;
 import nl.hauntedmc.dataprovider.database.DatabaseType;
 import nl.hauntedmc.dataprovider.database.base.BaseDatabaseProvider;
+import nl.hauntedmc.dataprovider.logging.DPLogger;
 
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
-import java.util.logging.Level;
 
 /**
  * Wraps the mapping of plugin names to their database connections and provides
@@ -29,7 +29,7 @@ public class DataProviderRegistry {
     public BaseDatabaseProvider registerDatabase(String pluginName, DatabaseType databaseType) {
         // Check if this DatabaseType is enabled via the main config
         if (!DataProvider.getInstance().getMainConfigManager().isDatabaseTypeEnabled(databaseType)) {
-            DataProvider.getInstance().getLogger().warning("Database type " + databaseType.name() + " is disabled in config.yml.");
+            DPLogger.warning("Database type " + databaseType.name() + " is disabled in config.yml.");
             return null;
         }
 
@@ -39,7 +39,7 @@ public class DataProviderRegistry {
 
         // If already registered, return the existing provider
         if (pluginDatabases.containsKey(databaseType)) {
-            DataProvider.getInstance().getLogger().info(pluginName + " already has a connection to " + databaseType.name());
+            DPLogger.info(pluginName + " already has a connection to " + databaseType.name());
             return pluginDatabases.get(databaseType);
         }
 
@@ -49,16 +49,16 @@ public class DataProviderRegistry {
             databaseProvider.connect();
 
             if (!databaseProvider.isConnected()) {
-                DataProvider.getInstance().getLogger().severe("Failed to establish connection for " + pluginName + " with " + databaseType.name());
+                DPLogger.error("Failed to establish connection for " + pluginName + " with " + databaseType.name());
                 return null;
             }
 
             // Store and return the provider
             pluginDatabases.put(databaseType, databaseProvider);
-            DataProvider.getInstance().getLogger().info(pluginName + " registered database: " + databaseType.name());
+            DPLogger.info(pluginName + " registered database: " + databaseType.name());
             return databaseProvider;
         } catch (Exception e) {
-            DataProvider.getInstance().getLogger().log(Level.SEVERE, "Failed to register database for " + pluginName, e);
+            DPLogger.error("Failed to register database for " + pluginName, e);
             return null;
         }
     }
@@ -88,7 +88,7 @@ public class DataProviderRegistry {
             BaseDatabaseProvider provider = pluginDatabases.remove(databaseType);
             if (provider != null) {
                 provider.disconnect();
-                DataProvider.getInstance().getLogger().info(pluginName + " unregistered database: " + databaseType.name());
+                DPLogger.info(pluginName + " unregistered database: " + databaseType.name());
             }
             if (pluginDatabases.isEmpty()) {
                 activeDatabases.remove(pluginName);
@@ -119,13 +119,12 @@ public class DataProviderRegistry {
                 try {
                     dbEntry.getValue().disconnect();
                 } catch (Exception e) {
-                    DataProvider.getInstance().getLogger().log(Level.SEVERE,
-                            "Error disconnecting database " + dbEntry.getKey() + " for plugin " + pluginName, e);
+                    DPLogger.error("Error disconnecting database " + dbEntry.getKey() + " for plugin " + pluginName, e);
                 }
             }
         }
         activeDatabases.clear();
-        DataProvider.getInstance().getLogger().info("All database connections have been closed.");
+        DPLogger.info("All database connections have been closed.");
     }
 
     public ConcurrentMap<String, ConcurrentMap<DatabaseType, BaseDatabaseProvider>> getActiveDatabases() {

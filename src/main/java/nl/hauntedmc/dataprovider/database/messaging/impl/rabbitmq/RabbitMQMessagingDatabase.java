@@ -5,13 +5,13 @@ import com.rabbitmq.client.Connection;
 import com.rabbitmq.client.ConnectionFactory;
 import nl.hauntedmc.dataprovider.database.messaging.MessagingDataAccess;
 import nl.hauntedmc.dataprovider.database.messaging.MessagingDatabaseProvider;
+import nl.hauntedmc.dataprovider.logging.DPLogger;
 import org.bukkit.configuration.file.FileConfiguration;
 
 import java.io.IOException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeoutException;
-import java.util.logging.Logger;
 
 /**
  * RabbitMQMessagingDatabase implements MessagingDatabaseProvider using RabbitMQ.
@@ -19,27 +19,20 @@ import java.util.logging.Logger;
 public class RabbitMQMessagingDatabase implements MessagingDatabaseProvider {
 
     private final FileConfiguration config;
-    private final Logger logger;
-
     private Connection connection;
     private Channel channel;
     private ExecutorService executor;
     private RabbitMQMessagingDataAccess dataAccess;
     private boolean connected;
 
-    public RabbitMQMessagingDatabase(FileConfiguration config, Logger logger) {
-        this.config = config;
-        this.logger = logger;
-    }
-
     public RabbitMQMessagingDatabase(FileConfiguration config) {
-        this(config, Logger.getLogger("RabbitMQMessagingDatabase"));
+        this.config = config;
     }
 
     @Override
     public void connect() {
         if (connected && connection != null) {
-            logger.info("[RabbitMQMessagingDatabase] Already connected; skipping re–initialization.");
+            DPLogger.info("[RabbitMQMessagingDatabase] Already connected; skipping re–initialization.");
             return;
         }
         try {
@@ -56,11 +49,11 @@ public class RabbitMQMessagingDatabase implements MessagingDatabaseProvider {
             int poolSize = config.getInt("pool_size", 4);
             executor = Executors.newFixedThreadPool(poolSize);
 
-            dataAccess = new RabbitMQMessagingDataAccess(channel, executor, logger);
+            dataAccess = new RabbitMQMessagingDataAccess(channel, executor);
             connected = true;
-            logger.info("[RabbitMQMessagingDatabase] Connected successfully to RabbitMQ.");
+            DPLogger.info("[RabbitMQMessagingDatabase] Connected successfully to RabbitMQ.");
         } catch (IOException | TimeoutException e) {
-            logger.severe("[RabbitMQMessagingDatabase] Connection failed: " + e.getMessage());
+            DPLogger.error("[RabbitMQMessagingDatabase] Connection failed: " + e.getMessage());
             e.printStackTrace();
         }
     }
@@ -70,18 +63,18 @@ public class RabbitMQMessagingDatabase implements MessagingDatabaseProvider {
         try {
             if (channel != null && channel.isOpen()) {
                 channel.close();
-                logger.info("[RabbitMQMessagingDatabase] Channel closed.");
+                DPLogger.info("[RabbitMQMessagingDatabase] Channel closed.");
             }
             if (connection != null && connection.isOpen()) {
                 connection.close();
-                logger.info("[RabbitMQMessagingDatabase] Connection closed.");
+                DPLogger.info("[RabbitMQMessagingDatabase] Connection closed.");
             }
             if (executor != null && !executor.isShutdown()) {
                 executor.shutdown();
-                logger.info("[RabbitMQMessagingDatabase] ExecutorService shut down.");
+                DPLogger.info("[RabbitMQMessagingDatabase] ExecutorService shut down.");
             }
         } catch (IOException | TimeoutException e) {
-            logger.severe("[RabbitMQMessagingDatabase] Error during disconnect: " + e.getMessage());
+            DPLogger.error("[RabbitMQMessagingDatabase] Error during disconnect: " + e.getMessage());
             e.printStackTrace();
         }
         connected = false;

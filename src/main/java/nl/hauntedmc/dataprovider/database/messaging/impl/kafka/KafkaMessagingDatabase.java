@@ -2,6 +2,7 @@ package nl.hauntedmc.dataprovider.database.messaging.impl.kafka;
 
 import nl.hauntedmc.dataprovider.database.messaging.MessagingDataAccess;
 import nl.hauntedmc.dataprovider.database.messaging.MessagingDatabaseProvider;
+import nl.hauntedmc.dataprovider.logging.DPLogger;
 import org.apache.kafka.clients.consumer.KafkaConsumer;
 import org.apache.kafka.clients.producer.KafkaProducer;
 import org.bukkit.configuration.file.FileConfiguration;
@@ -9,7 +10,6 @@ import org.bukkit.configuration.file.FileConfiguration;
 import java.util.Properties;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
-import java.util.logging.Logger;
 
 /**
  * KafkaMessagingDatabase implements MessagingDatabaseProvider using Kafka.
@@ -17,27 +17,20 @@ import java.util.logging.Logger;
 public class KafkaMessagingDatabase implements MessagingDatabaseProvider {
 
     private final FileConfiguration config;
-    private final Logger logger;
-
     private KafkaProducer<String, String> producer;
     private KafkaConsumer<String, String> consumer;
     private ExecutorService consumerExecutor;
     private KafkaMessagingDataAccess dataAccess;
     private boolean connected;
 
-    public KafkaMessagingDatabase(FileConfiguration config, Logger logger) {
-        this.config = config;
-        this.logger = logger;
-    }
-
     public KafkaMessagingDatabase(FileConfiguration config) {
-        this(config, Logger.getLogger("KafkaMessagingDatabase"));
+        this.config = config;
     }
 
     @Override
     public void connect() {
         if (connected) {
-            logger.info("[KafkaMessagingDatabase] Already connected; skipping re–initialization.");
+            DPLogger.info("[KafkaMessagingDatabase] Already connected; skipping re–initialization.");
             return;
         }
         try {
@@ -62,11 +55,11 @@ public class KafkaMessagingDatabase implements MessagingDatabaseProvider {
             int poolSize = config.getInt("pool_size", 4);
             consumerExecutor = Executors.newFixedThreadPool(poolSize);
 
-            dataAccess = new KafkaMessagingDataAccess(producer, consumer, consumerExecutor, logger);
+            dataAccess = new KafkaMessagingDataAccess(producer, consumer, consumerExecutor);
             connected = true;
-            logger.info("[KafkaMessagingDatabase] Connected successfully to Kafka.");
+            DPLogger.info("[KafkaMessagingDatabase] Connected successfully to Kafka.");
         } catch (Exception e) {
-            logger.severe("[KafkaMessagingDatabase] Connection failed: " + e.getMessage());
+            DPLogger.error("[KafkaMessagingDatabase] Connection failed: " + e.getMessage());
             e.printStackTrace();
         }
     }
@@ -75,15 +68,15 @@ public class KafkaMessagingDatabase implements MessagingDatabaseProvider {
     public void disconnect() {
         if (producer != null) {
             producer.close();
-            logger.info("[KafkaMessagingDatabase] Producer closed.");
+            DPLogger.info("[KafkaMessagingDatabase] Producer closed.");
         }
         if (consumer != null) {
             consumer.close();
-            logger.info("[KafkaMessagingDatabase] Consumer closed.");
+            DPLogger.info("[KafkaMessagingDatabase] Consumer closed.");
         }
         if (consumerExecutor != null && !consumerExecutor.isShutdown()) {
             consumerExecutor.shutdown();
-            logger.info("[KafkaMessagingDatabase] Consumer ExecutorService shut down.");
+            DPLogger.info("[KafkaMessagingDatabase] Consumer ExecutorService shut down.");
         }
         connected = false;
     }

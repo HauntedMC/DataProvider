@@ -6,12 +6,12 @@ import nl.hauntedmc.dataprovider.DataProvider;
 import nl.hauntedmc.dataprovider.database.relational.RelationalDataAccess;
 import nl.hauntedmc.dataprovider.database.relational.RelationalDatabaseProvider;
 import nl.hauntedmc.dataprovider.database.relational.schema.SchemaManager;
+import nl.hauntedmc.dataprovider.logging.DPLogger;
 import org.bukkit.configuration.file.FileConfiguration;
 
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.logging.Level;
-import java.util.logging.Logger;
 
 /**
  * MariaDB implementation of RelationalDatabaseProvider.
@@ -19,7 +19,6 @@ import java.util.logging.Logger;
 public class MariaDBDatabase implements RelationalDatabaseProvider {
 
     private final FileConfiguration config;
-    private final Logger logger;
     private HikariDataSource dataSource;
     private ExecutorService executor;
     private RelationalDataAccess dataAccess;
@@ -27,13 +26,12 @@ public class MariaDBDatabase implements RelationalDatabaseProvider {
 
     public MariaDBDatabase(FileConfiguration config) {
         this.config = config;
-        this.logger = DataProvider.getInstance().getLogger();
     }
 
     @Override
     public void connect() {
         if (dataSource != null && !dataSource.isClosed()) {
-            logger.info("[MariaDBDatabase] Already connected, skipping re–initialization.");
+            DPLogger.info("[MariaDBDatabase] Already connected, skipping re–initialization.");
             return;
         }
         try {
@@ -64,9 +62,9 @@ public class MariaDBDatabase implements RelationalDatabaseProvider {
             this.dataAccess = new MariaDBDataAccess(dataSource, executor);
             this.schemaManager = new MariaDBSchemaManager(dataSource, executor);
 
-            logger.info("[MariaDBDatabase] Connected successfully to " + jdbcUrl);
+            DPLogger.info("[MariaDBDatabase] Connected successfully to " + jdbcUrl);
         } catch (Exception e) {
-            logger.log(Level.SEVERE, "[MariaDBDatabase] Connection failed!", e);
+            DPLogger.error("[MariaDBDatabase] Connection failed!", e);
         }
     }
 
@@ -74,11 +72,11 @@ public class MariaDBDatabase implements RelationalDatabaseProvider {
     public void disconnect() {
         if (dataSource != null && !dataSource.isClosed()) {
             dataSource.close();
-            logger.info("[MariaDBDatabase] DataSource closed.");
+            DPLogger.info("[MariaDBDatabase] DataSource closed.");
         }
         if (executor != null && !executor.isShutdown()) {
             executor.shutdown();
-            logger.info("[MariaDBDatabase] ExecutorService shut down.");
+            DPLogger.info("[MariaDBDatabase] ExecutorService shut down.");
         }
     }
 
@@ -90,7 +88,7 @@ public class MariaDBDatabase implements RelationalDatabaseProvider {
         try (var conn = dataSource.getConnection()) {
             return conn.isValid(2);
         } catch (Exception e) {
-            logger.warning("[MariaDBDatabase] Connection validation failed: " + e.getMessage());
+            DPLogger.warning("[MariaDBDatabase] Connection validation failed: " + e.getMessage());
             return false;
         }
     }

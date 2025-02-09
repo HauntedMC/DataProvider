@@ -2,13 +2,13 @@ package nl.hauntedmc.dataprovider.database.messaging.impl.redis;
 
 import nl.hauntedmc.dataprovider.database.messaging.MessagingDataAccess;
 import nl.hauntedmc.dataprovider.database.messaging.MessageListener;
+import nl.hauntedmc.dataprovider.logging.DPLogger;
 import redis.clients.jedis.Jedis;
 import redis.clients.jedis.JedisPool;
 import redis.clients.jedis.JedisPubSub;
 
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
-import java.util.logging.Logger;
 
 /**
  * RedisMessagingDataAccess implements MessagingDataAccess using Redis Pub/Sub.
@@ -17,12 +17,10 @@ public class RedisMessagingDataAccess implements MessagingDataAccess {
 
     private final JedisPool jedisPool;
     private final ExecutorService executor;
-    private final Logger logger;
 
-    public RedisMessagingDataAccess(JedisPool jedisPool, ExecutorService executor, Logger logger) {
+    public RedisMessagingDataAccess(JedisPool jedisPool, ExecutorService executor) {
         this.jedisPool = jedisPool;
         this.executor = executor;
-        this.logger = logger;
     }
 
     @Override
@@ -56,7 +54,7 @@ public class RedisMessagingDataAccess implements MessagingDataAccess {
                     try {
                         jedis.subscribe(pubSub, destination);
                     } catch (Exception e) {
-                        logger.severe("Error in Redis subscription: " + e.getMessage());
+                        DPLogger.error("Error in Redis subscription: " + e.getMessage());
                     } finally {
                         jedis.close();
                     }

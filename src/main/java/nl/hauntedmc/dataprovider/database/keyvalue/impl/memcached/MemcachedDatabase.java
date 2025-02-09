@@ -2,13 +2,13 @@ package nl.hauntedmc.dataprovider.database.keyvalue.impl.memcached;
 
 import nl.hauntedmc.dataprovider.database.keyvalue.KeyValueDataAccess;
 import nl.hauntedmc.dataprovider.database.keyvalue.KeyValueDatabaseProvider;
+import nl.hauntedmc.dataprovider.logging.DPLogger;
 import org.bukkit.configuration.file.FileConfiguration;
 import net.spy.memcached.MemcachedClient;
 
 import java.net.InetSocketAddress;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
-import java.util.logging.Logger;
 
 /**
  * MemcachedDatabase implements KeyValueDatabaseProvider using Spymemcached.
@@ -16,26 +16,20 @@ import java.util.logging.Logger;
 public class MemcachedDatabase implements KeyValueDatabaseProvider {
 
     private final FileConfiguration config;
-    private final Logger logger;
 
     private MemcachedClient memcachedClient;
     private ExecutorService executor;
     private MemcachedDataAccess dataAccess;
     private boolean connected;
 
-    public MemcachedDatabase(FileConfiguration config, Logger logger) {
-        this.config = config;
-        this.logger = logger;
-    }
-
     public MemcachedDatabase(FileConfiguration config) {
-        this(config, Logger.getLogger("MemcachedDatabase"));
+        this.config = config;
     }
 
     @Override
     public void connect() {
         if (connected && memcachedClient != null) {
-            logger.info("[MemcachedDatabase] Already connected; skipping re–initialization.");
+            DPLogger.info("[MemcachedDatabase] Already connected; skipping re–initialization.");
             return;
         }
         try {
@@ -44,14 +38,14 @@ public class MemcachedDatabase implements KeyValueDatabaseProvider {
             final int poolSize = config.getInt("pool_size", 8);
 
             memcachedClient = new MemcachedClient(new InetSocketAddress(host, port));
-            logger.info(String.format("[MemcachedDatabase] Connected to Memcached at %s:%d", host, port));
+            DPLogger.info(String.format("[MemcachedDatabase] Connected to Memcached at %s:%d", host, port));
 
             executor = Executors.newFixedThreadPool(poolSize);
             dataAccess = new MemcachedDataAccess(memcachedClient, executor);
 
             connected = true;
         } catch (Exception e) {
-            logger.severe("[MemcachedDatabase] Connection failed: " + e.getMessage());
+            DPLogger.error("[MemcachedDatabase] Connection failed: " + e.getMessage());
             e.printStackTrace();
         }
     }
@@ -60,11 +54,11 @@ public class MemcachedDatabase implements KeyValueDatabaseProvider {
     public void disconnect() {
         if (memcachedClient != null) {
             memcachedClient.shutdown();
-            logger.info("[MemcachedDatabase] MemcachedClient shut down.");
+            DPLogger.info("[MemcachedDatabase] MemcachedClient shut down.");
         }
         if (executor != null && !executor.isShutdown()) {
             executor.shutdown();
-            logger.info("[MemcachedDatabase] ExecutorService shut down.");
+            DPLogger.info("[MemcachedDatabase] ExecutorService shut down.");
         }
         connected = false;
     }

@@ -1,0 +1,5 @@
+logging:
+  consoleLevel: INFO
+  fileLevel: WARNING
+  fileLimit: 10485760   # 10 MB in bytes
+  fileCount: 30

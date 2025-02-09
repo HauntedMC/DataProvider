@@ -12,7 +12,6 @@ import java.time.Duration;
 import java.util.Collections;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
-import java.util.logging.Logger;
 
 /**
  * Implements MessagingDataAccess using Kafka.
@@ -22,16 +21,13 @@ public class KafkaMessagingDataAccess implements MessagingDataAccess {
     private final KafkaProducer<String, String> producer;
     private final KafkaConsumer<String, String> consumer;
     private final ExecutorService consumerExecutor;
-    private final Logger logger;
 
     public KafkaMessagingDataAccess(KafkaProducer<String, String> producer,
                                     KafkaConsumer<String, String> consumer,
-                                    ExecutorService consumerExecutor,
-                                    Logger logger) {
+                                    ExecutorService consumerExecutor) {
         this.producer = producer;
         this.consumer = consumer;
         this.consumerExecutor = consumerExecutor;
-        this.logger = logger;
     }
 
     @Override

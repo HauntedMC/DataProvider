@@ -8,7 +8,6 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
-import java.util.logging.Logger;
 
 /**
  * Implements MessagingDataAccess using RabbitMQ channels.
@@ -17,12 +16,10 @@ public class RabbitMQMessagingDataAccess implements MessagingDataAccess {
 
     private final Channel channel;
     private final ExecutorService executor;
-    private final Logger logger;
 
-    public RabbitMQMessagingDataAccess(Channel channel, ExecutorService executor, Logger logger) {
+    public RabbitMQMessagingDataAccess(Channel channel, ExecutorService executor) {
         this.channel = channel;
         this.executor = executor;
-        this.logger = logger;
     }
 
     @Override

@@ -1,6 +1,7 @@
 package nl.hauntedmc.dataprovider.database;
 
 import nl.hauntedmc.dataprovider.DataProvider;
+import nl.hauntedmc.dataprovider.logging.DPLogger;
 import org.bukkit.configuration.file.FileConfiguration;
 import org.bukkit.configuration.file.YamlConfiguration;
 
@@ -29,16 +30,16 @@ public class DatabaseConfigManager {
 
     private void initializeConfigs() {
         if (!databasesFolder.exists() && !databasesFolder.mkdirs()) {
-            plugin.getLogger().warning("Failed to create databases folder at: " + databasesFolder.getAbsolutePath());
+            DPLogger.warning("Failed to create databases folder at: " + databasesFolder.getAbsolutePath());
         } else {
-            plugin.getLogger().info("Databases folder located at: " + databasesFolder.getAbsolutePath());
+            DPLogger.info("Databases folder located at: " + databasesFolder.getAbsolutePath());
         }
 
         for (DatabaseType type : DatabaseType.values()) {
             File configFile = new File(databasesFolder, type.getConfigFileName());
             if (!configFile.exists()) {
                 if (!copyDefaultConfigFromResources(type.getConfigFileName(), configFile)) {
-                    plugin.getLogger().warning("No default config found for " + type.name()
+                    DPLogger.warning("No default config found for " + type.name()
                             + ". Please create " + configFile.getName() + " manually if needed.");
                 }
             }
@@ -46,7 +47,7 @@ public class DatabaseConfigManager {
                 configMap.put(type, YamlConfiguration.loadConfiguration(configFile));
             }
         }
-        plugin.getLogger().info("Loaded " + configMap.size() + " database configurations.");
+        DPLogger.info("Loaded " + configMap.size() + " database configurations.");
     }
 
     public FileConfiguration getConfig(DatabaseType type) {
@@ -59,10 +60,10 @@ public class DatabaseConfigManager {
                 return false;
             }
             Files.copy(in, destinationFile.toPath());
-            plugin.getLogger().info("Copied default config: " + resourcePath);
+            DPLogger.info("Copied default config: " + resourcePath);
             return true;
         } catch (IOException e) {
-            plugin.getLogger().log(Level.SEVERE, "Failed to copy default config: " + resourcePath, e);
+            DPLogger.error("Failed to copy default config: " + resourcePath, e);
             return false;
         }
     }

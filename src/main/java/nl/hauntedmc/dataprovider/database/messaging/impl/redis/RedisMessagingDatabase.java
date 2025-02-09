@@ -2,13 +2,13 @@ package nl.hauntedmc.dataprovider.database.messaging.impl.redis;
 
 import nl.hauntedmc.dataprovider.database.messaging.MessagingDataAccess;
 import nl.hauntedmc.dataprovider.database.messaging.MessagingDatabaseProvider;
+import nl.hauntedmc.dataprovider.logging.DPLogger;
 import org.bukkit.configuration.file.FileConfiguration;
 import redis.clients.jedis.JedisPool;
 import redis.clients.jedis.JedisPoolConfig;
 
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
-import java.util.logging.Logger;
 
 /**
  * RedisMessagingDatabase implements MessagingDatabaseProvider using Redis Pub/Sub.
@@ -16,26 +16,20 @@ import java.util.logging.Logger;
 public class RedisMessagingDatabase implements MessagingDatabaseProvider {
 
     private final FileConfiguration config;
-    private final Logger logger;
 
     private JedisPool jedisPool;
     private ExecutorService executor;
     private RedisMessagingDataAccess dataAccess;
     private boolean connected;
 
-    public RedisMessagingDatabase(FileConfiguration config, Logger logger) {
-        this.config = config;
-        this.logger = logger;
-    }
-
     public RedisMessagingDatabase(FileConfiguration config) {
-        this(config, Logger.getLogger("RedisMessagingDatabase"));
+        this.config = config;
     }
 
     @Override
     public void connect() {
         if (connected && jedisPool != null) {
-            logger.info("[RedisMessagingDatabase] Already connected; skipping re–initialization.");
+            DPLogger.info("[RedisMessagingDatabase] Already connected; skipping re–initialization.");
             return;
         }
         try {
@@ -54,11 +48,11 @@ public class RedisMessagingDatabase implements MessagingDatabaseProvider {
             }
 
             executor = Executors.newFixedThreadPool(poolSize);
-            dataAccess = new RedisMessagingDataAccess(jedisPool, executor, logger);
+            dataAccess = new RedisMessagingDataAccess(jedisPool, executor);
             connected = true;
-            logger.info("[RedisMessagingDatabase] Connected successfully to Redis for messaging.");
+            DPLogger.info("[RedisMessagingDatabase] Connected successfully to Redis for messaging.");
         } catch (Exception e) {
-            logger.severe("[RedisMessagingDatabase] Connection failed: " + e.getMessage());
+            DPLogger.error("[RedisMessagingDatabase] Connection failed: " + e.getMessage());
             e.printStackTrace();
         }
     }
@@ -67,11 +61,11 @@ public class RedisMessagingDatabase implements MessagingDatabaseProvider {
     public void disconnect() {
         if (jedisPool != null && !jedisPool.isClosed()) {
             jedisPool.close();
-            logger.info("[RedisMessagingDatabase] JedisPool closed.");
+            DPLogger.info("[RedisMessagingDatabase] JedisPool closed.");
         }
         if (executor != null && !executor.isShutdown()) {
             executor.shutdown();
-            logger.info("[RedisMessagingDatabase] ExecutorService shut down.");
+            DPLogger.info("[RedisMessagingDatabase] ExecutorService shut down.");
         }
         connected = false;
     }

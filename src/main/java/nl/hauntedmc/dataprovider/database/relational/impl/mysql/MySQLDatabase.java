@@ -6,12 +6,12 @@ import nl.hauntedmc.dataprovider.DataProvider;
 import nl.hauntedmc.dataprovider.database.relational.RelationalDataAccess;
 import nl.hauntedmc.dataprovider.database.relational.RelationalDatabaseProvider;
 import nl.hauntedmc.dataprovider.database.relational.schema.SchemaManager;
+import nl.hauntedmc.dataprovider.logging.DPLogger;
 import org.bukkit.configuration.file.FileConfiguration;
 
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.logging.Level;
-import java.util.logging.Logger;
 
 /**
  * MySQL implementation of RelationalDatabaseProvider.
@@ -19,7 +19,6 @@ import java.util.logging.Logger;
 public class MySQLDatabase implements RelationalDatabaseProvider {
 
     private final FileConfiguration config;
-    private final Logger logger;
     private HikariDataSource dataSource;
     private ExecutorService executor;
     private RelationalDataAccess dataAccess;
@@ -27,13 +26,12 @@ public class MySQLDatabase implements RelationalDatabaseProvider {
 
     public MySQLDatabase(FileConfiguration config) {
         this.config = config;
-        this.logger = DataProvider.getInstance().getLogger();
     }
 
     @Override
     public void connect() {
         if (dataSource != null && !dataSource.isClosed()) {
-            logger.info("[MySQLDatabase] Already connected, skipping re–initialization.");
+            DPLogger.info("[MySQLDatabase] Already connected, skipping re–initialization.");
             return;
         }
 
@@ -64,9 +62,9 @@ public class MySQLDatabase implements RelationalDatabaseProvider {
             this.dataAccess = new MySQLDataAccess(dataSource, executor);
             this.schemaManager = new MySQLSchemaManager(dataSource, executor);
 
-            logger.info("[MySQLDatabase] Connected successfully to " + jdbcUrl);
+            DPLogger.info("[MySQLDatabase] Connected successfully to " + jdbcUrl);
         } catch (Exception e) {
-            logger.log(Level.SEVERE, "[MySQLDatabase] Connection failed!", e);
+            DPLogger.error("[MySQLDatabase] Connection failed!", e);
         }
     }
 
@@ -74,11 +72,11 @@ public class MySQLDatabase implements RelationalDatabaseProvider {
     public void disconnect() {
         if (dataSource != null && !dataSource.isClosed()) {
             dataSource.close();
-            logger.info("[MySQLDatabase] DataSource closed.");
+            DPLogger.info("[MySQLDatabase] DataSource closed.");
         }
         if (executor != null && !executor.isShutdown()) {
             executor.shutdown();
-            logger.info("[MySQLDatabase] ExecutorService shut down.");
+            DPLogger.info("[MySQLDatabase] ExecutorService shut down.");
         }
     }
 
@@ -90,7 +88,7 @@ public class MySQLDatabase implements RelationalDatabaseProvider {
         try (var conn = dataSource.getConnection()) {
             return conn.isValid(2);
         } catch (Exception e) {
-            logger.log(Level.WARNING, "[MySQLDatabase] Connection validation failed.", e);
+            DPLogger.error("[MySQLDatabase] Connection validation failed.", e);
             return false;
         }
     }

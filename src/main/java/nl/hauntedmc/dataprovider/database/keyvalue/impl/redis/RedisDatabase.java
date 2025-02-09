@@ -2,13 +2,13 @@ package nl.hauntedmc.dataprovider.database.keyvalue.impl.redis;
 
 import nl.hauntedmc.dataprovider.database.keyvalue.KeyValueDataAccess;
 import nl.hauntedmc.dataprovider.database.keyvalue.KeyValueDatabaseProvider;
+import nl.hauntedmc.dataprovider.logging.DPLogger;
 import org.bukkit.configuration.file.FileConfiguration;
 import redis.clients.jedis.JedisPool;
 import redis.clients.jedis.JedisPoolConfig;
 
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
-import java.util.logging.Logger;
 
 /**
  * RedisDatabase implements KeyValueDatabaseProvider, managing a JedisPool and an ExecutorService.
@@ -16,7 +16,6 @@ import java.util.logging.Logger;
 public class RedisDatabase implements KeyValueDatabaseProvider {
 
     private final FileConfiguration config;
-    private final Logger logger;
 
     private JedisPool jedisPool;
     private ExecutorService executor;
@@ -24,19 +23,14 @@ public class RedisDatabase implements KeyValueDatabaseProvider {
 
     private boolean connected;
 
-    public RedisDatabase(FileConfiguration config, Logger logger) {
-        this.config = config;
-        this.logger = logger;
-    }
-
     public RedisDatabase(FileConfiguration config) {
-        this(config, Logger.getLogger("RedisDatabase"));
+        this.config = config;
     }
 
     @Override
     public void connect() {
         if (connected && jedisPool != null) {
-            logger.info("[RedisDatabase] Already connected; skipping re–initialization.");
+            DPLogger.info("[RedisDatabase] Already connected; skipping re–initialization.");
             return;
         }
         try {
@@ -59,9 +53,9 @@ public class RedisDatabase implements KeyValueDatabaseProvider {
             dataAccess = new RedisDataAccess(jedisPool, executor);
 
             connected = true;
-            logger.info(String.format("[RedisDatabase] Connected to Redis at %s:%d (DB %d), poolSize=%d", host, port, databaseIndex, poolSize));
+            DPLogger.info(String.format("[RedisDatabase] Connected to Redis at %s:%d (DB %d), poolSize=%d", host, port, databaseIndex, poolSize));
         } catch (Exception e) {
-            logger.severe("[RedisDatabase] Connection failed: " + e.getMessage());
+            DPLogger.error("[RedisDatabase] Connection failed: " + e.getMessage());
             e.printStackTrace();
         }
     }
@@ -70,11 +64,11 @@ public class RedisDatabase implements KeyValueDatabaseProvider {
     public void disconnect() {
         if (jedisPool != null && !jedisPool.isClosed()) {
             jedisPool.close();
-            logger.info("[RedisDatabase] JedisPool closed.");
+            DPLogger.info("[RedisDatabase] JedisPool closed.");
         }
         if (executor != null && !executor.isShutdown()) {
             executor.shutdown();
-            logger.info("[RedisDatabase] ExecutorService shut down.");
+            DPLogger.info("[RedisDatabase] ExecutorService shut down.");
         }
         connected = false;
     }
