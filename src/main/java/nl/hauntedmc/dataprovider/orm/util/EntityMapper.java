@@ -194,6 +194,9 @@ public class EntityMapper {
         return f.getName().toLowerCase();
     }
 
+    /**
+     * Sets the field value, with improved support for common types including enums.
+     */
     public static void setFieldValue(Field field, Object instance, Object rawValue) throws IllegalAccessException {
         field.setAccessible(true);
         if (rawValue == null) {
@@ -218,6 +221,10 @@ public class EntityMapper {
             } else {
                 field.set(instance, Boolean.parseBoolean(rawValue.toString()));
             }
+        } else if (targetType.isEnum()) {
+            @SuppressWarnings("unchecked")
+            Class<Enum> enumType = (Class<Enum>) targetType;
+            field.set(instance, Enum.valueOf(enumType, rawValue.toString()));
         } else {
             field.set(instance, rawValue);
         }

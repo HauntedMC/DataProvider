@@ -55,6 +55,13 @@ public class CachingEntityManager implements EntityManager {
         });
     }
 
+    /**
+     * Clears the entire entity cache.
+     */
+    public void clearCache() {
+        cache.clear();
+    }
+
     private String cacheKey(Class<?> clazz, Object id) {
         return clazz.getName() + "::" + id;
     }
