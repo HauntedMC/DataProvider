@@ -9,14 +9,14 @@ import nl.hauntedmc.dataprovider.database.base.BaseDatabaseProvider;
  * This class encapsulates the necessary parameters and calls the
  * registry’s registerDatabase method to create and connect the provider.
  */
-public class DatabaseConnection {
+public class DataProviderAPI {
 
     private final String pluginName;
     private final DatabaseType databaseType;
     private final String identifier;
     private BaseDatabaseProvider provider;
 
-    private DatabaseConnection(String pluginName, DatabaseType databaseType, String identifier) {
+    private DataProviderAPI(String pluginName, DatabaseType databaseType, String identifier) {
         this.pluginName = pluginName;
         this.databaseType = databaseType;
         this.identifier = identifier;
@@ -102,7 +102,7 @@ public class DatabaseConnection {
          * Builds the DatabaseConnection after validating required fields.
          * @return a new DatabaseConnection instance
          */
-        public DatabaseConnection build() {
+        public DataProviderAPI build() {
             if (pluginName == null || pluginName.trim().isEmpty()) {
                 throw new IllegalArgumentException("Plugin name must not be null or empty");
             }
@@ -112,7 +112,7 @@ public class DatabaseConnection {
             if (identifier == null || identifier.trim().isEmpty()) {
                 throw new IllegalArgumentException("Identifier must not be null or empty");
             }
-            return new DatabaseConnection(pluginName, databaseType, identifier);
+            return new DataProviderAPI(pluginName, databaseType, identifier);
         }
     }
 }
