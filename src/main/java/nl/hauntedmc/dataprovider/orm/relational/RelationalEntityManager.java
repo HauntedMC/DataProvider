@@ -6,8 +6,10 @@ import nl.hauntedmc.dataprovider.orm.dialect.MySQLDialect;
 import nl.hauntedmc.dataprovider.orm.introspection.EntityIntrospector;
 import nl.hauntedmc.dataprovider.orm.introspection.EntityIntrospector.EntityMetadata;
 import nl.hauntedmc.dataprovider.orm.lifecycle.EntityLifecycle;
+import nl.hauntedmc.dataprovider.orm.util.CascadeHelper;
 import nl.hauntedmc.dataprovider.orm.util.EntityMapper;
 import nl.hauntedmc.dataprovider.orm.dialect.SQLDialect;
+import nl.hauntedmc.dataprovider.orm.annotations.Id;
 
 import java.lang.reflect.Field;
 import java.util.*;
@@ -36,38 +38,54 @@ public class RelationalEntityManager implements EntityManager {
             return CompletableFuture.failedFuture(e);
         }
 
-        // Use the centralized method to obtain the correct column name.
-        String pkCol = quote(EntityMapper.getDatabaseFieldName(idField));
-        String checkSql = "SELECT 1 FROM " + quote(meta.getEntityName()) +
-                " WHERE " + pkCol + "=? " + dialect.getLimitClause(1);
+        CompletableFuture<Void> mainFuture;
 
         if (idValue != null) {
-            return dataAccess.queryForSingle(checkSql, idValue)
+            // Check if record exists
+            String pkCol = quote(EntityMapper.getDatabaseFieldName(idField));
+            String checkSql = "SELECT 1 FROM " + quote(meta.getEntityName()) +
+                    " WHERE " + pkCol + "=? " + dialect.getLimitClause(1);
+
+            mainFuture = dataAccess.queryForSingle(checkSql, idValue)
                     .thenCompose(found -> {
                         boolean isInsert = (found == null);
                         if (isInsert) {
                             EntityLifecycle.callPreInsert(entity);
-                        } else {
-                            EntityLifecycle.callPreUpdate(entity);
-                        }
-                        Map<String, Object> row = EntityMapper.entityToMap(entity, meta);
-                        CompletableFuture<Void> future;
-                        if (isInsert) {
-                            future = insertRow(meta, row)
+                            Map<String, Object> row = EntityMapper.entityToMap(entity, meta);
+                            // Use provided id value even if autoGenerate is true
+                            return insertRow(meta, row)
                                     .thenRun(() -> EntityLifecycle.callPostInsert(entity));
                         } else {
-                            future = updateRow(meta, row)
+                            EntityLifecycle.callPreUpdate(entity);
+                            Map<String, Object> row = EntityMapper.entityToMap(entity, meta);
+                            return updateRow(meta, row)
                                     .thenRun(() -> EntityLifecycle.callPostUpdate(entity));
                         }
-                        return future;
                     });
         } else {
-            // ID is null; assume insert.
-            EntityLifecycle.callPreInsert(entity);
-            Map<String, Object> row = EntityMapper.entityToMap(entity, meta);
-            return insertRow(meta, row)
-                    .thenRun(() -> EntityLifecycle.callPostInsert(entity));
+            // ID is null; handle auto-generation if enabled
+            Id idAnnotation = idField.getAnnotation(Id.class);
+            if (idAnnotation.autoGenerate()) {
+                EntityLifecycle.callPreInsert(entity);
+                Map<String, Object> row = EntityMapper.entityToMap(entity, meta);
+                return insertRowReturningKey(meta, row)
+                        .thenAccept(generatedKey -> {
+                            try {
+                                idField.set(entity, generatedKey);
+                            } catch (IllegalAccessException e) {
+                                throw new RuntimeException(e);
+                            }
+                            EntityLifecycle.callPostInsert(entity);
+                        })
+                        .thenCompose(v -> CascadeHelper.cascadePersist(entity, meta, this));
+            } else {
+                return CompletableFuture.failedFuture(
+                        new RuntimeException("Id is null but autoGenerate is false for " + entity.getClass().getName()));
+            }
         }
+
+        // Cascade persist for OneToMany relationships
+        return mainFuture.thenCompose(v -> CascadeHelper.cascadePersist(entity, meta, this));
     }
 
     @Override
@@ -117,31 +135,14 @@ public class RelationalEntityManager implements EntityManager {
 
     /**
      * Runs multiple ORM operations within one transaction.
-     * Example:
-     * <pre>
-     *   entityManager.runInTransaction(em -> {
-     *       return em.save(player1)
-     *                .thenCompose(v -> em.save(player2));
-     *   });
-     * </pre>
-     * @param work A function accepting this EntityManager and returning a CompletableFuture.
-     * @param <T>  The type of the result.
-     * @return A CompletableFuture with the result.
      */
-    public <T> CompletableFuture<T> runInTransaction(Function<EntityManager, CompletableFuture<T>> work) {
+    public <T> CompletableFuture<T> runInTransaction(java.util.function.Function<EntityManager, CompletableFuture<T>> work) {
         return dataAccess.executeTransactionally(connection -> work.apply(this))
                 .thenCompose(Function.identity());
     }
 
     /**
      * Finds all entities of the given class where the specified column matches the provided value.
-     * This method is primarily used for OneToMany relationship loading.
-     *
-     * @param clazz  The entity class.
-     * @param column The column name to filter on.
-     * @param value  The value to match.
-     * @param <T>    The type of the entity.
-     * @return A CompletableFuture with the list of matching entities.
      */
     public <T> CompletableFuture<List<T>> findByColumn(Class<T> clazz, String column, Object value) {
         EntityIntrospector.EntityMetadata meta = EntityIntrospector.introspect(clazz);
@@ -162,7 +163,7 @@ public class RelationalEntityManager implements EntityManager {
     // Helper methods to build SQL queries
     // ----------------------------------------------------------------
 
-    private CompletableFuture<Void> insertRow(EntityIntrospector.EntityMetadata meta, Map<String, Object> row) {
+    private CompletableFuture<Void> insertRow(EntityMetadata meta, Map<String, Object> row) {
         String tableName = quote(meta.getEntityName());
         List<Object> params = new ArrayList<>();
         StringJoiner columns = new StringJoiner(", ");
@@ -179,10 +180,29 @@ public class RelationalEntityManager implements EntityManager {
     }
 
     /**
-     * Updates a row based on the provided metadata and row map.
-     * The primary key is extracted from the row map.
+     * Inserts a row and returns the generated key.
      */
-    private CompletableFuture<Void> updateRow(EntityIntrospector.EntityMetadata meta, Map<String, Object> row) {
+    private CompletableFuture<Object> insertRowReturningKey(EntityMetadata meta, Map<String, Object> row) {
+        String tableName = quote(meta.getEntityName());
+        List<Object> params = new ArrayList<>();
+        StringJoiner columns = new StringJoiner(", ");
+        StringJoiner placeholders = new StringJoiner(", ");
+
+        for (Map.Entry<String, Object> entry : row.entrySet()) {
+            columns.add(quote(entry.getKey()));
+            placeholders.add("?");
+            params.add(entry.getValue());
+        }
+        String sql = "INSERT INTO " + tableName +
+                " (" + columns + ") VALUES (" + placeholders + ")";
+        // Assumes your RelationalDataAccess now offers an executeInsert method that returns the generated key.
+        return dataAccess.executeInsert(sql, params.toArray());
+    }
+
+    /**
+     * Updates a row based on the provided metadata and row map.
+     */
+    private CompletableFuture<Void> updateRow(EntityMetadata meta, Map<String, Object> row) {
         String tableName = quote(meta.getEntityName());
         Field idField = meta.getIdField();
         String idKey = EntityMapper.getDatabaseFieldName(idField);

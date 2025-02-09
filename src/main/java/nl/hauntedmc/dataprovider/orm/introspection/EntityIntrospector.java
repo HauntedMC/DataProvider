@@ -5,6 +5,7 @@ import nl.hauntedmc.dataprovider.orm.annotations.FieldMapping;
 import nl.hauntedmc.dataprovider.orm.annotations.Id;
 import nl.hauntedmc.dataprovider.orm.annotations.ManyToOne;
 import nl.hauntedmc.dataprovider.orm.annotations.OneToMany;
+import nl.hauntedmc.dataprovider.orm.annotations.CascadeType;
 
 import java.lang.reflect.Field;
 import java.util.LinkedHashMap;
@@ -102,7 +103,8 @@ public class EntityIntrospector {
                         OneToMany annotation = f.getAnnotation(OneToMany.class);
                         Class<?> targetEntity = annotation.targetEntity();
                         String mappedBy = annotation.mappedBy();
-                        meta.getOneToManyMappings().put(f, new OneToManyMapping(mappedBy, targetEntity));
+                        CascadeType[] cascade = annotation.cascade();
+                        meta.getOneToManyMappings().put(f, new OneToManyMapping(mappedBy, targetEntity, cascade));
                         f.setAccessible(true);
                     }
                 }
@@ -137,10 +139,12 @@ public class EntityIntrospector {
     public static class OneToManyMapping {
         private final String mappedBy;
         private final Class<?> targetEntity;
+        private final CascadeType[] cascade;
 
-        public OneToManyMapping(String mappedBy, Class<?> targetEntity) {
+        public OneToManyMapping(String mappedBy, Class<?> targetEntity, CascadeType[] cascade) {
             this.mappedBy = mappedBy;
             this.targetEntity = targetEntity;
+            this.cascade = cascade;
         }
 
         public String getMappedBy() {
@@ -149,6 +153,10 @@ public class EntityIntrospector {
 
         public Class<?> getTargetEntity() {
             return targetEntity;
+        }
+
+        public CascadeType[] getCascade() {
+            return cascade;
         }
     }
 }

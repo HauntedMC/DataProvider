@@ -19,4 +19,9 @@ public @interface OneToMany {
      * The field in the target entity that maps back to this entity.
      */
     String mappedBy();
+
+    /**
+     * Cascade operations to the target entities.
+     */
+    CascadeType[] cascade() default {};
 }

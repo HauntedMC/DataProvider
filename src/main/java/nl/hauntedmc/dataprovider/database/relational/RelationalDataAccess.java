@@ -22,4 +22,6 @@ public interface RelationalDataAccess extends BaseDataAccess {
     CompletableFuture<Void> executeBatchUpdate(String query, List<Object[]> batchParams);
 
     <T> CompletableFuture<T> executeTransactionally(TransactionCallback<T> callback);
+
+    CompletableFuture<Object> executeInsert(String sql, Object[] array);
 }

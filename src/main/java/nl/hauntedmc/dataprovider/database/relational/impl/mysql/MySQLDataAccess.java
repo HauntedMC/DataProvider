@@ -131,6 +131,36 @@ public class MySQLDataAccess implements RelationalDataAccess {
         }, executor);
     }
 
+    /**
+     * Executes an INSERT statement and returns the generated key.
+     *
+     * @param query  The INSERT SQL to execute.
+     * @param params Parameters to be set in the statement.
+     * @return A CompletableFuture containing the generated key.
+     */
+    @Override
+    public CompletableFuture<Object> executeInsert(String query, Object... params) {
+        return CompletableFuture.supplyAsync(() -> {
+            try (Connection connection = dataSource.getConnection();
+                 PreparedStatement stmt = connection.prepareStatement(query, Statement.RETURN_GENERATED_KEYS)) {
+                setParameters(stmt, params);
+                int affectedRows = stmt.executeUpdate();
+                if (affectedRows == 0) {
+                    throw new SQLException("Insert failed, no rows affected.");
+                }
+                try (ResultSet generatedKeys = stmt.getGeneratedKeys()) {
+                    if (generatedKeys.next()) {
+                        return generatedKeys.getObject(1);
+                    } else {
+                        throw new SQLException("Insert succeeded but no generated key was returned.");
+                    }
+                }
+            } catch (SQLException e) {
+                throw new RuntimeException("Failed to execute insert", e);
+            }
+        }, executor);
+    }
+
     private void setParameters(PreparedStatement stmt, Object... params) throws SQLException {
         for (int i = 0; i < params.length; i++) {
             stmt.setObject(i + 1, params[i]);

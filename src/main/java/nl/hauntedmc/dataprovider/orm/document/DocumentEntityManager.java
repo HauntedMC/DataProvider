@@ -8,6 +8,7 @@ import nl.hauntedmc.dataprovider.orm.EntityManager;
 import nl.hauntedmc.dataprovider.orm.introspection.EntityIntrospector;
 import nl.hauntedmc.dataprovider.orm.introspection.EntityIntrospector.EntityMetadata;
 import nl.hauntedmc.dataprovider.orm.lifecycle.EntityLifecycle;
+import nl.hauntedmc.dataprovider.orm.util.CascadeHelper;
 import nl.hauntedmc.dataprovider.orm.util.EntityMapper;
 
 import java.lang.reflect.Field;
@@ -44,12 +45,13 @@ public class DocumentEntityManager implements EntityManager {
             existenceFuture = CompletableFuture.completedFuture(true);
         }
 
-        return existenceFuture.thenCompose(insert -> {
+        CompletableFuture<Void> mainFuture = existenceFuture.thenCompose(insert -> {
             final Map<String, Object> doc = EntityMapper.entityToMap(entity, meta);
             if (insert) {
                 EntityLifecycle.callPreInsert(entity);
                 final Object effectiveId;
                 if (idVal == null) {
+                    // For document databases, we generate our own ID (e.g. a UUID)
                     effectiveId = UUID.randomUUID().toString();
                     try {
                         idField.set(entity, effectiveId);
@@ -72,6 +74,9 @@ public class DocumentEntityManager implements EntityManager {
                         .thenRun(() -> EntityLifecycle.callPostUpdate(entity));
             }
         });
+
+        // After saving the parent, cascade persist any OneToMany relationships.
+        return mainFuture.thenCompose(v -> CascadeHelper.cascadePersist(entity, meta, this));
     }
 
     @Override
