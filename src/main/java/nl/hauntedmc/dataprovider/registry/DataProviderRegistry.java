@@ -1,6 +1,5 @@
 package nl.hauntedmc.dataprovider.registry;
 
-import nl.hauntedmc.dataprovider.DataProvider;
 import nl.hauntedmc.dataprovider.database.DatabaseFactory;
 import nl.hauntedmc.dataprovider.database.DatabaseType;
 import nl.hauntedmc.dataprovider.database.base.BaseDatabaseProvider;
@@ -10,52 +9,31 @@ import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 
-/**
- * Wraps the mapping of plugin names to their database connections and provides
- * a clean API for registering, retrieving, and unregistering connections.
- */
 public class DataProviderRegistry {
 
+    // A single flat map keyed by the composite key.
+    private final ConcurrentMap<DatabaseConnectionKey, BaseDatabaseProvider> activeDatabases = new ConcurrentHashMap<>();
 
-    private final ConcurrentMap<String, ConcurrentMap<DatabaseType, BaseDatabaseProvider>> activeDatabases = new ConcurrentHashMap<>();
+    public BaseDatabaseProvider registerDatabase(String pluginName, DatabaseType databaseType, String connectionIdentifier) {
+        DatabaseConnectionKey key = new DatabaseConnectionKey(pluginName, databaseType, connectionIdentifier);
 
-    /**
-     * Registers (and creates a connection to) a database for a specific plugin.
-     *
-     * @param pluginName   The name of the requesting plugin.
-     * @param databaseType The type of database to register.
-     * @return the registered BaseDatabaseProvider, or null if disabled or connection fails.
-     */
-    public BaseDatabaseProvider registerDatabase(String pluginName, DatabaseType databaseType) {
-        // Check if this DatabaseType is enabled via the main config
-        if (!DataProvider.getInstance().getMainConfigManager().isDatabaseTypeEnabled(databaseType)) {
-            DPLogger.warning("Database type " + databaseType.name() + " is disabled in config.yml.");
-            return null;
-        }
-
-        // Ensure the map for the plugin exists
-        activeDatabases.putIfAbsent(pluginName, new ConcurrentHashMap<>());
-        ConcurrentMap<DatabaseType, BaseDatabaseProvider> pluginDatabases = activeDatabases.get(pluginName);
-
-        // If already registered, return the existing provider
-        if (pluginDatabases.containsKey(databaseType)) {
-            DPLogger.info(pluginName + " already has a connection to " + databaseType.name());
-            return pluginDatabases.get(databaseType);
+        if (activeDatabases.containsKey(key)) {
+            DPLogger.info(pluginName + " already has a " + databaseType.name() + " connection with identifier: " + connectionIdentifier);
+            return activeDatabases.get(key);
         }
 
         try {
-            // Create the provider from our factory and connect it
-            BaseDatabaseProvider databaseProvider = DatabaseFactory.createDatabaseProvider(databaseType);
-            databaseProvider.connect();
-
-            if (!databaseProvider.isConnected()) {
-                DPLogger.error("Failed to establish connection for " + pluginName + " with " + databaseType.name());
+            BaseDatabaseProvider databaseProvider = DatabaseFactory.createDatabaseProvider(databaseType, connectionIdentifier);
+            if (databaseProvider == null) {
                 return null;
             }
-
-            // Store and return the provider
-            pluginDatabases.put(databaseType, databaseProvider);
-            DPLogger.info(pluginName + " registered database: " + databaseType.name());
+            databaseProvider.connect();
+            if (!databaseProvider.isConnected()) {
+                DPLogger.error("Failed to establish connection for " + pluginName + " with " + databaseType.name() + " (" + connectionIdentifier + ")");
+                return null;
+            }
+            activeDatabases.put(key, databaseProvider);
+            DPLogger.info(pluginName + " registered " + databaseType.name() + " connection (" + connectionIdentifier + ")");
             return databaseProvider;
         } catch (Exception e) {
             DPLogger.error("Failed to register database for " + pluginName, e);
@@ -63,71 +41,47 @@ public class DataProviderRegistry {
         }
     }
 
-    /**
-     * Retrieves an active database connection for a plugin.
-     *
-     * @param pluginName   The plugin that owns the connection.
-     * @param databaseType The type of database (e.g. MYSQL, MONGODB, etc.)
-     * @return the BaseDatabaseProvider if present, otherwise null.
-     */
-    public BaseDatabaseProvider getDatabase(String pluginName, DatabaseType databaseType) {
-        return activeDatabases
-                .getOrDefault(pluginName, new ConcurrentHashMap<>())
-                .get(databaseType);
+    public BaseDatabaseProvider getDatabase(String pluginName, DatabaseType databaseType, String connectionIdentifier) {
+        DatabaseConnectionKey key = new DatabaseConnectionKey(pluginName, databaseType, connectionIdentifier);
+        return activeDatabases.get(key);
     }
 
-    /**
-     * Unregisters (and disconnects) a specific database for a plugin.
-     *
-     * @param pluginName   The plugin name.
-     * @param databaseType The type of database.
-     */
-    public void unregisterDatabase(String pluginName, DatabaseType databaseType) {
-        ConcurrentMap<DatabaseType, BaseDatabaseProvider> pluginDatabases = activeDatabases.get(pluginName);
-        if (pluginDatabases != null) {
-            BaseDatabaseProvider provider = pluginDatabases.remove(databaseType);
-            if (provider != null) {
-                provider.disconnect();
-                DPLogger.info(pluginName + " unregistered database: " + databaseType.name());
-            }
-            if (pluginDatabases.isEmpty()) {
-                activeDatabases.remove(pluginName);
-            }
+    public void unregisterDatabase(String pluginName, DatabaseType databaseType, String connectionIdentifier) {
+        DatabaseConnectionKey key = new DatabaseConnectionKey(pluginName, databaseType, connectionIdentifier);
+        BaseDatabaseProvider provider = activeDatabases.remove(key);
+        if (provider != null) {
+            provider.disconnect();
+            DPLogger.info(pluginName + " unregistered " + databaseType.name() + " connection (" + connectionIdentifier + ")");
         }
     }
 
-    /**
-     * Unregisters (and disconnects) all databases for a given plugin.
-     *
-     * @param pluginName the name of the plugin.
-     */
     public void unregisterAllDatabases(String pluginName) {
-        if (activeDatabases.containsKey(pluginName)) {
-            for (DatabaseType type : activeDatabases.get(pluginName).keySet()) {
-                unregisterDatabase(pluginName, type);
+        activeDatabases.entrySet().removeIf(entry -> {
+            if (entry.getKey().getPluginName().equals(pluginName)) {
+                try {
+                    entry.getValue().disconnect();
+                } catch (Exception e) {
+                    DPLogger.error("Error disconnecting " + entry.getKey(), e);
+                }
+                return true;
             }
-        }
+            return false;
+        });
     }
 
-    /**
-     * Shuts down all active database connections.
-     */
     public void shutdownAllDatabases() {
-        for (Map.Entry<String, ConcurrentMap<DatabaseType, BaseDatabaseProvider>> entry : activeDatabases.entrySet()) {
-            String pluginName = entry.getKey();
-            for (Map.Entry<DatabaseType, BaseDatabaseProvider> dbEntry : entry.getValue().entrySet()) {
-                try {
-                    dbEntry.getValue().disconnect();
-                } catch (Exception e) {
-                    DPLogger.error("Error disconnecting database " + dbEntry.getKey() + " for plugin " + pluginName, e);
-                }
+        for (Map.Entry<DatabaseConnectionKey, BaseDatabaseProvider> entry : activeDatabases.entrySet()) {
+            try {
+                entry.getValue().disconnect();
+            } catch (Exception e) {
+                DPLogger.error("Error disconnecting " + entry.getKey(), e);
             }
         }
         activeDatabases.clear();
         DPLogger.info("All database connections have been closed.");
     }
 
-    public ConcurrentMap<String, ConcurrentMap<DatabaseType, BaseDatabaseProvider>> getActiveDatabases() {
+    public ConcurrentMap<DatabaseConnectionKey, BaseDatabaseProvider> getActiveDatabases() {
         return activeDatabases;
     }
 }

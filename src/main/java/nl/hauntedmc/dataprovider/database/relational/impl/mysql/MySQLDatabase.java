@@ -2,7 +2,6 @@ package nl.hauntedmc.dataprovider.database.relational.impl.mysql;
 
 import com.zaxxer.hikari.HikariConfig;
 import com.zaxxer.hikari.HikariDataSource;
-import nl.hauntedmc.dataprovider.DataProvider;
 import nl.hauntedmc.dataprovider.database.relational.RelationalDataAccess;
 import nl.hauntedmc.dataprovider.database.relational.RelationalDatabaseProvider;
 import nl.hauntedmc.dataprovider.database.relational.schema.SchemaManager;
@@ -11,7 +10,6 @@ import org.bukkit.configuration.file.FileConfiguration;
 
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
-import java.util.logging.Level;
 
 /**
  * MySQL implementation of RelationalDatabaseProvider.

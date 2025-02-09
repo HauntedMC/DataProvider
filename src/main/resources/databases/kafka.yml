@@ -1,3 +1,4 @@
-bootstrapServers: localhost:9092
-groupId: defaultGroup
-pool_size: 4
+default_credentials:
+  bootstrapServers: localhost:9092
+  groupId: defaultGroup
+  pool_size: 4

@@ -1,6 +1,7 @@
-host: localhost
-port: 3306
-database: minecraft
-username: root
-password: ""
-pool_size: 10
+default_credentials:
+  host: localhost
+  port: 3306
+  database: minecraft
+  username: root
+  password: ""
+  pool_size: 10

@@ -1,6 +1,7 @@
-host: localhost
-port: 5432
-database: minecraft
-username: postgres
-password: ""
-pool_size: 10
+default_credentials:
+  host: localhost
+  port: 5432
+  database: minecraft
+  username: postgres
+  password: ""
+  pool_size: 10

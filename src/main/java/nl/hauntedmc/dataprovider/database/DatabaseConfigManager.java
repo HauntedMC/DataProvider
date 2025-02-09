@@ -2,6 +2,7 @@ package nl.hauntedmc.dataprovider.database;
 
 import nl.hauntedmc.dataprovider.DataProvider;
 import nl.hauntedmc.dataprovider.logging.DPLogger;
+import org.bukkit.configuration.ConfigurationSection;
 import org.bukkit.configuration.file.FileConfiguration;
 import org.bukkit.configuration.file.YamlConfiguration;
 
@@ -65,6 +66,16 @@ public class DatabaseConfigManager {
         } catch (IOException e) {
             DPLogger.error("Failed to copy default config: " + resourcePath, e);
             return false;
+        }
+    }
+
+    public ConfigurationSection getConfig(DatabaseType type, String connectionIdentifier) {
+        FileConfiguration config = configMap.get(type);
+        if (config != null && config.isConfigurationSection(connectionIdentifier)) {
+            return config.getConfigurationSection(connectionIdentifier);
+        } else {
+            DPLogger.warning("No configuration section found for " + connectionIdentifier + " in " + type.getConfigFileName());
+            return null;
         }
     }
 }

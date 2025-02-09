@@ -10,6 +10,8 @@ import nl.hauntedmc.dataprovider.database.relational.impl.postgresql.PostgreSQLD
 import nl.hauntedmc.dataprovider.database.messaging.impl.rabbitmq.RabbitMQMessagingDatabase;
 import nl.hauntedmc.dataprovider.database.messaging.impl.kafka.KafkaMessagingDatabase;
 import nl.hauntedmc.dataprovider.database.messaging.impl.redis.RedisMessagingDatabase;
+import nl.hauntedmc.dataprovider.logging.DPLogger;
+import org.bukkit.configuration.ConfigurationSection;
 import org.bukkit.configuration.file.FileConfiguration;
 
 /**
@@ -17,9 +19,17 @@ import org.bukkit.configuration.file.FileConfiguration;
  */
 public class DatabaseFactory {
 
-    public static BaseDatabaseProvider createDatabaseProvider(DatabaseType type) {
+    public static BaseDatabaseProvider createDatabaseProvider(DatabaseType type, String connectionIdentifier) {
         DatabaseConfigManager configManager = DataProvider.getInstance().getDatabaseConfigManager();
-        FileConfiguration config = configManager.getConfig(type);
+        // Get only the section for the specified connection
+        ConfigurationSection connectionConfig = configManager.getConfig(type, connectionIdentifier);
+
+        if (connectionConfig == null) {
+            DPLogger.error("Could not load configuration for " + connectionIdentifier + " (" + type.name() + ")");
+            return null;
+        }
+
+        FileConfiguration config = (FileConfiguration) connectionConfig;
 
         return switch (type) {
             case MYSQL -> new MySQLDatabase(config);
