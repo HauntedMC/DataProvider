@@ -4,6 +4,7 @@ import nl.hauntedmc.dataprovider.commands.DataProviderCommand;
 import nl.hauntedmc.dataprovider.database.internal.DataProviderHandler;
 import nl.hauntedmc.dataprovider.logger.DPLogger;
 import nl.hauntedmc.dataprovider.security.DataProviderSecurityManager;
+import nl.hauntedmc.dataprovider.util.ConfigUtils;
 import org.bukkit.plugin.java.JavaPlugin;
 
 import java.util.Objects;
@@ -16,7 +17,9 @@ public class DataProvider extends JavaPlugin {
     @Override
     public void onEnable() {
         instance = this;
-        saveDefaultConfig();
+
+        // Init Main Config
+        ConfigUtils.initializeMainConfig();
 
         // Init Logger
         DPLogger.initialize();

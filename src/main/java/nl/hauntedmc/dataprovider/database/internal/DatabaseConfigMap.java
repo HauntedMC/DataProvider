@@ -1,4 +1,4 @@
-package nl.hauntedmc.dataprovider.database.config;
+package nl.hauntedmc.dataprovider.database.internal;
 
 import nl.hauntedmc.dataprovider.DataProvider;
 import nl.hauntedmc.dataprovider.database.DatabaseType;
@@ -17,19 +17,12 @@ import java.util.Map;
 /**
  * Manages individual database configuration files (e.g. mysql.yml, mongodb.yml, etc.).
  */
-public class DatabaseConfigManager {
+class DatabaseConfigMap {
 
-    private final DataProvider plugin;
-    private final File databasesFolder;
-    private final Map<DatabaseType, FileConfiguration> configMap = new HashMap<>();
+    private static final Map<DatabaseType, FileConfiguration> configMap = new HashMap<>();
 
-    public DatabaseConfigManager(DataProvider plugin) {
-        this.plugin = plugin;
-        this.databasesFolder = new File(plugin.getDataFolder(), "databases");
-        initializeConfigs();
-    }
-
-    private void initializeConfigs() {
+    protected static void initialize() {
+        File databasesFolder = new File(DataProvider.getInstance().getDataFolder(), "databases");
         if (!databasesFolder.exists() && !databasesFolder.mkdirs()) {
             DPLogger.warning("Failed to create databases folder at: " + databasesFolder.getAbsolutePath());
         } else {
@@ -51,12 +44,8 @@ public class DatabaseConfigManager {
         DPLogger.info("Loaded " + configMap.size() + " database configurations.");
     }
 
-    public FileConfiguration getConfig(DatabaseType type) {
-        return configMap.get(type);
-    }
-
-    private boolean copyDefaultConfigFromResources(String resourcePath, File destinationFile) {
-        try (InputStream in = plugin.getResource("databases/" + resourcePath)) {
+    private static boolean copyDefaultConfigFromResources(String resourcePath, File destinationFile) {
+        try (InputStream in = DataProvider.getInstance().getResource("databases/" + resourcePath)) {
             if (in == null) {
                 return false;
             }
@@ -69,7 +58,7 @@ public class DatabaseConfigManager {
         }
     }
 
-    public ConfigurationSection getConfig(DatabaseType type, String connectionIdentifier) {
+    protected ConfigurationSection getConfig(DatabaseType type, String connectionIdentifier) {
         FileConfiguration config = configMap.get(type);
         if (config != null && config.isConfigurationSection(connectionIdentifier)) {
             return config.getConfigurationSection(connectionIdentifier);

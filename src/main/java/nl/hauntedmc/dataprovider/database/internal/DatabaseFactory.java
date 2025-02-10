@@ -1,7 +1,5 @@
 package nl.hauntedmc.dataprovider.database.internal;
 
-import nl.hauntedmc.dataprovider.DataProvider;
-import nl.hauntedmc.dataprovider.database.config.DatabaseConfigManager;
 import nl.hauntedmc.dataprovider.database.DatabaseType;
 import nl.hauntedmc.dataprovider.database.base.BaseDatabaseProvider;
 import nl.hauntedmc.dataprovider.database.document.impl.mongodb.MongoDBDatabase;
@@ -21,7 +19,8 @@ import org.bukkit.configuration.ConfigurationSection;
 class DatabaseFactory {
 
     protected static BaseDatabaseProvider createDatabaseProvider(DatabaseType type, String connectionIdentifier) {
-        DatabaseConfigManager configManager = DataProvider.getInstance().getDataProviderHandler().getDatabaseConfigManager();
+
+        DatabaseConfigMap configManager = new DatabaseConfigMap();
         ConfigurationSection connectionConfig = configManager.getConfig(type, connectionIdentifier);
 
         if (connectionConfig == null) {

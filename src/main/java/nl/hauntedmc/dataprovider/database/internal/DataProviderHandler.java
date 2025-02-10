@@ -1,9 +1,7 @@
 package nl.hauntedmc.dataprovider.database.internal;
 
 import nl.hauntedmc.dataprovider.DataProvider;
-import nl.hauntedmc.dataprovider.config.MainConfigManager;
 import nl.hauntedmc.dataprovider.database.DatabaseConnectionKey;
-import nl.hauntedmc.dataprovider.database.config.DatabaseConfigManager;
 import nl.hauntedmc.dataprovider.database.DatabaseType;
 import nl.hauntedmc.dataprovider.database.base.BaseDatabaseProvider;
 import nl.hauntedmc.dataprovider.logger.DPLogger;
@@ -21,9 +19,7 @@ import java.util.concurrent.ConcurrentMap;
  */
 public class DataProviderHandler {
 
-    private final MainConfigManager configManager;
     private final DataProviderRegistry registry;
-    private final DatabaseConfigManager databaseConfigManager;
 
     /**
      * Public constructor.
@@ -31,17 +27,8 @@ public class DataProviderHandler {
      * @param plugin the main DataProvider plugin instance.
      */
     public DataProviderHandler(DataProvider plugin) {
-        this.configManager = new MainConfigManager(plugin);
-        this.databaseConfigManager = new DatabaseConfigManager(plugin);
         this.registry = new DataProviderRegistry();
-    }
-
-    protected MainConfigManager getConfigManager() {
-        return configManager;
-    }
-
-    protected DatabaseConfigManager getDatabaseConfigManager() {
-        return databaseConfigManager;
+        DatabaseConfigMap.initialize();
     }
 
     /**

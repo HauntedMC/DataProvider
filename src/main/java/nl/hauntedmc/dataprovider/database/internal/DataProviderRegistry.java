@@ -4,6 +4,7 @@ import nl.hauntedmc.dataprovider.database.DatabaseConnectionKey;
 import nl.hauntedmc.dataprovider.database.DatabaseType;
 import nl.hauntedmc.dataprovider.database.base.BaseDatabaseProvider;
 import nl.hauntedmc.dataprovider.logger.DPLogger;
+import nl.hauntedmc.dataprovider.util.ConfigUtils;
 
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
@@ -19,6 +20,11 @@ class DataProviderRegistry {
         if (activeDatabases.containsKey(key)) {
             DPLogger.info(pluginName + " already has a " + databaseType.name() + " connection with identifier: " + connectionIdentifier);
             return activeDatabases.get(key);
+        }
+
+        if (!ConfigUtils.isDatabaseTypeEnabled(databaseType)) {
+            DPLogger.error("Failed to establish connection for " + pluginName + " with " + databaseType.name() + ": This database type is disabled in the main config.");
+            return null;
         }
 
         try {
