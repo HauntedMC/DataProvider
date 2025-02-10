@@ -11,32 +11,35 @@ import org.hibernate.boot.registry.StandardServiceRegistryBuilder;
 import javax.sql.DataSource;
 
 /**
- * A simple Hibernate wrapper that initializes Hibernate using a supplied DataSource.
- * It provides a singleton SessionFactory and a helper method to run transactional work.
+ * A simple Hibernate wrapper that initializes Hibernate using a provided DataSource and a list of entity classes.
  */
 public class ORMManager {
 
     private static SessionFactory sessionFactory;
 
     /**
-     * Initializes Hibernate with the given DataSource.
+     * Initializes Hibernate with the given DataSource and registers the provided entity classes.
      * <p>
-     * This method should be called once at startup.
+     * This method must be called once at startup.
      *
-     * @param dataSource the DataSource to use for obtaining connections.
+     * @param dataSource    the DataSource to use for connections.
+     * @param entityClasses one or more entity classes to register.
      */
-    public static void initialize(DataSource dataSource) {
-        // Build the service registry using settings from hibernate.cfg.xml
-        // and override the connection setting with our DataSource.
+    public static void initialize(DataSource dataSource, Class<?>... entityClasses) {
+        // Build the registry from the hibernate.cfg.xml and override the connection settings with our DataSource.
         StandardServiceRegistry registry = new StandardServiceRegistryBuilder()
                 .configure() // Loads hibernate.cfg.xml from the classpath.
                 .applySetting("hibernate.connection.datasource", dataSource)
                 .build();
 
-        Metadata metadata = new MetadataSources(registry)
-                .getMetadataBuilder()
-                .build();
+        // Create MetadataSources and register each provided entity class.
+        MetadataSources metadataSources = new MetadataSources(registry);
+        for (Class<?> entityClass : entityClasses) {
+            metadataSources.addAnnotatedClass(entityClass);
+        }
 
+        // Build the Metadata and SessionFactory.
+        Metadata metadata = metadataSources.getMetadataBuilder().build();
         sessionFactory = metadata.getSessionFactoryBuilder().build();
     }
 
@@ -54,7 +57,7 @@ public class ORMManager {
     }
 
     /**
-     * Shuts down Hibernate, closing the SessionFactory.
+     * Shuts down Hibernate by closing the SessionFactory.
      */
     public static void shutdown() {
         if (sessionFactory != null) {
@@ -64,11 +67,11 @@ public class ORMManager {
     }
 
     /**
-     * Executes the given transactional work.
+     * Executes a block of work within a transaction.
      *
-     * @param <T>      the result type
-     * @param callback the work to execute in a transaction.
-     * @return the result of the work
+     * @param <T>      the return type.
+     * @param callback the work to execute.
+     * @return the result from the callback.
      */
     public static <T> T runInTransaction(TransactionCallback<T> callback) {
         Session session = getSessionFactory().openSession();

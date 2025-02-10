@@ -1,14 +1,12 @@
-<?xml version="1.0" encoding="utf-8"?>
+<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE hibernate-configuration PUBLIC
         "-//Hibernate/Hibernate Configuration DTD 3.0//EN"
         "http://www.hibernate.org/dtd/hibernate-configuration-3.0.dtd">
 <hibernate-configuration>
     <session-factory>
-        <!-- Schema update setting; change as necessary (create, update, validate, etc.) -->
+        <!-- Connection properties are not needed since the DataSource is provided programmatically -->
         <property name="hibernate.hbm2ddl.auto">update</property>
-
-        <!-- Optional: Enable SQL logging (set to "true" for debugging, "false" for production) -->
+        <!-- Optional: disable SQL logging -->
         <property name="hibernate.show_sql">false</property>
-
     </session-factory>
 </hibernate-configuration>
