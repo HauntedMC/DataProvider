@@ -29,17 +29,15 @@ public class DatabaseFactory {
             return null;
         }
 
-        FileConfiguration config = (FileConfiguration) connectionConfig;
-
         return switch (type) {
-            case MYSQL -> new MySQLDatabase(config);
-            case MARIADB -> new MariaDBDatabase(config);
-            case POSTGRES -> new PostgreSQLDatabase(config);
-            case MONGODB -> new MongoDBDatabase(config);
-            case REDIS -> new RedisDatabase(config);
-            case RABBITMQ -> new RabbitMQMessagingDatabase(config);
-            case KAFKA -> new KafkaMessagingDatabase(config);
-            case REDIS_MESSAGING -> new RedisMessagingDatabase(config);
+            case MYSQL -> new MySQLDatabase(connectionConfig);
+            case MARIADB -> new MariaDBDatabase(connectionConfig);
+            case POSTGRES -> new PostgreSQLDatabase(connectionConfig);
+            case MONGODB -> new MongoDBDatabase(connectionConfig);
+            case REDIS -> new RedisDatabase(connectionConfig);
+            case RABBITMQ -> new RabbitMQMessagingDatabase(connectionConfig);
+            case KAFKA -> new KafkaMessagingDatabase(connectionConfig);
+            case REDIS_MESSAGING -> new RedisMessagingDatabase(connectionConfig);
         };
     }
 }
