@@ -9,6 +9,8 @@ import nl.hauntedmc.dataprovider.logging.DPLogger;
 import org.bukkit.configuration.ConfigurationSection;
 import org.bukkit.configuration.file.FileConfiguration;
 
+import java.sql.Connection;
+import java.sql.SQLException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
@@ -106,5 +108,14 @@ public class MySQLDatabase implements RelationalDatabaseProvider {
             throw new IllegalStateException("[MySQLDatabase] DataAccess not initialized!");
         }
         return dataAccess;
+    }
+
+    @Override
+    public Connection getConnection() {
+        try {
+            return dataSource.getConnection();
+        } catch (SQLException e) {
+            throw new RuntimeException(e);
+        }
     }
 }
