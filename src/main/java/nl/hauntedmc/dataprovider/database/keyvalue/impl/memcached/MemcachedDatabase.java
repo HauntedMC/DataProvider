@@ -3,6 +3,7 @@ package nl.hauntedmc.dataprovider.database.keyvalue.impl.memcached;
 import nl.hauntedmc.dataprovider.database.keyvalue.KeyValueDataAccess;
 import nl.hauntedmc.dataprovider.database.keyvalue.KeyValueDatabaseProvider;
 import nl.hauntedmc.dataprovider.logging.DPLogger;
+import org.bukkit.configuration.ConfigurationSection;
 import org.bukkit.configuration.file.FileConfiguration;
 import net.spy.memcached.MemcachedClient;
 
@@ -15,14 +16,14 @@ import java.util.concurrent.Executors;
  */
 public class MemcachedDatabase implements KeyValueDatabaseProvider {
 
-    private final FileConfiguration config;
+    private final ConfigurationSection config;
 
     private MemcachedClient memcachedClient;
     private ExecutorService executor;
     private MemcachedDataAccess dataAccess;
     private boolean connected;
 
-    public MemcachedDatabase(FileConfiguration config) {
+    public MemcachedDatabase(ConfigurationSection config) {
         this.config = config;
     }
 

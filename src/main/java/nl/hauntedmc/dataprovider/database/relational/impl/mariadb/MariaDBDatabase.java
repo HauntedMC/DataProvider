@@ -7,6 +7,7 @@ import nl.hauntedmc.dataprovider.database.relational.RelationalDataAccess;
 import nl.hauntedmc.dataprovider.database.relational.RelationalDatabaseProvider;
 import nl.hauntedmc.dataprovider.database.relational.schema.SchemaManager;
 import nl.hauntedmc.dataprovider.logging.DPLogger;
+import org.bukkit.configuration.ConfigurationSection;
 import org.bukkit.configuration.file.FileConfiguration;
 
 import java.util.concurrent.ExecutorService;
@@ -18,13 +19,13 @@ import java.util.logging.Level;
  */
 public class MariaDBDatabase implements RelationalDatabaseProvider {
 
-    private final FileConfiguration config;
+    private final ConfigurationSection config;
     private HikariDataSource dataSource;
     private ExecutorService executor;
     private RelationalDataAccess dataAccess;
     private SchemaManager schemaManager;
 
-    public MariaDBDatabase(FileConfiguration config) {
+    public MariaDBDatabase(ConfigurationSection config) {
         this.config = config;
     }
 

@@ -3,6 +3,7 @@ package nl.hauntedmc.dataprovider.database.messaging.impl.redis;
 import nl.hauntedmc.dataprovider.database.messaging.MessagingDataAccess;
 import nl.hauntedmc.dataprovider.database.messaging.MessagingDatabaseProvider;
 import nl.hauntedmc.dataprovider.logging.DPLogger;
+import org.bukkit.configuration.ConfigurationSection;
 import org.bukkit.configuration.file.FileConfiguration;
 import redis.clients.jedis.JedisPool;
 import redis.clients.jedis.JedisPoolConfig;
@@ -15,14 +16,14 @@ import java.util.concurrent.Executors;
  */
 public class RedisMessagingDatabase implements MessagingDatabaseProvider {
 
-    private final FileConfiguration config;
+    private final ConfigurationSection config;
 
     private JedisPool jedisPool;
     private ExecutorService executor;
     private RedisMessagingDataAccess dataAccess;
     private boolean connected;
 
-    public RedisMessagingDatabase(FileConfiguration config) {
+    public RedisMessagingDatabase(ConfigurationSection config) {
         this.config = config;
     }
 

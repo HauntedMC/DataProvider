@@ -6,6 +6,7 @@ import com.rabbitmq.client.ConnectionFactory;
 import nl.hauntedmc.dataprovider.database.messaging.MessagingDataAccess;
 import nl.hauntedmc.dataprovider.database.messaging.MessagingDatabaseProvider;
 import nl.hauntedmc.dataprovider.logging.DPLogger;
+import org.bukkit.configuration.ConfigurationSection;
 import org.bukkit.configuration.file.FileConfiguration;
 
 import java.io.IOException;
@@ -18,14 +19,14 @@ import java.util.concurrent.TimeoutException;
  */
 public class RabbitMQMessagingDatabase implements MessagingDatabaseProvider {
 
-    private final FileConfiguration config;
+    private final ConfigurationSection config;
     private Connection connection;
     private Channel channel;
     private ExecutorService executor;
     private RabbitMQMessagingDataAccess dataAccess;
     private boolean connected;
 
-    public RabbitMQMessagingDatabase(FileConfiguration config) {
+    public RabbitMQMessagingDatabase(ConfigurationSection config) {
         this.config = config;
     }
 

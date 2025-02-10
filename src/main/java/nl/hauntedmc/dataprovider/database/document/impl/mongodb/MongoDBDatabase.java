@@ -7,6 +7,7 @@ import com.mongodb.client.MongoClients;
 import nl.hauntedmc.dataprovider.database.document.DocumentDataAccess;
 import nl.hauntedmc.dataprovider.database.document.DocumentDatabaseProvider;
 import nl.hauntedmc.dataprovider.logging.DPLogger;
+import org.bukkit.configuration.ConfigurationSection;
 import org.bukkit.configuration.file.FileConfiguration;
 
 import java.util.concurrent.ExecutorService;
@@ -17,13 +18,13 @@ import java.util.concurrent.Executors;
  */
 public class MongoDBDatabase implements DocumentDatabaseProvider {
 
-    private final FileConfiguration config;
+    private final ConfigurationSection config;
     private MongoClient mongoClient;
     private ExecutorService executor;
     private MongoDBDataAccess dataAccess;
     private boolean connected;
 
-    public MongoDBDatabase(FileConfiguration config) {
+    public MongoDBDatabase(ConfigurationSection config) {
         this.config = config;
     }
 

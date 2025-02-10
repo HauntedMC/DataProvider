@@ -5,6 +5,7 @@ import nl.hauntedmc.dataprovider.database.messaging.MessagingDatabaseProvider;
 import nl.hauntedmc.dataprovider.logging.DPLogger;
 import org.apache.kafka.clients.consumer.KafkaConsumer;
 import org.apache.kafka.clients.producer.KafkaProducer;
+import org.bukkit.configuration.ConfigurationSection;
 import org.bukkit.configuration.file.FileConfiguration;
 
 import java.util.Properties;
@@ -16,14 +17,14 @@ import java.util.concurrent.Executors;
  */
 public class KafkaMessagingDatabase implements MessagingDatabaseProvider {
 
-    private final FileConfiguration config;
+    private final ConfigurationSection config;
     private KafkaProducer<String, String> producer;
     private KafkaConsumer<String, String> consumer;
     private ExecutorService consumerExecutor;
     private KafkaMessagingDataAccess dataAccess;
     private boolean connected;
 
-    public KafkaMessagingDatabase(FileConfiguration config) {
+    public KafkaMessagingDatabase(ConfigurationSection config) {
         this.config = config;
     }
 
