@@ -5,9 +5,8 @@ import com.rabbitmq.client.Connection;
 import com.rabbitmq.client.ConnectionFactory;
 import nl.hauntedmc.dataprovider.database.messaging.MessagingDataAccess;
 import nl.hauntedmc.dataprovider.database.messaging.MessagingDatabaseProvider;
-import nl.hauntedmc.dataprovider.logging.DPLogger;
+import nl.hauntedmc.dataprovider.logger.DPLogger;
 import org.bukkit.configuration.ConfigurationSection;
-import org.bukkit.configuration.file.FileConfiguration;
 
 import java.io.IOException;
 import java.util.concurrent.ExecutorService;

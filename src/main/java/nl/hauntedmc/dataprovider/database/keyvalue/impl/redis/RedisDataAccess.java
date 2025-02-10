@@ -12,7 +12,7 @@ import java.util.concurrent.ExecutorService;
 /**
  * RedisDataAccess implements KeyValueDataAccess using Jedis.
  */
-public class RedisDataAccess implements KeyValueDataAccess {
+ class RedisDataAccess implements KeyValueDataAccess {
 
     private final JedisPool jedisPool;
     private final ExecutorService executor;

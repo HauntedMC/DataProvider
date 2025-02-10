@@ -5,7 +5,7 @@ import com.zaxxer.hikari.HikariDataSource;
 import nl.hauntedmc.dataprovider.database.relational.RelationalDataAccess;
 import nl.hauntedmc.dataprovider.database.relational.RelationalDatabaseProvider;
 import nl.hauntedmc.dataprovider.database.relational.schema.SchemaManager;
-import nl.hauntedmc.dataprovider.logging.DPLogger;
+import nl.hauntedmc.dataprovider.logger.DPLogger;
 import org.bukkit.configuration.ConfigurationSection;
 
 import javax.sql.DataSource;

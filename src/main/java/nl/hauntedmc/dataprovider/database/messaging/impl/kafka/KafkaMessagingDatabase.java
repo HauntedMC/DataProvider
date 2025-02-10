@@ -2,11 +2,10 @@ package nl.hauntedmc.dataprovider.database.messaging.impl.kafka;
 
 import nl.hauntedmc.dataprovider.database.messaging.MessagingDataAccess;
 import nl.hauntedmc.dataprovider.database.messaging.MessagingDatabaseProvider;
-import nl.hauntedmc.dataprovider.logging.DPLogger;
+import nl.hauntedmc.dataprovider.logger.DPLogger;
 import org.apache.kafka.clients.consumer.KafkaConsumer;
 import org.apache.kafka.clients.producer.KafkaProducer;
 import org.bukkit.configuration.ConfigurationSection;
-import org.bukkit.configuration.file.FileConfiguration;
 
 import java.util.Properties;
 import java.util.concurrent.ExecutorService;

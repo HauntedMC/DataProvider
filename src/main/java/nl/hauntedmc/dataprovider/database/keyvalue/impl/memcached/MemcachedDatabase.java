@@ -2,9 +2,8 @@ package nl.hauntedmc.dataprovider.database.keyvalue.impl.memcached;
 
 import nl.hauntedmc.dataprovider.database.keyvalue.KeyValueDataAccess;
 import nl.hauntedmc.dataprovider.database.keyvalue.KeyValueDatabaseProvider;
-import nl.hauntedmc.dataprovider.logging.DPLogger;
+import nl.hauntedmc.dataprovider.logger.DPLogger;
 import org.bukkit.configuration.ConfigurationSection;
-import org.bukkit.configuration.file.FileConfiguration;
 import net.spy.memcached.MemcachedClient;
 
 import java.net.InetSocketAddress;

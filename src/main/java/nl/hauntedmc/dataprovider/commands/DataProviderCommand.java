@@ -1,4 +1,4 @@
-package nl.hauntedmc.dataprovider.command;
+package nl.hauntedmc.dataprovider.commands;
 
 import nl.hauntedmc.dataprovider.DataProvider;
 import nl.hauntedmc.dataprovider.database.base.BaseDatabaseProvider;
@@ -30,7 +30,7 @@ public class DataProviderCommand implements CommandExecutor, TabCompleter {
             // Retrieve the active databases map from the registry.
             // This map is keyed by DatabaseConnectionKey.
             ConcurrentMap<DatabaseConnectionKey, BaseDatabaseProvider> activeDatabases =
-                    DataProvider.getInstance().getRegistry().getActiveDatabases();
+                    DataProvider.getInstance().getDataProviderHandler().getActiveDatabases();
 
             if (activeDatabases.isEmpty()) {
                 sender.sendMessage(ChatColor.YELLOW + "No active database connections found.");

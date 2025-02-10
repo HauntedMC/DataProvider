@@ -1,4 +1,4 @@
-package nl.hauntedmc.dataprovider.logging;
+package nl.hauntedmc.dataprovider.logger;
 
 import nl.hauntedmc.dataprovider.DataProvider;
 

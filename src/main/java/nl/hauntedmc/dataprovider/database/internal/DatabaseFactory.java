@@ -1,6 +1,8 @@
-package nl.hauntedmc.dataprovider.database;
+package nl.hauntedmc.dataprovider.database.internal;
 
 import nl.hauntedmc.dataprovider.DataProvider;
+import nl.hauntedmc.dataprovider.database.config.DatabaseConfigManager;
+import nl.hauntedmc.dataprovider.database.DatabaseType;
 import nl.hauntedmc.dataprovider.database.base.BaseDatabaseProvider;
 import nl.hauntedmc.dataprovider.database.document.impl.mongodb.MongoDBDatabase;
 import nl.hauntedmc.dataprovider.database.keyvalue.impl.redis.RedisDatabase;
@@ -10,18 +12,16 @@ import nl.hauntedmc.dataprovider.database.relational.impl.postgresql.PostgreSQLD
 import nl.hauntedmc.dataprovider.database.messaging.impl.rabbitmq.RabbitMQMessagingDatabase;
 import nl.hauntedmc.dataprovider.database.messaging.impl.kafka.KafkaMessagingDatabase;
 import nl.hauntedmc.dataprovider.database.messaging.impl.redis.RedisMessagingDatabase;
-import nl.hauntedmc.dataprovider.logging.DPLogger;
+import nl.hauntedmc.dataprovider.logger.DPLogger;
 import org.bukkit.configuration.ConfigurationSection;
-import org.bukkit.configuration.file.FileConfiguration;
 
 /**
  * Factory to create BaseDatabaseProvider instances based on the DatabaseType.
  */
-public class DatabaseFactory {
+class DatabaseFactory {
 
     protected static BaseDatabaseProvider createDatabaseProvider(DatabaseType type, String connectionIdentifier) {
-        DatabaseConfigManager configManager = DataProvider.getInstance().getDatabaseConfigManager();
-        // Get only the section for the specified connection
+        DatabaseConfigManager configManager = DataProvider.getInstance().getDataProviderHandler().getDatabaseConfigManager();
         ConfigurationSection connectionConfig = configManager.getConfig(type, connectionIdentifier);
 
         if (connectionConfig == null) {

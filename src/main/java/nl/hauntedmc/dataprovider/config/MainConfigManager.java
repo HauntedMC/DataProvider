@@ -2,7 +2,7 @@ package nl.hauntedmc.dataprovider.config;
 
 import nl.hauntedmc.dataprovider.DataProvider;
 import nl.hauntedmc.dataprovider.database.DatabaseType;
-import nl.hauntedmc.dataprovider.logging.DPLogger;
+import nl.hauntedmc.dataprovider.logger.DPLogger;
 import org.bukkit.configuration.file.FileConfiguration;
 
 public class MainConfigManager {

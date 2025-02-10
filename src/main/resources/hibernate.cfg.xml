@@ -4,9 +4,7 @@
         "http://www.hibernate.org/dtd/hibernate-configuration-3.0.dtd">
 <hibernate-configuration>
     <session-factory>
-        <!-- Connection properties are not needed since the DataSource is provided programmatically -->
         <property name="hibernate.hbm2ddl.auto">update</property>
-        <!-- Optional: disable SQL logging -->
         <property name="hibernate.show_sql">false</property>
     </session-factory>
 </hibernate-configuration>

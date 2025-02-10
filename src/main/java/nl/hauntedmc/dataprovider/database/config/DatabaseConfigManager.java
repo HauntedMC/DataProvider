@@ -1,7 +1,8 @@
-package nl.hauntedmc.dataprovider.database;
+package nl.hauntedmc.dataprovider.database.config;
 
 import nl.hauntedmc.dataprovider.DataProvider;
-import nl.hauntedmc.dataprovider.logging.DPLogger;
+import nl.hauntedmc.dataprovider.database.DatabaseType;
+import nl.hauntedmc.dataprovider.logger.DPLogger;
 import org.bukkit.configuration.ConfigurationSection;
 import org.bukkit.configuration.file.FileConfiguration;
 import org.bukkit.configuration.file.YamlConfiguration;
@@ -12,7 +13,6 @@ import java.io.InputStream;
 import java.nio.file.Files;
 import java.util.HashMap;
 import java.util.Map;
-import java.util.logging.Level;
 
 /**
  * Manages individual database configuration files (e.g. mysql.yml, mongodb.yml, etc.).

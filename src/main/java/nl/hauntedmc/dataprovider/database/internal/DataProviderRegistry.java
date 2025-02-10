@@ -1,18 +1,19 @@
-package nl.hauntedmc.dataprovider.database;
+package nl.hauntedmc.dataprovider.database.internal;
 
+import nl.hauntedmc.dataprovider.database.DatabaseConnectionKey;
+import nl.hauntedmc.dataprovider.database.DatabaseType;
 import nl.hauntedmc.dataprovider.database.base.BaseDatabaseProvider;
-import nl.hauntedmc.dataprovider.logging.DPLogger;
+import nl.hauntedmc.dataprovider.logger.DPLogger;
 
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 
-public class DataProviderRegistry {
+class DataProviderRegistry {
 
-    // A single flat map keyed by the composite key.
     private final ConcurrentMap<DatabaseConnectionKey, BaseDatabaseProvider> activeDatabases = new ConcurrentHashMap<>();
 
-    public BaseDatabaseProvider registerDatabase(String pluginName, DatabaseType databaseType, String connectionIdentifier) {
+    protected BaseDatabaseProvider registerDatabase(String pluginName, DatabaseType databaseType, String connectionIdentifier) {
         DatabaseConnectionKey key = new DatabaseConnectionKey(pluginName, databaseType, connectionIdentifier);
 
         if (activeDatabases.containsKey(key)) {
@@ -39,12 +40,12 @@ public class DataProviderRegistry {
         }
     }
 
-    public BaseDatabaseProvider getDatabase(String pluginName, DatabaseType databaseType, String connectionIdentifier) {
+    protected BaseDatabaseProvider getDatabase(String pluginName, DatabaseType databaseType, String connectionIdentifier) {
         DatabaseConnectionKey key = new DatabaseConnectionKey(pluginName, databaseType, connectionIdentifier);
         return activeDatabases.get(key);
     }
 
-    public void unregisterDatabase(String pluginName, DatabaseType databaseType, String connectionIdentifier) {
+    protected void unregisterDatabase(String pluginName, DatabaseType databaseType, String connectionIdentifier) {
         DatabaseConnectionKey key = new DatabaseConnectionKey(pluginName, databaseType, connectionIdentifier);
         BaseDatabaseProvider provider = activeDatabases.remove(key);
         if (provider != null) {
@@ -53,7 +54,7 @@ public class DataProviderRegistry {
         }
     }
 
-    public void unregisterAllDatabases(String pluginName) {
+    protected void unregisterAllDatabases(String pluginName) {
         activeDatabases.entrySet().removeIf(entry -> {
             if (entry.getKey().pluginName().equals(pluginName)) {
                 try {
@@ -67,7 +68,7 @@ public class DataProviderRegistry {
         });
     }
 
-    public void shutdownAllDatabases() {
+    protected void shutdownAllDatabases() {
         for (Map.Entry<DatabaseConnectionKey, BaseDatabaseProvider> entry : activeDatabases.entrySet()) {
             try {
                 entry.getValue().disconnect();
@@ -79,7 +80,7 @@ public class DataProviderRegistry {
         DPLogger.info("All database connections have been closed.");
     }
 
-    public ConcurrentMap<DatabaseConnectionKey, BaseDatabaseProvider> getActiveDatabases() {
+    protected ConcurrentMap<DatabaseConnectionKey, BaseDatabaseProvider> getActiveDatabases() {
         return activeDatabases;
     }
 }
