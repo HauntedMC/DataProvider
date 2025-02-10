@@ -22,7 +22,6 @@ public class DataProviderSecurityManager {
     private static final String SECRET_KEY = "secret";
 
     private static String secret;
-    // A thread‐safe set of authorized plugin names.
     private static final Set<String> authorizedPlugins = Collections.synchronizedSet(new HashSet<>());
 
     static {
@@ -61,7 +60,7 @@ public class DataProviderSecurityManager {
      * @return true if authentication is successful; false otherwise.
      */
     public static boolean authorize(String pluginName, String token) {
-        if (secret != null && secret.equals(token)) {
+        if (pluginName != null && secret != null && secret.equals(token)) {
             authorizedPlugins.add(pluginName);
             DPLogger.info("Plugin " + pluginName + " authorized successfully.");
             return true;
