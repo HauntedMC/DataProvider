@@ -10,6 +10,7 @@ import nl.hauntedmc.dataprovider.logging.DPLogger;
 import org.bukkit.configuration.ConfigurationSection;
 import org.bukkit.configuration.file.FileConfiguration;
 
+import javax.sql.DataSource;
 import java.sql.Connection;
 import java.sql.SQLException;
 import java.util.concurrent.ExecutorService;
@@ -113,11 +114,7 @@ public class MariaDBDatabase implements RelationalDatabaseProvider {
     }
 
     @Override
-    public Connection getConnection() {
-        try {
-            return dataSource.getConnection();
-        } catch (SQLException e) {
-            throw new RuntimeException(e);
-        }
+    public DataSource getDataSource() {
+        return dataSource;
     }
 }

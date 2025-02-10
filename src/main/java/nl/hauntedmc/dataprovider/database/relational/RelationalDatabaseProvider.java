@@ -3,6 +3,7 @@ package nl.hauntedmc.dataprovider.database.relational;
 import nl.hauntedmc.dataprovider.database.base.BaseDatabaseProvider;
 import nl.hauntedmc.dataprovider.database.relational.schema.SchemaManager;
 
+import javax.sql.DataSource;
 import java.sql.Connection;
 
 /**
@@ -19,5 +20,5 @@ public interface RelationalDatabaseProvider extends BaseDatabaseProvider {
     @Override
     RelationalDataAccess getDataAccess();
 
-    Connection getConnection();
+    DataSource getDataSource();
 }
