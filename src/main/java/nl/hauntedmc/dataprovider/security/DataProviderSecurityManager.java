@@ -19,13 +19,21 @@ import java.util.UUID;
 public class DataProviderSecurityManager {
 
     private static final String SECRET_FILE_NAME = "secret.yml";
-    private static final String SECRET_KEY = "secret";
+    private static final String SECRET_KEY = "secret_token";
 
     private static String secret;
     private static final Set<String> authorizedPlugins = Collections.synchronizedSet(new HashSet<>());
 
-    static {
+
+    /**
+     * Initializes the security manager.
+     * <p>
+     * This method loads (or creates) the secret file and must be called during your plugin's onEnable().
+     * </p>
+     */
+    public static void initialize() {
         loadOrGenerateSecret();
+        DPLogger.info("DataProviderSecurityManager initialized.");
     }
 
     private static void loadOrGenerateSecret() {
