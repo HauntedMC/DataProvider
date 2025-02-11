@@ -5,7 +5,7 @@ import nl.hauntedmc.dataprovider.database.DatabaseConnectionKey;
 import nl.hauntedmc.dataprovider.database.DatabaseType;
 import nl.hauntedmc.dataprovider.database.base.BaseDatabaseProvider;
 import nl.hauntedmc.dataprovider.logger.DPLogger;
-import nl.hauntedmc.dataprovider.security.DataProviderSecurityManager;
+import nl.hauntedmc.dataprovider.security.SecurityManager;
 import org.bukkit.Bukkit;
 import org.bukkit.plugin.java.JavaPlugin;
 import org.jetbrains.annotations.NotNull;
@@ -20,6 +20,9 @@ import java.util.concurrent.ConcurrentMap;
 public class DataProviderHandler {
 
     private final DataProviderRegistry registry;
+    private final SecurityManager securityManager;
+    private final DatabaseConfigMap configMap;
+    private final DatabaseFactory factory;
 
     /**
      * Public constructor.
@@ -27,8 +30,10 @@ public class DataProviderHandler {
      * @param plugin the main DataProvider plugin instance.
      */
     public DataProviderHandler(DataProvider plugin) {
-        this.registry = new DataProviderRegistry();
-        DatabaseConfigMap.initialize();
+        securityManager = new SecurityManager(plugin);
+        configMap = new DatabaseConfigMap(plugin);
+        factory = new DatabaseFactory(configMap);
+        this.registry = new DataProviderRegistry(plugin, factory);
     }
 
     /**
@@ -40,9 +45,8 @@ public class DataProviderHandler {
      * @throws SecurityException if the provided plugin instance is not registered.
      */
     public boolean authenticate(JavaPlugin plugin, String token) {
-        // Since getProvidingPlugin is nonnull, we can safely retrieve the genuine plugin.
         String pluginName = JavaPlugin.getProvidingPlugin(plugin.getClass()).getName();
-        return DataProviderSecurityManager.authorize(pluginName, token);
+        return securityManager.authorize(pluginName, token);
     }
 
     /**
@@ -87,7 +91,6 @@ public class DataProviderHandler {
      * Shuts down all active database connections.
      */
     public void shutdownAllDatabases() {
-        checkCallerIsInternal();
         registry.shutdownAllDatabases();
     }
 
@@ -114,7 +117,6 @@ public class DataProviderHandler {
      * @return a {@link ConcurrentMap} of active connections.
      */
     public ConcurrentMap<DatabaseConnectionKey, BaseDatabaseProvider> getActiveDatabases() {
-        checkCallerIsInternal();
         return registry.getActiveDatabases();
     }
 
@@ -138,33 +140,11 @@ public class DataProviderHandler {
             DPLogger.error("Class loader mismatch for plugin " + pluginName);
             throw new SecurityException("Class loader mismatch for plugin " + pluginName);
         }
-        if (!DataProviderSecurityManager.isAuthorized(pluginName)) {
+        if (!securityManager.isAuthorized(pluginName)) {
             DPLogger.error("Plugin " + pluginName + " is not authorized. Please authenticate first.");
             throw new SecurityException("Plugin " + pluginName + " is not authorized. Please authenticate first.");
         }
         return pluginName;
     }
 
-    /**
-     * Verifies that the immediate caller belongs to an internal package.
-     * <p>
-     * This method uses StackWalker (Java 9+) to obtain the caller class. If the caller’s package
-     * does not start with "nl.hauntedmc.dataprovider", a SecurityException is thrown.
-     * </p>
-     *
-     * @throws SecurityException if the immediate caller is not internal.
-     */
-    private void checkCallerIsInternal() {
-        // Use StackWalker to retrieve the immediate caller (skipping this method itself).
-        Class<?> callerClass = StackWalker.getInstance(StackWalker.Option.RETAIN_CLASS_REFERENCE)
-                .walk(frames -> frames.skip(1)
-                        .findFirst()
-                        .map(StackWalker.StackFrame::getDeclaringClass)
-                        .orElse(null));
-        if (callerClass == null || !callerClass.getPackage().getName().startsWith("nl.hauntedmc.dataprovider")) {
-            DPLogger.error("Access denied: " + (callerClass != null ? callerClass.getName() : "unknown caller") +
-                    " is not authorized to call this internal method.");
-            throw new SecurityException("Access denied: This method is internal only.");
-        }
-    }
 }

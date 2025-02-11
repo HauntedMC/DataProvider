@@ -18,10 +18,15 @@ import org.bukkit.configuration.ConfigurationSection;
  */
 class DatabaseFactory {
 
-    protected static BaseDatabaseProvider createDatabaseProvider(DatabaseType type, String connectionIdentifier) {
+    private final DatabaseConfigMap configMap;
 
-        DatabaseConfigMap configManager = new DatabaseConfigMap();
-        ConfigurationSection connectionConfig = configManager.getConfig(type, connectionIdentifier);
+    protected DatabaseFactory(DatabaseConfigMap configMap) {
+        this.configMap = configMap;
+    }
+
+    protected BaseDatabaseProvider createDatabaseProvider(DatabaseType type, String connectionIdentifier) {
+
+        ConfigurationSection connectionConfig = configMap.getConfig(type, connectionIdentifier);
 
         if (connectionConfig == null) {
             DPLogger.error("Could not load configuration for " + connectionIdentifier + " (" + type.name() + ")");

@@ -1,20 +1,24 @@
-package nl.hauntedmc.dataprovider.util;
+package nl.hauntedmc.dataprovider.config;
 
 import nl.hauntedmc.dataprovider.DataProvider;
 import nl.hauntedmc.dataprovider.database.DatabaseType;
 import nl.hauntedmc.dataprovider.logger.DPLogger;
+import org.bukkit.plugin.Plugin;
 
-public class ConfigUtils {
+public class ConfigHandler {
 
-    public static void initializeMainConfig(){
-        DataProvider.getInstance().saveDefaultConfig();
+    private final Plugin plugin;
+
+    public ConfigHandler(DataProvider plugin) {
+        this.plugin = plugin;
+        plugin.saveDefaultConfig();
         injectMissingKeys();
     }
 
     /**
      * Injects missing keys into config.yml and saves the file.
      */
-    private static void injectMissingKeys() {
+    private void injectMissingKeys() {
         boolean changed = false;
 
         for (DatabaseType type : DatabaseType.values()) {
@@ -24,7 +28,7 @@ public class ConfigUtils {
 
         // Save the file if we added missing values
         if (changed) {
-            DataProvider.getInstance().saveConfig();
+            plugin.saveConfig();
             DPLogger.info("Updated config.yml with missing default values.");
         }
     }
@@ -36,9 +40,9 @@ public class ConfigUtils {
      * @param value The default value to inject
      * @return true if a missing key was injected, false otherwise
      */
-    private static boolean injectDefault(String path, Object value) {
-        if (!DataProvider.getInstance().getConfig().contains(path)) {
-            DataProvider.getInstance().getConfig().set(path, value);
+    private boolean injectDefault(String path, Object value) {
+        if (!plugin.getConfig().contains(path)) {
+            plugin.getConfig().set(path, value);
             return true;
         }
         return false;
@@ -50,7 +54,7 @@ public class ConfigUtils {
      * @param type The DatabaseType to check
      * @return True if the database type is enabled, false otherwise.
      */
-    public static boolean isDatabaseTypeEnabled(DatabaseType type) {
-        return DataProvider.getInstance().getConfig().getBoolean("databases." + type.name().toLowerCase() + ".enabled", true);
+    public boolean isDatabaseTypeEnabled(DatabaseType type) {
+        return plugin.getConfig().getBoolean("databases." + type.name().toLowerCase() + ".enabled", true);
     }
 }

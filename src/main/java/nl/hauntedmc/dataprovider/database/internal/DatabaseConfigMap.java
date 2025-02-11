@@ -20,9 +20,15 @@ import java.util.Map;
 class DatabaseConfigMap {
 
     private static final Map<DatabaseType, FileConfiguration> configMap = new HashMap<>();
+    private final DataProvider plugin;
 
-    protected static void initialize() {
-        File databasesFolder = new File(DataProvider.getInstance().getDataFolder(), "databases");
+    protected DatabaseConfigMap(DataProvider plugin) {
+        this.plugin = plugin;
+        initialize();
+    }
+
+    private void initialize() {
+        File databasesFolder = new File(plugin.getDataFolder(), "databases");
         if (!databasesFolder.exists() && !databasesFolder.mkdirs()) {
             DPLogger.warning("Failed to create databases folder at: " + databasesFolder.getAbsolutePath());
         } else {
@@ -44,8 +50,8 @@ class DatabaseConfigMap {
         DPLogger.info("Loaded " + configMap.size() + " database configurations.");
     }
 
-    private static boolean copyDefaultConfigFromResources(String resourcePath, File destinationFile) {
-        try (InputStream in = DataProvider.getInstance().getResource("databases/" + resourcePath)) {
+    private boolean copyDefaultConfigFromResources(String resourcePath, File destinationFile) {
+        try (InputStream in = plugin.getResource("databases/" + resourcePath)) {
             if (in == null) {
                 return false;
             }

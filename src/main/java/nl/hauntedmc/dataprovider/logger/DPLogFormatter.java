@@ -5,7 +5,7 @@ import java.util.Date;
 import java.util.logging.Formatter;
 import java.util.logging.LogRecord;
 
-public class DPLogFormatter extends Formatter {
+class DPLogFormatter extends Formatter {
 
     private static final String DATE_FORMAT = "yyyy-MM-dd HH:mm:ss.SSS";
     private final SimpleDateFormat sdf = new SimpleDateFormat(DATE_FORMAT);

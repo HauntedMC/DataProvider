@@ -17,6 +17,12 @@ import java.util.concurrent.ConcurrentMap;
 
 public class DataProviderCommand implements CommandExecutor, TabCompleter {
 
+    private final DataProvider plugin;
+
+    public DataProviderCommand(DataProvider plugin) {
+        this.plugin = plugin;
+    }
+
     @Override
     public boolean onCommand(@NotNull CommandSender sender, @NotNull Command command,
                              @NotNull String label, String[] args) {
@@ -30,7 +36,7 @@ public class DataProviderCommand implements CommandExecutor, TabCompleter {
             // Retrieve the active databases map from the registry.
             // This map is keyed by DatabaseConnectionKey.
             ConcurrentMap<DatabaseConnectionKey, BaseDatabaseProvider> activeDatabases =
-                    DataProvider.getInstance().getDataProviderHandler().getActiveDatabases();
+                    plugin.getDataProviderHandler().getActiveDatabases();
 
             if (activeDatabases.isEmpty()) {
                 sender.sendMessage(ChatColor.YELLOW + "No active database connections found.");

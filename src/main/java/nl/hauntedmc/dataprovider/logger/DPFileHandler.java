@@ -5,7 +5,7 @@ import java.nio.file.Files;
 import java.nio.file.StandardCopyOption;
 import java.util.logging.*;
 
-public class DPFileHandler extends Handler {
+class DPFileHandler extends Handler {
 
     private final File logsFolder;
     private final String baseFileName; // e.g. "DataProvider.log"
@@ -26,7 +26,7 @@ public class DPFileHandler extends Handler {
      * @throws IOException if an I/O error occurs.
      * @throws SecurityException if a security manager exists and the caller does not have LoggingPermission("control").
      */
-    public DPFileHandler(File logsFolder, String baseFileName, int fileLimit, int fileCount, boolean append)
+    protected DPFileHandler(File logsFolder, String baseFileName, int fileLimit, int fileCount, boolean append)
             throws IOException, SecurityException {
         this.logsFolder = logsFolder;
         this.baseFileName = baseFileName;

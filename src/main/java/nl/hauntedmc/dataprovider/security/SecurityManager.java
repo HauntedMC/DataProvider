@@ -16,28 +16,23 @@ import java.util.UUID;
  * It loads (or creates) a secret token from a file named secret.yml in the plugin’s data folder.
  * Plugins must authenticate by providing this token.
  */
-public class DataProviderSecurityManager {
+public class SecurityManager {
 
-    private static final String SECRET_FILE_NAME = "secret.yml";
-    private static final String SECRET_KEY = "secret_token";
+    private final String SECRET_FILE_NAME = "secret.yml";
+    private final String SECRET_KEY = "secret_token";
+    private final DataProvider plugin;
 
-    private static String secret;
-    private static final Set<String> authorizedPlugins = Collections.synchronizedSet(new HashSet<>());
+    private String secret;
+    private final Set<String> authorizedPlugins = Collections.synchronizedSet(new HashSet<>());
 
-
-    /**
-     * Initializes the security manager.
-     * <p>
-     * This method loads (or creates) the secret file and must be called during your plugin's onEnable().
-     * </p>
-     */
-    public static void initialize() {
-        loadOrGenerateSecret();
+    public SecurityManager(DataProvider plugin) {
+        this.plugin = plugin;
+        initialize();
         DPLogger.info("DataProviderSecurityManager initialized.");
     }
 
-    private static void loadOrGenerateSecret() {
-        File dataFolder = DataProvider.getInstance().getDataFolder();
+    private void initialize() {
+        File dataFolder = plugin.getDataFolder();
         if (!dataFolder.exists()) {
             dataFolder.mkdirs();
         }
@@ -67,7 +62,7 @@ public class DataProviderSecurityManager {
      * @param token      the token provided by the plugin
      * @return true if authentication is successful; false otherwise.
      */
-    public static boolean authorize(String pluginName, String token) {
+    public boolean authorize(String pluginName, String token) {
         if (pluginName != null && secret != null && secret.equals(token)) {
             authorizedPlugins.add(pluginName);
             DPLogger.info("Plugin " + pluginName + " authorized successfully.");
@@ -83,7 +78,7 @@ public class DataProviderSecurityManager {
      * @param pluginName the plugin’s name
      * @return true if the plugin is authorized; false otherwise.
      */
-    public static boolean isAuthorized(String pluginName) {
+    public boolean isAuthorized(String pluginName) {
         return authorizedPlugins.contains(pluginName);
     }
 

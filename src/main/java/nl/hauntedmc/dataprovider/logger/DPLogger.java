@@ -9,24 +9,26 @@ import java.util.logging.*;
 public class DPLogger {
 
     // Use Bukkit's built-in logger for console output.
-    private static final Logger logger = DataProvider.getInstance().getLogger();
+    private static Logger logger = null;
 
     /**
      * Initializes file logging by adding a custom DPFileHandler.
      * Console logging remains handled by Bukkit's default logger.
      */
-    public static void initialize() {
+    public static void initialize(DataProvider plugin) {
+        logger = plugin.getLogger();
+
         // Ensure the logs folder exists.
-        File pluginFolder = DataProvider.getInstance().getDataFolder();
+        File pluginFolder = plugin.getDataFolder();
         File logsFolder = new File(pluginFolder, "logs");
         if (!logsFolder.exists() && !logsFolder.mkdirs()) {
             logger.warning("Could not create logs folder at: " + logsFolder.getAbsolutePath());
         }
 
         // Read file logging settings from config.yml.
-        int fileLimit = DataProvider.getInstance().getConfig().getInt("logging.fileLimit", 10 * 1024 * 1024); // default 10 MB
-        int fileCount = DataProvider.getInstance().getConfig().getInt("logging.fileCount", 30);
-        String fileLevelStr = DataProvider.getInstance().getConfig().getString("logging.fileLevel", "WARNING");
+        int fileLimit = plugin.getConfig().getInt("logging.fileLimit", 10 * 1024 * 1024); // default 10 MB
+        int fileCount = plugin.getConfig().getInt("logging.fileCount", 30);
+        String fileLevelStr = plugin.getConfig().getString("logging.fileLevel", "WARNING");
         Level fileLevel = Level.parse(fileLevelStr);
 
         // The active log file will be named "DataProvider.log" (with no extension).
