@@ -74,9 +74,8 @@ public class ORMManager {
      * @return the result from the callback.
      */
     public static <T> T runInTransaction(TransactionCallback<T> callback) {
-        Session session = getSessionFactory().openSession();
         Transaction tx = null;
-        try {
+        try (Session session = getSessionFactory().openSession()) {
             tx = session.beginTransaction();
             T result = callback.execute(session);
             tx.commit();
@@ -86,8 +85,6 @@ public class ORMManager {
                 tx.rollback();
             }
             throw new RuntimeException("Transaction failed", e);
-        } finally {
-            session.close();
         }
     }
 

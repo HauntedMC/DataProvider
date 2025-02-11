@@ -12,7 +12,6 @@ import java.util.concurrent.CompletableFuture;
 /**
  * DocumentDataAccess defines typical CRUD and index operations for
  * a document–based database in a technology–agnostic way.
- *
  * Each "document" is represented as a Map<String, Object>.
  * Queries and updates are represented by custom DSL classes
  * (DocumentQuery, DocumentUpdate, DocumentUpdateOptions).

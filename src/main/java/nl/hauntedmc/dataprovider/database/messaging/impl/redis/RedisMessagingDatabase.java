@@ -41,7 +41,7 @@ public class RedisMessagingDatabase implements MessagingDatabaseProvider {
 
             JedisPoolConfig poolConfig = new JedisPoolConfig();
             poolConfig.setMaxTotal(poolSize);
-            if (password != null && !password.isEmpty()) {
+            if (!password.isEmpty()) {
                 jedisPool = new JedisPool(poolConfig, host, port, 2000, password, databaseIndex);
             } else {
                 jedisPool = new JedisPool(poolConfig, host, port, 2000, null, databaseIndex);

@@ -6,7 +6,7 @@ import java.util.Map;
 
 /**
  * Represents an update operation.
- * Typically something like { "$set": { "score": 9999 } } in Mongo.
+ * Typically, something like { "$set": { "score": 9999 } } in Mongo.
  */
 public class DocumentUpdate {
 

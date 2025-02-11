@@ -4,7 +4,6 @@ import nl.hauntedmc.dataprovider.database.base.BaseDatabaseProvider;
 import nl.hauntedmc.dataprovider.database.relational.schema.SchemaManager;
 
 import javax.sql.DataSource;
-import java.sql.Connection;
 
 /**
  * A database provider interface for relational databases (e.g. MySQL, PostgreSQL).

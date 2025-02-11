@@ -38,7 +38,6 @@ public class RedisMessagingDataAccess implements MessagingDataAccess {
     public CompletableFuture<Void> subscribe(String destination, MessageListener listener) {
         return CompletableFuture.runAsync(() -> {
             // Create a dedicated Jedis instance for subscription.
-            Jedis jedis = jedisPool.getResource();
             // Create a new JedisPubSub instance to handle messages.
             JedisPubSub pubSub = new JedisPubSub() {
                 @Override
@@ -51,12 +50,10 @@ public class RedisMessagingDataAccess implements MessagingDataAccess {
             try {
                 // Run the subscription in a separate thread since subscribe() is blocking.
                 executor.submit(() -> {
-                    try {
+                    try (Jedis jedis = jedisPool.getResource()) {
                         jedis.subscribe(pubSub, destination);
                     } catch (Exception e) {
                         DPLogger.error("Error in Redis subscription: " + e.getMessage());
-                    } finally {
-                        jedis.close();
                     }
                 });
             } catch (Exception e) {

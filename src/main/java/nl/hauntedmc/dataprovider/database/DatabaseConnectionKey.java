@@ -7,11 +7,10 @@ public record DatabaseConnectionKey(String pluginName, DatabaseType type, String
     @Override
     public boolean equals(Object o) {
         if (this == o) return true;
-        if (!(o instanceof DatabaseConnectionKey)) return false;
-        DatabaseConnectionKey that = (DatabaseConnectionKey) o;
-        return Objects.equals(pluginName, that.pluginName) &&
-                type == that.type &&
-                Objects.equals(connectionIdentifier, that.connectionIdentifier);
+        if (!(o instanceof DatabaseConnectionKey(String nameOther, DatabaseType typeOther, String identifierOther))) return false;
+        return Objects.equals(pluginName, nameOther) &&
+                type == typeOther &&
+                Objects.equals(connectionIdentifier, identifierOther);
     }
 
     @Override

@@ -48,6 +48,7 @@ public class KafkaMessagingDataAccess implements MessagingDataAccess {
             // Subscribe to the topic.
             consumer.subscribe(Collections.singletonList(destination));
             // Run a consumer loop in the executor.
+            // This loop is intended to run indefinitely until the thread is interrupted.
             consumerExecutor.submit(() -> {
                 while (true) {
                     ConsumerRecords<String, String> records = consumer.poll(Duration.ofMillis(100));
@@ -61,8 +62,6 @@ public class KafkaMessagingDataAccess implements MessagingDataAccess {
 
     @Override
     public CompletableFuture<Void> unsubscribe(String destination) {
-        return CompletableFuture.runAsync(() -> {
-            consumer.unsubscribe();
-        });
+        return CompletableFuture.runAsync(consumer::unsubscribe);
     }
 }

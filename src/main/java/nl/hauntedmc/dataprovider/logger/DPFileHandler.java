@@ -1,6 +1,7 @@
 package nl.hauntedmc.dataprovider.logger;
 
 import java.io.*;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.StandardCopyOption;
 import java.util.logging.*;
@@ -55,7 +56,7 @@ class DPFileHandler extends Handler {
         }
         try {
             String message = formatter.format(record);
-            byte[] bytes = message.getBytes("UTF-8");
+            byte[] bytes = message.getBytes(StandardCharsets.UTF_8);
             // If for some reason outputStream is null, open it.
             if (outputStream == null) {
                 openOutputStream(false);
