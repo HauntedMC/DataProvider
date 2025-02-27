@@ -1,6 +1,7 @@
 package nl.hauntedmc.dataprovider;
 
 import com.google.inject.Inject;
+import com.google.inject.Injector;
 import com.velocitypowered.api.command.CommandManager;
 import com.velocitypowered.api.command.CommandMeta;
 import com.velocitypowered.api.event.proxy.ProxyInitializeEvent;
@@ -31,6 +32,9 @@ public class VelocityDataProvider {
     private static DataProviderApp dataProviderApp;
 
     @Inject
+    private Injector injector;
+
+    @Inject
     public VelocityDataProvider(ProxyServer proxyServer, Logger logger, @DataDirectory Path dataDirectory) {
         this.proxyServer = proxyServer;
         this.logger = logger;
@@ -43,7 +47,7 @@ public class VelocityDataProvider {
         dataProviderApp = new DataProviderApp(logInstance, dataDirectory, getClass().getClassLoader());
 
         CommandManager commandManager = proxyServer.getCommandManager();
-        CommandMeta meta = commandManager.metaBuilder("dataprovider")
+        CommandMeta meta = commandManager.metaBuilder("dataproviderproxy")
                 .build();
         commandManager.register(meta, new DataProviderCommand(this));
 
