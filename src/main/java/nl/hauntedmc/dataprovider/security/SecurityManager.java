@@ -1,7 +1,6 @@
 package nl.hauntedmc.dataprovider.security;
 
 import nl.hauntedmc.dataprovider.DataProvider;
-import nl.hauntedmc.dataprovider.logger.DPLogger;
 import org.bukkit.configuration.file.YamlConfiguration;
 
 import java.io.File;
@@ -28,7 +27,7 @@ public class SecurityManager {
     public SecurityManager(DataProvider plugin) {
         this.plugin = plugin;
         initialize();
-        DPLogger.info("DataProviderSecurityManager initialized.");
+        plugin.getLogger().info("DataProviderSecurityManager initialized.");
     }
 
     private void initialize() {
@@ -40,16 +39,16 @@ public class SecurityManager {
         YamlConfiguration config = YamlConfiguration.loadConfiguration(secretFile);
         if (config.contains(SECRET_KEY)) {
             secret = config.getString(SECRET_KEY);
-            DPLogger.info("Loaded secret from " + secretFile.getAbsolutePath());
+            plugin.getLogger().info("Loaded secret from " + secretFile.getAbsolutePath());
         } else {
             // Generate a new secret (using a UUID for randomness)
             secret = UUID.randomUUID().toString();
             config.set(SECRET_KEY, secret);
             try {
                 config.save(secretFile);
-                DPLogger.info("Generated new secret and saved to " + secretFile.getAbsolutePath());
+                plugin.getLogger().info("Generated new secret and saved to " + secretFile.getAbsolutePath());
             } catch (IOException e) {
-                DPLogger.error("Failed to save secret file", e);
+                plugin.getLogger().severe("Failed to save secret file", e);
             }
         }
     }
@@ -65,10 +64,10 @@ public class SecurityManager {
     public boolean authorize(String pluginName, String token) {
         if (pluginName != null && secret != null && secret.equals(token)) {
             authorizedPlugins.add(pluginName);
-            DPLogger.info("Plugin " + pluginName + " authorized successfully.");
+            plugin.getLogger().info("Plugin " + pluginName + " authorized successfully.");
             return true;
         }
-        DPLogger.error("Failed to authorize plugin " + pluginName + ": Invalid token.");
+        plugin.getLogger().severe("Failed to authorize plugin " + pluginName + ": Invalid token.");
         return false;
     }
 

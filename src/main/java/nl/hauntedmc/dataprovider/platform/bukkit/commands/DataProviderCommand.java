@@ -1,10 +1,10 @@
-package nl.hauntedmc.dataprovider.commands;
+package nl.hauntedmc.dataprovider.platform.bukkit.commands;
 
-import nl.hauntedmc.dataprovider.DataProvider;
-import nl.hauntedmc.dataprovider.database.base.BaseDatabaseProvider;
-import nl.hauntedmc.dataprovider.database.DatabaseConnectionKey;
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.format.NamedTextColor;
+import nl.hauntedmc.dataprovider.DataProvider;
+import nl.hauntedmc.dataprovider.database.DatabaseConnectionKey;
+import nl.hauntedmc.dataprovider.database.base.BaseDatabaseProvider;
 import org.bukkit.command.Command;
 import org.bukkit.command.CommandExecutor;
 import org.bukkit.command.CommandSender;

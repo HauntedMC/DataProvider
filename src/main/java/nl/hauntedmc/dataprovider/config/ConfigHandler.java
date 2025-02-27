@@ -2,7 +2,6 @@ package nl.hauntedmc.dataprovider.config;
 
 import nl.hauntedmc.dataprovider.DataProvider;
 import nl.hauntedmc.dataprovider.database.DatabaseType;
-import nl.hauntedmc.dataprovider.logger.DPLogger;
 import org.bukkit.plugin.Plugin;
 
 public class ConfigHandler {
@@ -29,7 +28,7 @@ public class ConfigHandler {
         // Save the file if we added missing values
         if (changed) {
             plugin.saveConfig();
-            DPLogger.info("Updated config.yml with missing default values.");
+            plugin.getLogger().info("Updated config.yml with missing default values.");
         }
     }
 

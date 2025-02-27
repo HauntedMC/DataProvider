@@ -1,4 +1,4 @@
-package nl.hauntedmc.dataprovider.api;
+package nl.hauntedmc.dataprovider.platform.bukkit.api;
 
 import nl.hauntedmc.dataprovider.database.DatabaseType;
 import nl.hauntedmc.dataprovider.database.base.BaseDatabaseProvider;
