@@ -2,11 +2,11 @@ package nl.hauntedmc.dataprovider.database.relational.impl.postgresql;
 
 import com.zaxxer.hikari.HikariConfig;
 import com.zaxxer.hikari.HikariDataSource;
+import nl.hauntedmc.dataprovider.DataProviderApp;
 import nl.hauntedmc.dataprovider.database.relational.RelationalDataAccess;
 import nl.hauntedmc.dataprovider.database.relational.RelationalDatabaseProvider;
 import nl.hauntedmc.dataprovider.database.relational.schema.SchemaManager;
-import nl.hauntedmc.dataprovider.logger.DPLogger;
-import org.bukkit.configuration.ConfigurationSection;
+import org.spongepowered.configurate.CommentedConfigurationNode;
 
 import javax.sql.DataSource;
 import java.util.concurrent.ExecutorService;
@@ -14,34 +14,34 @@ import java.util.concurrent.Executors;
 
 /**
  * PostgreSQLDatabase implements RelationalDatabaseProvider for PostgreSQL.
- * It uses the PostgreSQL JDBC URL (jdbc:postgresql://...) and default port 5432.
+ * It uses Configurate to load configuration values from a YAML file.
  */
 public class PostgreSQLDatabase implements RelationalDatabaseProvider {
 
-    private final ConfigurationSection config;
+    private final CommentedConfigurationNode config;
     private HikariDataSource dataSource;
     private ExecutorService executor;
     private RelationalDataAccess dataAccess;
     private SchemaManager schemaManager;
 
-    public PostgreSQLDatabase(ConfigurationSection config) {
+    public PostgreSQLDatabase(CommentedConfigurationNode config) {
         this.config = config;
     }
 
     @Override
     public void connect() {
         if (dataSource != null && !dataSource.isClosed()) {
-            DPLogger.info("[PostgreSQLDatabase] Already connected, skipping re–initialization.");
+            DataProviderApp.getLogger().info("[PostgreSQLDatabase] Already connected, skipping re–initialization.");
             return;
         }
         try {
             HikariConfig hikariConfig = new HikariConfig();
 
-            final String host = config.getString("host", "localhost");
-            final int port = config.getInt("port", 5432); // Default PostgreSQL port
-            final String databaseName = config.getString("database", "minecraft");
-            final String user = config.getString("username", "postgres");
-            final String password = config.getString("password", "");
+            final String host = config.node("host").getString("localhost");
+            final int port = config.node("port").getInt(5432); // Default PostgreSQL port
+            final String databaseName = config.node("database").getString("minecraft");
+            final String user = config.node("username").getString("postgres");
+            final String password = config.node("password").getString("");
 
             final String jdbcUrl = String.format("jdbc:postgresql://%s:%d/%s", host, port, databaseName);
 
@@ -49,7 +49,7 @@ public class PostgreSQLDatabase implements RelationalDatabaseProvider {
             hikariConfig.setUsername(user);
             hikariConfig.setPassword(password);
 
-            final int poolSize = config.getInt("pool_size", 10);
+            final int poolSize = config.node("pool_size").getInt(10);
             hikariConfig.setMaximumPoolSize(poolSize);
             hikariConfig.setConnectionTimeout(30000);
             hikariConfig.setIdleTimeout(600000);
@@ -61,9 +61,9 @@ public class PostgreSQLDatabase implements RelationalDatabaseProvider {
             this.dataAccess = new PostgreSQLDataAccess(dataSource, executor);
             this.schemaManager = new PostgreSQLSchemaManager(dataSource, executor);
 
-            DPLogger.info("[PostgreSQLDatabase] Connected successfully to " + jdbcUrl);
+            DataProviderApp.getLogger().info("[PostgreSQLDatabase] Connected successfully to " + jdbcUrl);
         } catch (Exception e) {
-            DPLogger.error("[PostgreSQLDatabase] Connection failed!", e);
+            DataProviderApp.getLogger().error("[PostgreSQLDatabase] Connection failed!", e);
         }
     }
 
@@ -71,11 +71,11 @@ public class PostgreSQLDatabase implements RelationalDatabaseProvider {
     public void disconnect() {
         if (dataSource != null && !dataSource.isClosed()) {
             dataSource.close();
-            DPLogger.info("[PostgreSQLDatabase] DataSource closed.");
+            DataProviderApp.getLogger().info("[PostgreSQLDatabase] DataSource closed.");
         }
         if (executor != null && !executor.isShutdown()) {
             executor.shutdown();
-            DPLogger.info("[PostgreSQLDatabase] ExecutorService shut down.");
+            DataProviderApp.getLogger().info("[PostgreSQLDatabase] ExecutorService shut down.");
         }
     }
 
@@ -87,7 +87,7 @@ public class PostgreSQLDatabase implements RelationalDatabaseProvider {
         try (var conn = dataSource.getConnection()) {
             return conn.isValid(2);
         } catch (Exception e) {
-            DPLogger.warning("[PostgreSQLDatabase] Connection validation failed: " + e.getMessage());
+            DataProviderApp.getLogger().warn("[PostgreSQLDatabase] Connection validation failed: " + e.getMessage());
             return false;
         }
     }

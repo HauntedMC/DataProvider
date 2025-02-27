@@ -1,59 +1,123 @@
 package nl.hauntedmc.dataprovider.config;
 
-import nl.hauntedmc.dataprovider.DataProvider;
 import nl.hauntedmc.dataprovider.database.DatabaseType;
-import org.bukkit.plugin.Plugin;
+import org.spongepowered.configurate.CommentedConfigurationNode;
+import org.spongepowered.configurate.loader.ConfigurationLoader;
+import org.spongepowered.configurate.serialize.SerializationException;
+import org.spongepowered.configurate.yaml.YamlConfigurationLoader;
+
+import java.io.IOException;
+import java.io.InputStream;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
 
 public class ConfigHandler {
 
-    private final Plugin plugin;
+    private CommentedConfigurationNode config;
+    private final Path configFile;
+    private final ConfigurationLoader<CommentedConfigurationNode> loader;
 
-    public ConfigHandler(DataProvider plugin) {
-        this.plugin = plugin;
-        plugin.saveDefaultConfig();
+    /**
+     * Creates a new ConfigHandler using a default data directory and config file.
+     */
+    public ConfigHandler() {
+        // Define a default data directory, for example "plugins/DataProvider" relative to the working directory.
+        Path dataDir = Paths.get("plugins", "DataProvider");
+        this.configFile = dataDir.resolve("config.yml");
+        this.loader = YamlConfigurationLoader.builder()
+                .path(configFile)
+                .build();
+
+        ensureConfigFileExists();
+        reloadConfig();
         injectMissingKeys();
     }
 
     /**
-     * Injects missing keys into config.yml and saves the file.
+     * Ensures the configuration file exists.
+     * If not, attempts to copy a default config.yml from the plugin's resources.
+     */
+    private void ensureConfigFileExists() {
+        try {
+            Files.createDirectories(configFile.getParent());
+            if (!Files.exists(configFile)) {
+                try (InputStream in = getClass().getResourceAsStream("/config.yml")) {
+                    if (in != null) {
+                        Files.copy(in, configFile);
+                    } else {
+                        System.err.println("Default config.yml not found in resources!");
+                    }
+                }
+            }
+        } catch (IOException e) {
+            System.err.println("Error ensuring config file exists: " + e.getMessage());
+            e.printStackTrace();
+        }
+    }
+
+    /**
+     * Reloads the configuration from disk.
+     */
+    public void reloadConfig() {
+        try {
+            this.config = loader.load();
+        } catch (IOException e) {
+            System.err.println("Error reloading config file: " + e.getMessage());
+            e.printStackTrace();
+        }
+    }
+
+    /**
+     * Injects missing default keys into the config.
+     * In this example, we ensure each DatabaseType has a default 'enabled' key.
      */
     private void injectMissingKeys() {
         boolean changed = false;
-
         for (DatabaseType type : DatabaseType.values()) {
-            String path = "databases." + type.name().toLowerCase() + ".enabled";
-            changed |= injectDefault(path, true);
+            // The config path is "databases.<type>.enabled"
+            CommentedConfigurationNode node = config.node("databases", type.name().toLowerCase(), "enabled");
+            if (node.virtual()) {
+                try {
+                    node.set(true);
+                } catch (SerializationException e) {
+                    e.printStackTrace();
+                }
+                changed = true;
+            }
         }
-
-        // Save the file if we added missing values
         if (changed) {
-            plugin.saveConfig();
-            plugin.getLogger().info("Updated config.yml with missing default values.");
+            saveConfig();
+            System.out.println("Updated config.yml with missing default values.");
         }
     }
 
     /**
-     * Injects a default value into config.yml if the key is missing.
-     *
-     * @param path  The path in the config (e.g., "debug", "databases.mysql.enabled")
-     * @param value The default value to inject
-     * @return true if a missing key was injected, false otherwise
+     * Saves the current configuration to disk.
      */
-    private boolean injectDefault(String path, Object value) {
-        if (!plugin.getConfig().contains(path)) {
-            plugin.getConfig().set(path, value);
-            return true;
+    private void saveConfig() {
+        try {
+            loader.save(config);
+        } catch (IOException e) {
+            System.err.println("Error saving config file: " + e.getMessage());
+            e.printStackTrace();
         }
-        return false;
     }
 
     /**
-     * Checks if a specific DatabaseType is enabled in config.yml.
+     * Checks if a specific DatabaseType is enabled in the configuration.
      *
-     * @param type The DatabaseType to check
-     * @return True if the database type is enabled, false otherwise.
+     * @param type the database type to check.
+     * @return true if enabled; otherwise, returns true as a default.
      */
     public boolean isDatabaseTypeEnabled(DatabaseType type) {
-        return plugin.getConfig().getBoolean("databases." + type.name().toLowerCase() + ".enabled", true);
+        return config.node("databases", type.name().toLowerCase(), "enabled").getBoolean(true);
+    }
+
+    /**
+     * Returns the root configuration node.
+     */
+    public CommentedConfigurationNode getConfig() {
+        return config;
     }
 }

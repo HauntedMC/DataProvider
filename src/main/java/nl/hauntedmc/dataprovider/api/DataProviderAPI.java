@@ -1,9 +1,8 @@
-package nl.hauntedmc.dataprovider.platform.bukkit.api;
+package nl.hauntedmc.dataprovider.api;
 
 import nl.hauntedmc.dataprovider.database.DatabaseType;
 import nl.hauntedmc.dataprovider.database.base.BaseDatabaseProvider;
-import nl.hauntedmc.dataprovider.database.internal.DataProviderHandler;
-import org.bukkit.plugin.java.JavaPlugin;
+import nl.hauntedmc.dataprovider.internal.DataProviderHandler;
 
 /**
  * DataProviderAPI is the public facade that exposes only the safe methods for
@@ -26,55 +25,55 @@ public class DataProviderAPI {
     /**
      * Authenticates the calling plugin using a secret token.
      *
-     * @param plugin the calling plugin (typically "this")
+     * @param pluginName the calling plugin (typically "this")
      * @param token  the secret token provided by the plugin
      * @return true if authentication is successful, false otherwise.
      */
-    public boolean authenticate(JavaPlugin plugin, String token) {
-        return handler.authenticate(plugin, token);
+    public boolean authenticate(String pluginName, String token) {
+        return handler.authenticate(pluginName, token);
     }
 
     /**
      * Registers a database connection for the calling plugin.
      *
-     * @param plugin               the calling plugin (typically "this")
+     * @param pluginName               the calling plugin (typically "this")
      * @param databaseType         the type of database (e.g. MYSQL, MONGODB, etc.)
      * @param connectionIdentifier a unique identifier for the connection
      * @return the registered {@link BaseDatabaseProvider} instance.
      */
-    public BaseDatabaseProvider registerDatabase(JavaPlugin plugin, DatabaseType databaseType, String connectionIdentifier) {
-        return handler.registerDatabase(plugin, databaseType, connectionIdentifier);
+    public BaseDatabaseProvider registerDatabase(String pluginName, DatabaseType databaseType, String connectionIdentifier) {
+        return handler.registerDatabase(pluginName, databaseType, connectionIdentifier);
     }
 
     /**
      * Unregisters a specific database connection for the calling plugin.
      *
-     * @param plugin               the calling plugin (typically "this")
+     * @param pluginName               the calling plugin (typically "this")
      * @param databaseType         the type of database.
      * @param connectionIdentifier the connection identifier.
      */
-    public void unregisterDatabase(JavaPlugin plugin, DatabaseType databaseType, String connectionIdentifier) {
-        handler.unregisterDatabase(plugin, databaseType, connectionIdentifier);
+    public void unregisterDatabase(String pluginName, DatabaseType databaseType, String connectionIdentifier) {
+        handler.unregisterDatabase(pluginName, databaseType, connectionIdentifier);
     }
 
     /**
      * Unregisters all database connections for the calling plugin.
      *
-     * @param plugin the calling plugin (typically "this")
+     * @param pluginName the calling plugin (typically "this")
      */
-    public void unregisterAllDatabases(JavaPlugin plugin) {
-        handler.unregisterAllDatabases(plugin);
+    public void unregisterAllDatabases(String pluginName) {
+        handler.unregisterAllDatabases(pluginName);
     }
 
     /**
      * Retrieves a registered database connection for the calling plugin.
      *
-     * @param plugin               the calling plugin (typically "this")
+     * @param pluginName               the calling plugin (typically "this")
      * @param databaseType         the type of database.
      * @param connectionIdentifier the connection identifier.
      * @return the {@link BaseDatabaseProvider} instance, or null if not registered.
      */
-    public BaseDatabaseProvider getRegisteredDatabase(JavaPlugin plugin, DatabaseType databaseType, String connectionIdentifier) {
-        return handler.getRegisteredDatabase(plugin, databaseType, connectionIdentifier);
+    public BaseDatabaseProvider getRegisteredDatabase(String pluginName, DatabaseType databaseType, String connectionIdentifier) {
+        return handler.getRegisteredDatabase(pluginName, databaseType, connectionIdentifier);
     }
 }

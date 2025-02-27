@@ -1,5 +1,6 @@
-package nl.hauntedmc.dataprovider.database.internal;
+package nl.hauntedmc.dataprovider.internal;
 
+import nl.hauntedmc.dataprovider.DataProviderApp;
 import nl.hauntedmc.dataprovider.database.DatabaseType;
 import nl.hauntedmc.dataprovider.database.base.BaseDatabaseProvider;
 import nl.hauntedmc.dataprovider.database.document.impl.mongodb.MongoDBDatabase;
@@ -10,12 +11,8 @@ import nl.hauntedmc.dataprovider.database.relational.impl.postgresql.PostgreSQLD
 import nl.hauntedmc.dataprovider.database.messaging.impl.rabbitmq.RabbitMQMessagingDatabase;
 import nl.hauntedmc.dataprovider.database.messaging.impl.kafka.KafkaMessagingDatabase;
 import nl.hauntedmc.dataprovider.database.messaging.impl.redis.RedisMessagingDatabase;
-import nl.hauntedmc.dataprovider.logger.DPLogger;
-import org.bukkit.configuration.ConfigurationSection;
+import org.spongepowered.configurate.CommentedConfigurationNode;
 
-/**
- * Factory to create BaseDatabaseProvider instances based on the DatabaseType.
- */
 class DatabaseFactory {
 
     private final DatabaseConfigMap configMap;
@@ -25,14 +22,11 @@ class DatabaseFactory {
     }
 
     protected BaseDatabaseProvider createDatabaseProvider(DatabaseType type, String connectionIdentifier) {
-
-        ConfigurationSection connectionConfig = configMap.getConfig(type, connectionIdentifier);
-
+        CommentedConfigurationNode connectionConfig = configMap.getConfig(type, connectionIdentifier);
         if (connectionConfig == null) {
-            DPLogger.error("Could not load configuration for " + connectionIdentifier + " (" + type.name() + ")");
+            DataProviderApp.getLogger().error("Could not load configuration for " + connectionIdentifier + " (" + type.name() + ")");
             return null;
         }
-
         return switch (type) {
             case MYSQL -> new MySQLDatabase(connectionConfig);
             case MARIADB -> new MariaDBDatabase(connectionConfig);

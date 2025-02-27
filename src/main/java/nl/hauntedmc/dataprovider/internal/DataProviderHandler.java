@@ -1,14 +1,10 @@
-package nl.hauntedmc.dataprovider.database.internal;
+package nl.hauntedmc.dataprovider.internal;
 
-import nl.hauntedmc.dataprovider.DataProvider;
+import nl.hauntedmc.dataprovider.DataProviderApp;
 import nl.hauntedmc.dataprovider.database.DatabaseConnectionKey;
 import nl.hauntedmc.dataprovider.database.DatabaseType;
 import nl.hauntedmc.dataprovider.database.base.BaseDatabaseProvider;
-import nl.hauntedmc.dataprovider.logger.DPLogger;
 import nl.hauntedmc.dataprovider.security.SecurityManager;
-import org.bukkit.Bukkit;
-import org.bukkit.plugin.java.JavaPlugin;
-import org.jetbrains.annotations.NotNull;
 
 import java.util.concurrent.ConcurrentMap;
 
@@ -21,69 +17,65 @@ public class DataProviderHandler {
 
     private final DataProviderRegistry registry;
     private final SecurityManager securityManager;
-    private final DatabaseConfigMap configMap;
-    private final DatabaseFactory factory;
 
     /**
      * Public constructor.
      *
-     * @param plugin the main DataProvider plugin instance.
      */
-    public DataProviderHandler(DataProvider plugin) {
-        securityManager = new SecurityManager(plugin);
-        configMap = new DatabaseConfigMap(plugin);
-        factory = new DatabaseFactory(configMap);
-        this.registry = new DataProviderRegistry(plugin, factory);
+    public DataProviderHandler() {
+        securityManager = new SecurityManager();
+        DatabaseConfigMap configMap = new DatabaseConfigMap();
+        DatabaseFactory factory = new DatabaseFactory(configMap);
+        this.registry = new DataProviderRegistry(factory);
     }
 
     /**
      * Authenticates the calling plugin using the secret token.
      *
-     * @param plugin the calling JavaPlugin instance (typically “this”)
+     * @param pluginName the calling JavaPlugin instance (typically “this”)
      * @param token  the secret token provided by the plugin.
      * @return {@code true} if authentication is successful; {@code false} otherwise.
      * @throws SecurityException if the provided plugin instance is not registered.
      */
-    public boolean authenticate(JavaPlugin plugin, String token) {
-        String pluginName = JavaPlugin.getProvidingPlugin(plugin.getClass()).getName();
+    public boolean authenticate(String pluginName, String token) {
         return securityManager.authorize(pluginName, token);
     }
 
     /**
      * Registers a database connection for the calling plugin.
      *
-     * @param plugin               the calling JavaPlugin instance (typically “this”)
+     * @param pluginName               the calling JavaPlugin instance (typically “this”)
      * @param databaseType         the type of database (e.g. MYSQL, MONGODB, etc.)
      * @param connectionIdentifier a unique identifier for the connection.
      * @return the registered {@link BaseDatabaseProvider} instance.
      * @throws SecurityException if the plugin is not registered or not authorized.
      */
-    public BaseDatabaseProvider registerDatabase(JavaPlugin plugin, DatabaseType databaseType, String connectionIdentifier) {
-        String pluginName = validateAndGetPluginName(plugin);
+    public BaseDatabaseProvider registerDatabase(String pluginName, DatabaseType databaseType, String connectionIdentifier) {
+        authorizationCheck(pluginName);
         return registry.registerDatabase(pluginName, databaseType, connectionIdentifier);
     }
 
     /**
      * Unregisters a specific database connection for the calling plugin.
      *
-     * @param plugin               the calling JavaPlugin instance.
+     * @param pluginName               the calling JavaPlugin instance.
      * @param databaseType         the type of database.
      * @param connectionIdentifier the connection identifier.
      * @throws SecurityException if the plugin is not registered or not authorized.
      */
-    public void unregisterDatabase(JavaPlugin plugin, DatabaseType databaseType, String connectionIdentifier) {
-        String pluginName = validateAndGetPluginName(plugin);
+    public void unregisterDatabase(String pluginName, DatabaseType databaseType, String connectionIdentifier) {
+        authorizationCheck(pluginName);
         registry.unregisterDatabase(pluginName, databaseType, connectionIdentifier);
     }
 
     /**
      * Unregisters all database connections for the calling plugin.
      *
-     * @param plugin the calling JavaPlugin instance.
+     * @param pluginName the calling JavaPlugin instance.
      * @throws SecurityException if the plugin is not registered or not authorized.
      */
-    public void unregisterAllDatabases(JavaPlugin plugin) {
-        String pluginName = validateAndGetPluginName(plugin);
+    public void unregisterAllDatabases(String pluginName) {
+        authorizationCheck(pluginName);
         registry.unregisterAllDatabases(pluginName);
     }
 
@@ -97,14 +89,14 @@ public class DataProviderHandler {
     /**
      * Retrieves a registered database connection for the calling plugin.
      *
-     * @param plugin               the calling JavaPlugin instance.
+     * @param pluginName               the calling JavaPlugin instance.
      * @param databaseType         the type of database.
      * @param connectionIdentifier the connection identifier.
      * @return the {@link BaseDatabaseProvider} instance, or {@code null} if not registered.
      * @throws SecurityException if the plugin is not registered or not authorized.
      */
-    public BaseDatabaseProvider getRegisteredDatabase(JavaPlugin plugin, DatabaseType databaseType, String connectionIdentifier) {
-        String pluginName = validateAndGetPluginName(plugin);
+    public BaseDatabaseProvider getRegisteredDatabase(String pluginName, DatabaseType databaseType, String connectionIdentifier) {
+        authorizationCheck(pluginName);
         return registry.getDatabase(pluginName, databaseType, connectionIdentifier);
     }
 
@@ -120,31 +112,11 @@ public class DataProviderHandler {
         return registry.getActiveDatabases();
     }
 
-    /**
-     * Validates that the calling plugin is registered and authorized, then returns its genuine name.
-     *
-     * @param plugin the calling JavaPlugin instance.
-     * @return the genuine plugin name.
-     * @throws SecurityException if any validation check fails.
-     */
-    private @NotNull String validateAndGetPluginName(JavaPlugin plugin) {
-        // getProvidingPlugin is assumed to be nonnull.
-        JavaPlugin genuine = JavaPlugin.getProvidingPlugin(plugin.getClass());
-        String pluginName = genuine.getName();
-
-        if (Bukkit.getPluginManager().getPlugin(pluginName) == null) {
-            DPLogger.error("Plugin " + pluginName + " is not registered with Bukkit.");
-            throw new SecurityException("Plugin " + pluginName + " is not registered with Bukkit.");
-        }
-        if (plugin.getClass().getClassLoader() != genuine.getClass().getClassLoader()) {
-            DPLogger.error("Class loader mismatch for plugin " + pluginName);
-            throw new SecurityException("Class loader mismatch for plugin " + pluginName);
-        }
+    private void authorizationCheck(String pluginName) {
         if (!securityManager.isAuthorized(pluginName)) {
-            DPLogger.error("Plugin " + pluginName + " is not authorized. Please authenticate first.");
+            DataProviderApp.getLogger().error("Plugin " + pluginName + " is not authorized. Please authenticate first.");
             throw new SecurityException("Plugin " + pluginName + " is not authorized. Please authenticate first.");
         }
-        return pluginName;
     }
 
 }

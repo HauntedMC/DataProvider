@@ -1,10 +1,9 @@
-package nl.hauntedmc.dataprovider.database.internal;
+package nl.hauntedmc.dataprovider.internal;
 
-import nl.hauntedmc.dataprovider.DataProvider;
+import nl.hauntedmc.dataprovider.DataProviderApp;
 import nl.hauntedmc.dataprovider.database.DatabaseConnectionKey;
 import nl.hauntedmc.dataprovider.database.DatabaseType;
 import nl.hauntedmc.dataprovider.database.base.BaseDatabaseProvider;
-import nl.hauntedmc.dataprovider.logger.DPLogger;
 
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
@@ -14,10 +13,8 @@ class DataProviderRegistry {
 
     private final ConcurrentMap<DatabaseConnectionKey, BaseDatabaseProvider> activeDatabases = new ConcurrentHashMap<>();
     private final DatabaseFactory factory;
-    private final DataProvider plugin;
 
-    public DataProviderRegistry(DataProvider plugin, DatabaseFactory factory) {
-        this.plugin = plugin;
+    public DataProviderRegistry( DatabaseFactory factory) {
         this.factory = factory;
     }
 
@@ -25,12 +22,12 @@ class DataProviderRegistry {
         DatabaseConnectionKey key = new DatabaseConnectionKey(pluginName, databaseType, connectionIdentifier);
 
         if (activeDatabases.containsKey(key)) {
-            DPLogger.info(pluginName + " already has a " + databaseType.name() + " connection with identifier: " + connectionIdentifier);
+            DataProviderApp.getLogger().info(pluginName + " already has a " + databaseType.name() + " connection with identifier: " + connectionIdentifier);
             return activeDatabases.get(key);
         }
 
-        if (!plugin.getMainConfigHandler().isDatabaseTypeEnabled(databaseType)) {
-            DPLogger.error("Failed to establish connection for " + pluginName + " with " + databaseType.name() + ": This database type is disabled in the main config.");
+        if (!DataProviderApp.getConfigHandler().isDatabaseTypeEnabled(databaseType)) {
+            DataProviderApp.getLogger().error("Failed to establish connection for " + pluginName + " with " + databaseType.name() + ": This database type is disabled in the main config.");
             return null;
         }
 
@@ -41,14 +38,14 @@ class DataProviderRegistry {
             }
             databaseProvider.connect();
             if (!databaseProvider.isConnected()) {
-                DPLogger.error("Failed to establish connection for " + pluginName + " with " + databaseType.name() + " (" + connectionIdentifier + ")");
+                DataProviderApp.getLogger().error("Failed to establish connection for " + pluginName + " with " + databaseType.name() + " (" + connectionIdentifier + ")");
                 return null;
             }
             activeDatabases.put(key, databaseProvider);
-            DPLogger.info(pluginName + " registered " + databaseType.name() + " connection (" + connectionIdentifier + ")");
+            DataProviderApp.getLogger().info(pluginName + " registered " + databaseType.name() + " connection (" + connectionIdentifier + ")");
             return databaseProvider;
         } catch (Exception e) {
-            DPLogger.error("Failed to register database for " + pluginName, e);
+            DataProviderApp.getLogger().error("Failed to register database for " + pluginName, e);
             return null;
         }
     }
@@ -63,7 +60,7 @@ class DataProviderRegistry {
         BaseDatabaseProvider provider = activeDatabases.remove(key);
         if (provider != null) {
             provider.disconnect();
-            DPLogger.info(pluginName + " unregistered " + databaseType.name() + " connection (" + connectionIdentifier + ")");
+            DataProviderApp.getLogger().info(pluginName + " unregistered " + databaseType.name() + " connection (" + connectionIdentifier + ")");
         }
     }
 
@@ -73,7 +70,7 @@ class DataProviderRegistry {
                 try {
                     entry.getValue().disconnect();
                 } catch (Exception e) {
-                    DPLogger.error("Error disconnecting " + entry.getKey(), e);
+                    DataProviderApp.getLogger().error("Error disconnecting " + entry.getKey(), e);
                 }
                 return true;
             }
@@ -86,11 +83,11 @@ class DataProviderRegistry {
             try {
                 entry.getValue().disconnect();
             } catch (Exception e) {
-                DPLogger.error("Error disconnecting " + entry.getKey(), e);
+                DataProviderApp.getLogger().error("Error disconnecting " + entry.getKey(), e);
             }
         }
         activeDatabases.clear();
-        DPLogger.info("All database connections have been closed.");
+        DataProviderApp.getLogger().info("All database connections have been closed.");
     }
 
     protected ConcurrentMap<DatabaseConnectionKey, BaseDatabaseProvider> getActiveDatabases() {

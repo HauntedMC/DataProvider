@@ -1,5 +1,6 @@
 package nl.hauntedmc.dataprovider.orm;
 
+import nl.hauntedmc.dataprovider.DataProviderApp;
 import org.hibernate.Session;
 import org.hibernate.SessionFactory;
 import org.hibernate.Transaction;
@@ -7,7 +8,6 @@ import org.hibernate.boot.Metadata;
 import org.hibernate.boot.MetadataSources;
 import org.hibernate.boot.registry.StandardServiceRegistry;
 import org.hibernate.boot.registry.StandardServiceRegistryBuilder;
-import org.bukkit.plugin.Plugin;
 
 import javax.sql.DataSource;
 import java.util.Objects;
@@ -19,8 +19,8 @@ import java.util.Objects;
  */
 public class ORMContext {
 
-    private final Plugin plugin;
     private final DataSource dataSource;
+    private final String plugin;
     private SessionFactory sessionFactory;
     private StandardServiceRegistry registry;
 
@@ -32,8 +32,8 @@ public class ORMContext {
      * @param entityClasses One or more annotated entity classes to register.
      * @throws IllegalArgumentException if plugin, dataSource, or entityClasses are null/empty.
      */
-    public ORMContext(Plugin plugin, DataSource dataSource, Class<?>... entityClasses) {
-        this.plugin = Objects.requireNonNull(plugin, "Plugin cannot be null");
+    public ORMContext(String plugin, DataSource dataSource, Class<?>... entityClasses) {
+        this.plugin = plugin;
         this.dataSource = Objects.requireNonNull(dataSource, "DataSource cannot be null");
         if (entityClasses == null || entityClasses.length == 0) {
             throw new IllegalArgumentException("At least one entity class must be provided");
@@ -64,9 +64,9 @@ public class ORMContext {
             Metadata metadata = metadataSources.getMetadataBuilder().build();
             sessionFactory = metadata.getSessionFactoryBuilder().build();
 
-            plugin.getLogger().info("Hibernate ORMContext initialized successfully for plugin: " + plugin.getName());
+            DataProviderApp.getLogger().info("Hibernate ORMContext initialized successfully for plugin: " + plugin);
         } catch (Exception e) {
-            plugin.getLogger().severe("Failed to initialize Hibernate ORMContext for plugin: " + plugin.getName());
+            DataProviderApp.getLogger().error("Failed to initialize Hibernate ORMContext for plugin: " + plugin);
             throw new RuntimeException("ORMContext initialization failed", e);
         }
     }
@@ -79,7 +79,7 @@ public class ORMContext {
      */
     public SessionFactory getSessionFactory() {
         if (sessionFactory == null) {
-            throw new IllegalStateException("SessionFactory is not initialized for plugin: " + plugin.getName());
+            throw new IllegalStateException("SessionFactory is not initialized for plugin: " + plugin);
         }
         return sessionFactory;
     }
@@ -112,7 +112,7 @@ public class ORMContext {
             if (tx != null && tx.isActive()) {
                 tx.rollback();
             }
-            plugin.getLogger().severe("Transaction failed in plugin: " + plugin.getName() + " - " + e.getMessage());
+            DataProviderApp.getLogger().error("Transaction failed in plugin: " + plugin + " - " + e.getMessage());
             throw new RuntimeException("Transaction failed", e);
         }
     }
@@ -130,7 +130,7 @@ public class ORMContext {
             StandardServiceRegistryBuilder.destroy(registry);
             registry = null;
         }
-        plugin.getLogger().info("Hibernate ORMContext shut down for plugin: " + plugin.getName());
+        DataProviderApp.getLogger().info("Hibernate ORMContext shut down for plugin: " + plugin);
     }
 
     /**

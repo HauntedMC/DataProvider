@@ -1,67 +1,66 @@
-package nl.hauntedmc.dataprovider.platform.bukkit.commands;
+package nl.hauntedmc.dataprovider.platform.velocity.command;
 
+import com.velocitypowered.api.command.CommandSource;
+import com.velocitypowered.api.command.SimpleCommand;
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.format.NamedTextColor;
-import nl.hauntedmc.dataprovider.DataProvider;
+import nl.hauntedmc.dataprovider.VelocityDataProvider;
 import nl.hauntedmc.dataprovider.database.DatabaseConnectionKey;
 import nl.hauntedmc.dataprovider.database.base.BaseDatabaseProvider;
-import org.bukkit.command.Command;
-import org.bukkit.command.CommandExecutor;
-import org.bukkit.command.CommandSender;
-import org.bukkit.command.TabCompleter;
-import org.jetbrains.annotations.NotNull;
 
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentMap;
 
-public class DataProviderCommand implements CommandExecutor, TabCompleter {
+public class DataProviderCommand implements SimpleCommand {
 
-    private final DataProvider plugin;
+    private final VelocityDataProvider plugin;
 
-    public DataProviderCommand(DataProvider plugin) {
+    public DataProviderCommand(VelocityDataProvider plugin) {
         this.plugin = plugin;
     }
 
     @Override
-    public boolean onCommand(@NotNull CommandSender sender, @NotNull Command command,
-                             @NotNull String label, String @NotNull [] args) {
+    public void execute(Invocation invocation) {
+        CommandSource source = invocation.source();
+        String[] args = invocation.arguments();
+
         // Display usage or help message when no arguments or "help" is provided.
         if (args.length == 0 || args[0].equalsIgnoreCase("help")) {
-            sender.sendMessage(Component.text("Usage: /dataprovider status", NamedTextColor.YELLOW));
-            return true;
+            source.sendMessage(Component.text("Usage: /dataprovider status", NamedTextColor.YELLOW));
+            return;
         }
 
         // Handle the "status" subcommand.
         if (args[0].equalsIgnoreCase("status")) {
-            // Check for the required permission before executing any subcommand.
-            if (!sender.hasPermission("dataprovider.command.status")) {
-                sender.sendMessage(Component.text("You do not have permission to use this command.", NamedTextColor.RED));
-                return true;
+            // Check permission before executing any subcommand.
+            if (!source.hasPermission("dataprovider.command.status")) {
+                source.sendMessage(Component.text("You do not have permission to use this command.", NamedTextColor.RED));
+                return;
             }
 
             ConcurrentMap<DatabaseConnectionKey, BaseDatabaseProvider> activeDatabases =
-                    plugin.getDataProviderHandler().getActiveDatabases();
+                    plugin.getDataProvider().getDataProviderHandler().getActiveDatabases();
 
             if (activeDatabases.isEmpty()) {
-                sender.sendMessage(Component.text("No active database connections found.", NamedTextColor.YELLOW));
-                return true;
+                source.sendMessage(Component.text("No active database connections found.", NamedTextColor.YELLOW));
+                return;
             }
 
-            sender.sendMessage(Component.text("Active Database Connections:", NamedTextColor.GREEN));
+            source.sendMessage(Component.text("Active Database Connections:", NamedTextColor.GREEN));
             for (Map.Entry<DatabaseConnectionKey, BaseDatabaseProvider> entry : activeDatabases.entrySet()) {
                 Component connectionInfo = getConnectionComponent(entry);
-                sender.sendMessage(connectionInfo);
+                source.sendMessage(connectionInfo);
             }
-            return true;
+            return;
         }
 
-        sender.sendMessage(Component.text("Unknown subcommand. Use /dataprovider help for usage.", NamedTextColor.RED));
-        return true;
+        source.sendMessage(Component.text("Unknown subcommand. Use /dataprovider help for usage.", NamedTextColor.RED));
     }
 
-    private static @NotNull Component getConnectionComponent(Map.Entry<DatabaseConnectionKey, BaseDatabaseProvider> entry) {
+    private static Component getConnectionComponent(Map.Entry<DatabaseConnectionKey, BaseDatabaseProvider> entry) {
         DatabaseConnectionKey key = entry.getKey();
         BaseDatabaseProvider provider = entry.getValue();
 
@@ -80,9 +79,9 @@ public class DataProviderCommand implements CommandExecutor, TabCompleter {
     }
 
     @Override
-    public List<String> onTabComplete(@NotNull CommandSender sender, @NotNull Command command,
-                                      @NotNull String alias, String[] args) {
+    public CompletableFuture<List<String>> suggestAsync(Invocation invocation) {
         List<String> completions = new ArrayList<>();
+        String[] args = invocation.arguments();
         if (args.length == 1) {
             String partial = args[0].toLowerCase();
             if ("status".startsWith(partial)) {
@@ -92,6 +91,6 @@ public class DataProviderCommand implements CommandExecutor, TabCompleter {
                 completions.add("help");
             }
         }
-        return completions;
+        return CompletableFuture.completedFuture(completions);
     }
 }

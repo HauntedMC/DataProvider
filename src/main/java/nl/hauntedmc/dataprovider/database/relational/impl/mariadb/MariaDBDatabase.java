@@ -2,11 +2,11 @@ package nl.hauntedmc.dataprovider.database.relational.impl.mariadb;
 
 import com.zaxxer.hikari.HikariConfig;
 import com.zaxxer.hikari.HikariDataSource;
+import nl.hauntedmc.dataprovider.DataProviderApp;
 import nl.hauntedmc.dataprovider.database.relational.RelationalDataAccess;
 import nl.hauntedmc.dataprovider.database.relational.RelationalDatabaseProvider;
 import nl.hauntedmc.dataprovider.database.relational.schema.SchemaManager;
-import nl.hauntedmc.dataprovider.logger.DPLogger;
-import org.bukkit.configuration.ConfigurationSection;
+import org.spongepowered.configurate.CommentedConfigurationNode;
 
 import javax.sql.DataSource;
 import java.util.concurrent.ExecutorService;
@@ -14,33 +14,34 @@ import java.util.concurrent.Executors;
 
 /**
  * MariaDB implementation of RelationalDatabaseProvider.
+ * This version uses Configurate to load configuration from a YAML file.
  */
 public class MariaDBDatabase implements RelationalDatabaseProvider {
 
-    private final ConfigurationSection config;
+    private final CommentedConfigurationNode config;
     private HikariDataSource dataSource;
     private ExecutorService executor;
     private RelationalDataAccess dataAccess;
     private SchemaManager schemaManager;
 
-    public MariaDBDatabase(ConfigurationSection config) {
+    public MariaDBDatabase(CommentedConfigurationNode config) {
         this.config = config;
     }
 
     @Override
     public void connect() {
         if (dataSource != null && !dataSource.isClosed()) {
-            DPLogger.info("[MariaDBDatabase] Already connected, skipping re–initialization.");
+            DataProviderApp.getLogger().info("[MariaDBDatabase] Already connected, skipping re–initialization.");
             return;
         }
         try {
             HikariConfig hikariConfig = new HikariConfig();
 
-            final String host = config.getString("host", "localhost");
-            final int port = config.getInt("port", 3306);
-            final String databaseName = config.getString("database", "minecraft");
-            final String user = config.getString("username", "root");
-            final String password = config.getString("password", "");
+            final String host = config.node("host").getString("localhost");
+            final int port = config.node("port").getInt(3306);
+            final String databaseName = config.node("database").getString("minecraft");
+            final String user = config.node("username").getString("root");
+            final String password = config.node("password").getString("");
 
             // Use the MariaDB JDBC URL format.
             final String jdbcUrl = String.format("jdbc:mariadb://%s:%d/%s?useSSL=false&characterEncoding=UTF-8", host, port, databaseName);
@@ -49,7 +50,7 @@ public class MariaDBDatabase implements RelationalDatabaseProvider {
             hikariConfig.setUsername(user);
             hikariConfig.setPassword(password);
 
-            final int poolSize = config.getInt("pool_size", 10);
+            final int poolSize = config.node("pool_size").getInt(10);
             hikariConfig.setMaximumPoolSize(poolSize);
             hikariConfig.setConnectionTimeout(30000);
             hikariConfig.setIdleTimeout(600000);
@@ -61,9 +62,9 @@ public class MariaDBDatabase implements RelationalDatabaseProvider {
             this.dataAccess = new MariaDBDataAccess(dataSource, executor);
             this.schemaManager = new MariaDBSchemaManager(dataSource, executor);
 
-            DPLogger.info("[MariaDBDatabase] Connected successfully to " + jdbcUrl);
+            DataProviderApp.getLogger().info("[MariaDBDatabase] Connected successfully to " + jdbcUrl);
         } catch (Exception e) {
-            DPLogger.error("[MariaDBDatabase] Connection failed!", e);
+            DataProviderApp.getLogger().error("[MariaDBDatabase] Connection failed!", e);
         }
     }
 
@@ -71,11 +72,11 @@ public class MariaDBDatabase implements RelationalDatabaseProvider {
     public void disconnect() {
         if (dataSource != null && !dataSource.isClosed()) {
             dataSource.close();
-            DPLogger.info("[MariaDBDatabase] DataSource closed.");
+            DataProviderApp.getLogger().info("[MariaDBDatabase] DataSource closed.");
         }
         if (executor != null && !executor.isShutdown()) {
             executor.shutdown();
-            DPLogger.info("[MariaDBDatabase] ExecutorService shut down.");
+            DataProviderApp.getLogger().info("[MariaDBDatabase] ExecutorService shut down.");
         }
     }
 
@@ -87,7 +88,7 @@ public class MariaDBDatabase implements RelationalDatabaseProvider {
         try (var conn = dataSource.getConnection()) {
             return conn.isValid(2);
         } catch (Exception e) {
-            DPLogger.warning("[MariaDBDatabase] Connection validation failed: " + e.getMessage());
+            DataProviderApp.getLogger().warn("[MariaDBDatabase] Connection validation failed: " + e.getMessage());
             return false;
         }
     }

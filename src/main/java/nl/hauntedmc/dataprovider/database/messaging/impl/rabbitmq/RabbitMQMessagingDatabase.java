@@ -3,10 +3,10 @@ package nl.hauntedmc.dataprovider.database.messaging.impl.rabbitmq;
 import com.rabbitmq.client.Channel;
 import com.rabbitmq.client.Connection;
 import com.rabbitmq.client.ConnectionFactory;
+import nl.hauntedmc.dataprovider.DataProviderApp;
 import nl.hauntedmc.dataprovider.database.messaging.MessagingDataAccess;
 import nl.hauntedmc.dataprovider.database.messaging.MessagingDatabaseProvider;
-import nl.hauntedmc.dataprovider.logger.DPLogger;
-import org.bukkit.configuration.ConfigurationSection;
+import org.spongepowered.configurate.CommentedConfigurationNode;
 
 import java.io.IOException;
 import java.util.concurrent.ExecutorService;
@@ -18,42 +18,42 @@ import java.util.concurrent.TimeoutException;
  */
 public class RabbitMQMessagingDatabase implements MessagingDatabaseProvider {
 
-    private final ConfigurationSection config;
+    private final CommentedConfigurationNode config;
     private Connection connection;
     private Channel channel;
     private ExecutorService executor;
     private RabbitMQMessagingDataAccess dataAccess;
     private boolean connected;
 
-    public RabbitMQMessagingDatabase(ConfigurationSection config) {
+    public RabbitMQMessagingDatabase(CommentedConfigurationNode config) {
         this.config = config;
     }
 
     @Override
     public void connect() {
         if (connected && connection != null) {
-            DPLogger.info("[RabbitMQMessagingDatabase] Already connected; skipping re–initialization.");
+            DataProviderApp.getLogger().info("[RabbitMQMessagingDatabase] Already connected; skipping re–initialization.");
             return;
         }
         try {
             ConnectionFactory factory = new ConnectionFactory();
-            factory.setHost(config.getString("host", "localhost"));
-            factory.setPort(config.getInt("port", 5672));
-            factory.setUsername(config.getString("username", "guest"));
-            factory.setPassword(config.getString("password", "guest"));
-            // Optionally set virtual host, etc.
+            factory.setHost(config.node("host").getString("localhost"));
+            factory.setPort(config.node("port").getInt(5672));
+            factory.setUsername(config.node("username").getString("guest"));
+            factory.setPassword(config.node("password").getString("guest"));
+            // Optionally set virtual host or other settings here
 
             connection = factory.newConnection();
             channel = connection.createChannel();
 
-            int poolSize = config.getInt("pool_size", 4);
+            int poolSize = config.node("pool_size").getInt(4);
             executor = Executors.newFixedThreadPool(poolSize);
 
             dataAccess = new RabbitMQMessagingDataAccess(channel, executor);
             connected = true;
-            DPLogger.info("[RabbitMQMessagingDatabase] Connected successfully to RabbitMQ.");
+            DataProviderApp.getLogger().info("[RabbitMQMessagingDatabase] Connected successfully to RabbitMQ.");
         } catch (IOException | TimeoutException e) {
-            DPLogger.error("[RabbitMQMessagingDatabase] Connection failed: " + e.getMessage());
+            DataProviderApp.getLogger().error("[RabbitMQMessagingDatabase] Connection failed: " + e.getMessage());
             e.printStackTrace();
         }
     }
@@ -63,18 +63,18 @@ public class RabbitMQMessagingDatabase implements MessagingDatabaseProvider {
         try {
             if (channel != null && channel.isOpen()) {
                 channel.close();
-                DPLogger.info("[RabbitMQMessagingDatabase] Channel closed.");
+                DataProviderApp.getLogger().info("[RabbitMQMessagingDatabase] Channel closed.");
             }
             if (connection != null && connection.isOpen()) {
                 connection.close();
-                DPLogger.info("[RabbitMQMessagingDatabase] Connection closed.");
+                DataProviderApp.getLogger().info("[RabbitMQMessagingDatabase] Connection closed.");
             }
             if (executor != null && !executor.isShutdown()) {
                 executor.shutdown();
-                DPLogger.info("[RabbitMQMessagingDatabase] ExecutorService shut down.");
+                DataProviderApp.getLogger().info("[RabbitMQMessagingDatabase] ExecutorService shut down.");
             }
         } catch (IOException | TimeoutException e) {
-            DPLogger.error("[RabbitMQMessagingDatabase] Error during disconnect: " + e.getMessage());
+            DataProviderApp.getLogger().error("[RabbitMQMessagingDatabase] Error during disconnect: " + e.getMessage());
             e.printStackTrace();
         }
         connected = false;

@@ -1,11 +1,11 @@
 package nl.hauntedmc.dataprovider.database.messaging.impl.kafka;
 
+import nl.hauntedmc.dataprovider.DataProviderApp;
 import nl.hauntedmc.dataprovider.database.messaging.MessagingDataAccess;
 import nl.hauntedmc.dataprovider.database.messaging.MessagingDatabaseProvider;
-import nl.hauntedmc.dataprovider.logger.DPLogger;
 import org.apache.kafka.clients.consumer.KafkaConsumer;
 import org.apache.kafka.clients.producer.KafkaProducer;
-import org.bukkit.configuration.ConfigurationSection;
+import org.spongepowered.configurate.CommentedConfigurationNode;
 
 import java.util.Properties;
 import java.util.concurrent.ExecutorService;
@@ -13,30 +13,31 @@ import java.util.concurrent.Executors;
 
 /**
  * KafkaMessagingDatabase implements MessagingDatabaseProvider using Kafka.
+ * This version uses Configurate (CommentedConfigurationNode) to load configuration values.
  */
 public class KafkaMessagingDatabase implements MessagingDatabaseProvider {
 
-    private final ConfigurationSection config;
+    private final CommentedConfigurationNode config;
     private KafkaProducer<String, String> producer;
     private KafkaConsumer<String, String> consumer;
     private ExecutorService consumerExecutor;
     private KafkaMessagingDataAccess dataAccess;
     private boolean connected;
 
-    public KafkaMessagingDatabase(ConfigurationSection config) {
+    public KafkaMessagingDatabase(CommentedConfigurationNode config) {
         this.config = config;
     }
 
     @Override
     public void connect() {
         if (connected) {
-            DPLogger.info("[KafkaMessagingDatabase] Already connected; skipping re–initialization.");
+            DataProviderApp.getLogger().info("[KafkaMessagingDatabase] Already connected; skipping re–initialization.");
             return;
         }
         try {
             // Producer properties.
             Properties producerProps = new Properties();
-            producerProps.put("bootstrap.servers", config.getString("bootstrapServers", "localhost:9092"));
+            producerProps.put("bootstrap.servers", config.node("bootstrapServers").getString("localhost:9092"));
             producerProps.put("key.serializer", "org.apache.kafka.common.serialization.StringSerializer");
             producerProps.put("value.serializer", "org.apache.kafka.common.serialization.StringSerializer");
 
@@ -44,22 +45,22 @@ public class KafkaMessagingDatabase implements MessagingDatabaseProvider {
 
             // Consumer properties.
             Properties consumerProps = new Properties();
-            consumerProps.put("bootstrap.servers", config.getString("bootstrapServers", "localhost:9092"));
-            consumerProps.put("group.id", config.getString("groupId", "defaultGroup"));
+            consumerProps.put("bootstrap.servers", config.node("bootstrapServers").getString("localhost:9092"));
+            consumerProps.put("group.id", config.node("groupId").getString("defaultGroup"));
             consumerProps.put("key.deserializer", "org.apache.kafka.common.serialization.StringDeserializer");
             consumerProps.put("value.deserializer", "org.apache.kafka.common.serialization.StringDeserializer");
             consumerProps.put("auto.offset.reset", "earliest");
 
             consumer = new KafkaConsumer<>(consumerProps);
 
-            int poolSize = config.getInt("pool_size", 4);
+            int poolSize = config.node("pool_size").getInt(4);
             consumerExecutor = Executors.newFixedThreadPool(poolSize);
 
             dataAccess = new KafkaMessagingDataAccess(producer, consumer, consumerExecutor);
             connected = true;
-            DPLogger.info("[KafkaMessagingDatabase] Connected successfully to Kafka.");
+            DataProviderApp.getLogger().info("[KafkaMessagingDatabase] Connected successfully to Kafka.");
         } catch (Exception e) {
-            DPLogger.error("[KafkaMessagingDatabase] Connection failed: " + e.getMessage());
+            DataProviderApp.getLogger().error("[KafkaMessagingDatabase] Connection failed: " + e.getMessage());
             e.printStackTrace();
         }
     }
@@ -68,15 +69,15 @@ public class KafkaMessagingDatabase implements MessagingDatabaseProvider {
     public void disconnect() {
         if (producer != null) {
             producer.close();
-            DPLogger.info("[KafkaMessagingDatabase] Producer closed.");
+            DataProviderApp.getLogger().info("[KafkaMessagingDatabase] Producer closed.");
         }
         if (consumer != null) {
             consumer.close();
-            DPLogger.info("[KafkaMessagingDatabase] Consumer closed.");
+            DataProviderApp.getLogger().info("[KafkaMessagingDatabase] Consumer closed.");
         }
         if (consumerExecutor != null && !consumerExecutor.isShutdown()) {
             consumerExecutor.shutdown();
-            DPLogger.info("[KafkaMessagingDatabase] Consumer ExecutorService shut down.");
+            DataProviderApp.getLogger().info("[KafkaMessagingDatabase] Consumer ExecutorService shut down.");
         }
         connected = false;
     }
