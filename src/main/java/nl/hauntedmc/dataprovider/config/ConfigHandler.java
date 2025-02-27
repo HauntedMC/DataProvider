@@ -1,5 +1,6 @@
 package nl.hauntedmc.dataprovider.config;
 
+import nl.hauntedmc.dataprovider.DataProviderApp;
 import nl.hauntedmc.dataprovider.database.DatabaseType;
 import org.spongepowered.configurate.CommentedConfigurationNode;
 import org.spongepowered.configurate.loader.ConfigurationLoader;
@@ -46,13 +47,12 @@ public class ConfigHandler {
                     if (in != null) {
                         Files.copy(in, configFile);
                     } else {
-                        System.err.println("Default config.yml not found in resources!");
+                        DataProviderApp.getLogger().error("Default config.yml not found in resources!");
                     }
                 }
             }
         } catch (IOException e) {
-            System.err.println("Error ensuring config file exists: " + e.getMessage());
-            e.printStackTrace();
+            DataProviderApp.getLogger().error("Error ensuring config file exists: " + e.getMessage());
         }
     }
 
@@ -63,8 +63,7 @@ public class ConfigHandler {
         try {
             this.config = loader.load();
         } catch (IOException e) {
-            System.err.println("Error reloading config file: " + e.getMessage());
-            e.printStackTrace();
+            DataProviderApp.getLogger().error("Error reloading config file: " + e.getMessage());
         }
     }
 
@@ -80,15 +79,14 @@ public class ConfigHandler {
             if (node.virtual()) {
                 try {
                     node.set(true);
-                } catch (SerializationException e) {
-                    e.printStackTrace();
+                } catch (SerializationException ignored) {
                 }
                 changed = true;
             }
         }
         if (changed) {
             saveConfig();
-            System.out.println("Updated config.yml with missing default values.");
+            DataProviderApp.getLogger().info("Updated config.yml with missing default values.");
         }
     }
 
@@ -99,8 +97,7 @@ public class ConfigHandler {
         try {
             loader.save(config);
         } catch (IOException e) {
-            System.err.println("Error saving config file: " + e.getMessage());
-            e.printStackTrace();
+            DataProviderApp.getLogger().error("Error saving config file: " + e.getMessage());
         }
     }
 
