@@ -51,10 +51,10 @@ public class ORMContext {
             // Build the StandardServiceRegistry using hibernate.cfg.xml and override the connection settings with our DataSource.
             registry = new StandardServiceRegistryBuilder()
                     .applySetting("hibernate.connection.datasource", dataSource)
-                    .applySetting("hibernate.hbm2ddl.auto", "create-drop")
-                    .applySetting("hibernate.show_sql", "true")
-                    .applySetting("hibernate.format_sql", "true")
-                    .applySetting("hibernate.use_sql_comments", "true")
+                    .applySetting("hibernate.hbm2ddl.auto", "update")
+                    .applySetting("hibernate.show_sql", "false")
+                    .applySetting("hibernate.format_sql", "false")
+                    .applySetting("hibernate.use_sql_comments", "false")
                     .build();
 
             // Create MetadataSources and register each provided entity class.
