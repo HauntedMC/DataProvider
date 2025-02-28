@@ -1,6 +1,6 @@
 package nl.hauntedmc.dataprovider.config;
 
-import nl.hauntedmc.dataprovider.DataProviderApp;
+import nl.hauntedmc.dataprovider.DataProvider;
 import nl.hauntedmc.dataprovider.database.DatabaseType;
 import org.spongepowered.configurate.CommentedConfigurationNode;
 import org.spongepowered.configurate.loader.ConfigurationLoader;
@@ -47,12 +47,12 @@ public class ConfigHandler {
                     if (in != null) {
                         Files.copy(in, configFile);
                     } else {
-                        DataProviderApp.getLogger().error("Default config.yml not found in resources!");
+                        DataProvider.getLogger().error("Default config.yml not found in resources!");
                     }
                 }
             }
         } catch (IOException e) {
-            DataProviderApp.getLogger().error("Error ensuring config file exists: " + e.getMessage());
+            DataProvider.getLogger().error("Error ensuring config file exists: " + e.getMessage());
         }
     }
 
@@ -63,7 +63,7 @@ public class ConfigHandler {
         try {
             this.config = loader.load();
         } catch (IOException e) {
-            DataProviderApp.getLogger().error("Error reloading config file: " + e.getMessage());
+            DataProvider.getLogger().error("Error reloading config file: " + e.getMessage());
         }
     }
 
@@ -86,7 +86,7 @@ public class ConfigHandler {
         }
         if (changed) {
             saveConfig();
-            DataProviderApp.getLogger().info("Updated config.yml with missing default values.");
+            DataProvider.getLogger().info("Updated config.yml with missing default values.");
         }
     }
 
@@ -97,7 +97,7 @@ public class ConfigHandler {
         try {
             loader.save(config);
         } catch (IOException e) {
-            DataProviderApp.getLogger().error("Error saving config file: " + e.getMessage());
+            DataProvider.getLogger().error("Error saving config file: " + e.getMessage());
         }
     }
 

@@ -1,8 +1,8 @@
 package nl.hauntedmc.dataprovider.internal;
 
-import nl.hauntedmc.dataprovider.DataProviderApp;
+import nl.hauntedmc.dataprovider.DataProvider;
 import nl.hauntedmc.dataprovider.database.DatabaseType;
-import nl.hauntedmc.dataprovider.database.base.BaseDatabaseProvider;
+import nl.hauntedmc.dataprovider.database.DatabaseProvider;
 import nl.hauntedmc.dataprovider.database.document.impl.mongodb.MongoDBDatabase;
 import nl.hauntedmc.dataprovider.database.keyvalue.impl.redis.RedisDatabase;
 import nl.hauntedmc.dataprovider.database.relational.impl.mysql.MySQLDatabase;
@@ -21,10 +21,10 @@ class DatabaseFactory {
         this.configMap = configMap;
     }
 
-    protected BaseDatabaseProvider createDatabaseProvider(DatabaseType type, String connectionIdentifier) {
+    protected DatabaseProvider createDatabaseProvider(DatabaseType type, String connectionIdentifier) {
         CommentedConfigurationNode connectionConfig = configMap.getConfig(type, connectionIdentifier);
         if (connectionConfig == null) {
-            DataProviderApp.getLogger().error("Could not load configuration for " + connectionIdentifier + " (" + type.name() + ")");
+            DataProvider.getLogger().error("Could not load configuration for " + connectionIdentifier + " (" + type.name() + ")");
             return null;
         }
         return switch (type) {

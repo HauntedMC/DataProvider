@@ -3,7 +3,7 @@ package nl.hauntedmc.dataprovider.database.messaging.impl.rabbitmq;
 import com.rabbitmq.client.Channel;
 import com.rabbitmq.client.Connection;
 import com.rabbitmq.client.ConnectionFactory;
-import nl.hauntedmc.dataprovider.DataProviderApp;
+import nl.hauntedmc.dataprovider.DataProvider;
 import nl.hauntedmc.dataprovider.database.messaging.MessagingDataAccess;
 import nl.hauntedmc.dataprovider.database.messaging.MessagingDatabaseProvider;
 import org.spongepowered.configurate.CommentedConfigurationNode;
@@ -32,7 +32,7 @@ public class RabbitMQMessagingDatabase implements MessagingDatabaseProvider {
     @Override
     public void connect() {
         if (connected && connection != null) {
-            DataProviderApp.getLogger().info("[RabbitMQMessagingDatabase] Already connected; skipping re–initialization.");
+            DataProvider.getLogger().info("[RabbitMQMessagingDatabase] Already connected; skipping re–initialization.");
             return;
         }
         try {
@@ -51,9 +51,9 @@ public class RabbitMQMessagingDatabase implements MessagingDatabaseProvider {
 
             dataAccess = new RabbitMQMessagingDataAccess(channel, executor);
             connected = true;
-            DataProviderApp.getLogger().info("[RabbitMQMessagingDatabase] Connected successfully to RabbitMQ.");
+            DataProvider.getLogger().info("[RabbitMQMessagingDatabase] Connected successfully to RabbitMQ.");
         } catch (IOException | TimeoutException e) {
-            DataProviderApp.getLogger().error("[RabbitMQMessagingDatabase] Connection failed: " + e.getMessage());
+            DataProvider.getLogger().error("[RabbitMQMessagingDatabase] Connection failed: " + e.getMessage());
             e.printStackTrace();
         }
     }
@@ -63,18 +63,18 @@ public class RabbitMQMessagingDatabase implements MessagingDatabaseProvider {
         try {
             if (channel != null && channel.isOpen()) {
                 channel.close();
-                DataProviderApp.getLogger().info("[RabbitMQMessagingDatabase] Channel closed.");
+                DataProvider.getLogger().info("[RabbitMQMessagingDatabase] Channel closed.");
             }
             if (connection != null && connection.isOpen()) {
                 connection.close();
-                DataProviderApp.getLogger().info("[RabbitMQMessagingDatabase] Connection closed.");
+                DataProvider.getLogger().info("[RabbitMQMessagingDatabase] Connection closed.");
             }
             if (executor != null && !executor.isShutdown()) {
                 executor.shutdown();
-                DataProviderApp.getLogger().info("[RabbitMQMessagingDatabase] ExecutorService shut down.");
+                DataProvider.getLogger().info("[RabbitMQMessagingDatabase] ExecutorService shut down.");
             }
         } catch (IOException | TimeoutException e) {
-            DataProviderApp.getLogger().error("[RabbitMQMessagingDatabase] Error during disconnect: " + e.getMessage());
+            DataProvider.getLogger().error("[RabbitMQMessagingDatabase] Error during disconnect: " + e.getMessage());
             e.printStackTrace();
         }
         connected = false;

@@ -1,7 +1,7 @@
 package nl.hauntedmc.dataprovider.api;
 
 import nl.hauntedmc.dataprovider.database.DatabaseType;
-import nl.hauntedmc.dataprovider.database.base.BaseDatabaseProvider;
+import nl.hauntedmc.dataprovider.database.DatabaseProvider;
 import nl.hauntedmc.dataprovider.internal.DataProviderHandler;
 
 /**
@@ -39,9 +39,9 @@ public class DataProviderAPI {
      * @param pluginName               the calling plugin (typically "this")
      * @param databaseType         the type of database (e.g. MYSQL, MONGODB, etc.)
      * @param connectionIdentifier a unique identifier for the connection
-     * @return the registered {@link BaseDatabaseProvider} instance.
+     * @return the registered {@link DatabaseProvider} instance.
      */
-    public BaseDatabaseProvider registerDatabase(String pluginName, DatabaseType databaseType, String connectionIdentifier) {
+    public DatabaseProvider registerDatabase(String pluginName, DatabaseType databaseType, String connectionIdentifier) {
         return handler.registerDatabase(pluginName, databaseType, connectionIdentifier);
     }
 
@@ -71,9 +71,9 @@ public class DataProviderAPI {
      * @param pluginName               the calling plugin (typically "this")
      * @param databaseType         the type of database.
      * @param connectionIdentifier the connection identifier.
-     * @return the {@link BaseDatabaseProvider} instance, or null if not registered.
+     * @return the {@link DatabaseProvider} instance, or null if not registered.
      */
-    public BaseDatabaseProvider getRegisteredDatabase(String pluginName, DatabaseType databaseType, String connectionIdentifier) {
+    public DatabaseProvider getRegisteredDatabase(String pluginName, DatabaseType databaseType, String connectionIdentifier) {
         return handler.getRegisteredDatabase(pluginName, databaseType, connectionIdentifier);
     }
 }

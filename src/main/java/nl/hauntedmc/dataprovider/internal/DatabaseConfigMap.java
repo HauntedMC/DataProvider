@@ -1,6 +1,6 @@
 package nl.hauntedmc.dataprovider.internal;
 
-import nl.hauntedmc.dataprovider.DataProviderApp;
+import nl.hauntedmc.dataprovider.DataProvider;
 import nl.hauntedmc.dataprovider.database.DatabaseType;
 import org.spongepowered.configurate.CommentedConfigurationNode;
 import org.spongepowered.configurate.loader.ConfigurationLoader;
@@ -23,18 +23,18 @@ class DatabaseConfigMap {
     }
 
     private void initialize() {
-        File databasesFolder = new File(String.valueOf(DataProviderApp.getDataPath()), "databases");
+        File databasesFolder = new File(String.valueOf(DataProvider.getDataPath()), "databases");
         if (!databasesFolder.exists() && !databasesFolder.mkdirs()) {
-            DataProviderApp.getLogger().warn("Failed to create databases folder at: " + databasesFolder.getAbsolutePath());
+            DataProvider.getLogger().warn("Failed to create databases folder at: " + databasesFolder.getAbsolutePath());
         } else {
-            DataProviderApp.getLogger().info("Databases folder located at: " + databasesFolder.getAbsolutePath());
+            DataProvider.getLogger().info("Databases folder located at: " + databasesFolder.getAbsolutePath());
         }
 
         for (DatabaseType type : DatabaseType.values()) {
             File configFile = new File(databasesFolder, type.getConfigFileName());
             if (!configFile.exists()) {
                 if (!copyDefaultConfigFromResources(type.getConfigFileName(), configFile)) {
-                    DataProviderApp.getLogger().warn("No default config found for " + type.name()
+                    DataProvider.getLogger().warn("No default config found for " + type.name()
                             + ". Please create " + configFile.getName() + " manually if needed.");
                 }
             }
@@ -47,23 +47,23 @@ class DatabaseConfigMap {
                     CommentedConfigurationNode node = loader.load();
                     configMap.put(type, node);
                 } catch (IOException e) {
-                    DataProviderApp.getLogger().error("Failed to load config for " + type.name(), e);
+                    DataProvider.getLogger().error("Failed to load config for " + type.name(), e);
                 }
             }
         }
-        DataProviderApp.getLogger().info("Loaded " + configMap.size() + " database configurations.");
+        DataProvider.getLogger().info("Loaded " + configMap.size() + " database configurations.");
     }
 
     private boolean copyDefaultConfigFromResources(String resourcePath, File destinationFile) {
-        try (InputStream in = DataProviderApp.getResource("databases/" + resourcePath)) {
+        try (InputStream in = DataProvider.getResource("databases/" + resourcePath)) {
             if (in == null) {
                 return false;
             }
             Files.copy(in, destinationFile.toPath());
-            DataProviderApp.getLogger().info("Copied default config: " + resourcePath);
+            DataProvider.getLogger().info("Copied default config: " + resourcePath);
             return true;
         } catch (IOException e) {
-            DataProviderApp.getLogger().error("Failed to copy default config: " + resourcePath, e);
+            DataProvider.getLogger().error("Failed to copy default config: " + resourcePath, e);
             return false;
         }
     }
@@ -80,12 +80,12 @@ class DatabaseConfigMap {
         if (config != null) {
             CommentedConfigurationNode section = config.node(connectionIdentifier);
             if (section.virtual()) {
-                DataProviderApp.getLogger().warn("No configuration section found for " + connectionIdentifier + " in " + type.getConfigFileName());
+                DataProvider.getLogger().warn("No configuration section found for " + connectionIdentifier + " in " + type.getConfigFileName());
                 return null;
             }
             return section;
         } else {
-            DataProviderApp.getLogger().warn("No configuration loaded for database type " + type.name());
+            DataProvider.getLogger().warn("No configuration loaded for database type " + type.name());
             return null;
         }
     }

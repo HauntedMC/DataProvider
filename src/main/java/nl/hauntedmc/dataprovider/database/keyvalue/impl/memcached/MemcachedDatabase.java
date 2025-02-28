@@ -1,6 +1,6 @@
 package nl.hauntedmc.dataprovider.database.keyvalue.impl.memcached;
 
-import nl.hauntedmc.dataprovider.DataProviderApp;
+import nl.hauntedmc.dataprovider.DataProvider;
 import nl.hauntedmc.dataprovider.database.keyvalue.KeyValueDataAccess;
 import nl.hauntedmc.dataprovider.database.keyvalue.KeyValueDatabaseProvider;
 import org.spongepowered.configurate.CommentedConfigurationNode;
@@ -28,7 +28,7 @@ public class MemcachedDatabase implements KeyValueDatabaseProvider {
     @Override
     public void connect() {
         if (connected && memcachedClient != null) {
-            DataProviderApp.getLogger().info("[MemcachedDatabase] Already connected; skipping re–initialization.");
+            DataProvider.getLogger().info("[MemcachedDatabase] Already connected; skipping re–initialization.");
             return;
         }
         try {
@@ -37,14 +37,14 @@ public class MemcachedDatabase implements KeyValueDatabaseProvider {
             final int poolSize = config.node("pool_size").getInt(8);
 
             memcachedClient = new MemcachedClient(new InetSocketAddress(host, port));
-            DataProviderApp.getLogger().info(String.format("[MemcachedDatabase] Connected to Memcached at %s:%d", host, port));
+            DataProvider.getLogger().info(String.format("[MemcachedDatabase] Connected to Memcached at %s:%d", host, port));
 
             executor = Executors.newFixedThreadPool(poolSize);
             dataAccess = new MemcachedDataAccess(memcachedClient, executor);
 
             connected = true;
         } catch (Exception e) {
-            DataProviderApp.getLogger().error("[MemcachedDatabase] Connection failed: " + e.getMessage());
+            DataProvider.getLogger().error("[MemcachedDatabase] Connection failed: " + e.getMessage());
             e.printStackTrace();
         }
     }
@@ -53,11 +53,11 @@ public class MemcachedDatabase implements KeyValueDatabaseProvider {
     public void disconnect() {
         if (memcachedClient != null) {
             memcachedClient.shutdown();
-            DataProviderApp.getLogger().info("[MemcachedDatabase] MemcachedClient shut down.");
+            DataProvider.getLogger().info("[MemcachedDatabase] MemcachedClient shut down.");
         }
         if (executor != null && !executor.isShutdown()) {
             executor.shutdown();
-            DataProviderApp.getLogger().info("[MemcachedDatabase] ExecutorService shut down.");
+            DataProvider.getLogger().info("[MemcachedDatabase] ExecutorService shut down.");
         }
         connected = false;
     }

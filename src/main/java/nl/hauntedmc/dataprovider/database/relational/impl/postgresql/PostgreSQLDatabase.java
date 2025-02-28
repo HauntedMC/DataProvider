@@ -2,7 +2,7 @@ package nl.hauntedmc.dataprovider.database.relational.impl.postgresql;
 
 import com.zaxxer.hikari.HikariConfig;
 import com.zaxxer.hikari.HikariDataSource;
-import nl.hauntedmc.dataprovider.DataProviderApp;
+import nl.hauntedmc.dataprovider.DataProvider;
 import nl.hauntedmc.dataprovider.database.relational.RelationalDataAccess;
 import nl.hauntedmc.dataprovider.database.relational.RelationalDatabaseProvider;
 import nl.hauntedmc.dataprovider.database.relational.schema.SchemaManager;
@@ -31,7 +31,7 @@ public class PostgreSQLDatabase implements RelationalDatabaseProvider {
     @Override
     public void connect() {
         if (dataSource != null && !dataSource.isClosed()) {
-            DataProviderApp.getLogger().info("[PostgreSQLDatabase] Already connected, skipping re–initialization.");
+            DataProvider.getLogger().info("[PostgreSQLDatabase] Already connected, skipping re–initialization.");
             return;
         }
         try {
@@ -61,9 +61,9 @@ public class PostgreSQLDatabase implements RelationalDatabaseProvider {
             this.dataAccess = new PostgreSQLDataAccess(dataSource, executor);
             this.schemaManager = new PostgreSQLSchemaManager(dataSource, executor);
 
-            DataProviderApp.getLogger().info("[PostgreSQLDatabase] Connected successfully to " + jdbcUrl);
+            DataProvider.getLogger().info("[PostgreSQLDatabase] Connected successfully to " + jdbcUrl);
         } catch (Exception e) {
-            DataProviderApp.getLogger().error("[PostgreSQLDatabase] Connection failed!", e);
+            DataProvider.getLogger().error("[PostgreSQLDatabase] Connection failed!", e);
         }
     }
 
@@ -71,11 +71,11 @@ public class PostgreSQLDatabase implements RelationalDatabaseProvider {
     public void disconnect() {
         if (dataSource != null && !dataSource.isClosed()) {
             dataSource.close();
-            DataProviderApp.getLogger().info("[PostgreSQLDatabase] DataSource closed.");
+            DataProvider.getLogger().info("[PostgreSQLDatabase] DataSource closed.");
         }
         if (executor != null && !executor.isShutdown()) {
             executor.shutdown();
-            DataProviderApp.getLogger().info("[PostgreSQLDatabase] ExecutorService shut down.");
+            DataProvider.getLogger().info("[PostgreSQLDatabase] ExecutorService shut down.");
         }
     }
 
@@ -87,7 +87,7 @@ public class PostgreSQLDatabase implements RelationalDatabaseProvider {
         try (var conn = dataSource.getConnection()) {
             return conn.isValid(2);
         } catch (Exception e) {
-            DataProviderApp.getLogger().warn("[PostgreSQLDatabase] Connection validation failed: " + e.getMessage());
+            DataProvider.getLogger().warn("[PostgreSQLDatabase] Connection validation failed: " + e.getMessage());
             return false;
         }
     }

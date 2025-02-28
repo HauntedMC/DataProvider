@@ -1,6 +1,6 @@
 package nl.hauntedmc.dataprovider.database.messaging.impl.redis;
 
-import nl.hauntedmc.dataprovider.DataProviderApp;
+import nl.hauntedmc.dataprovider.DataProvider;
 import nl.hauntedmc.dataprovider.database.messaging.MessagingDataAccess;
 import nl.hauntedmc.dataprovider.database.messaging.MessagingDatabaseProvider;
 import org.spongepowered.configurate.CommentedConfigurationNode;
@@ -29,7 +29,7 @@ public class RedisMessagingDatabase implements MessagingDatabaseProvider {
     @Override
     public void connect() {
         if (connected && jedisPool != null) {
-            DataProviderApp.getLogger().info("[RedisMessagingDatabase] Already connected; skipping re–initialization.");
+            DataProvider.getLogger().info("[RedisMessagingDatabase] Already connected; skipping re–initialization.");
             return;
         }
         try {
@@ -50,9 +50,9 @@ public class RedisMessagingDatabase implements MessagingDatabaseProvider {
             executor = Executors.newFixedThreadPool(poolSize);
             dataAccess = new RedisMessagingDataAccess(jedisPool, executor);
             connected = true;
-            DataProviderApp.getLogger().info("[RedisMessagingDatabase] Connected successfully to Redis for messaging.");
+            DataProvider.getLogger().info("[RedisMessagingDatabase] Connected successfully to Redis for messaging.");
         } catch (Exception e) {
-            DataProviderApp.getLogger().error("[RedisMessagingDatabase] Connection failed: " + e.getMessage());
+            DataProvider.getLogger().error("[RedisMessagingDatabase] Connection failed: " + e.getMessage());
             e.printStackTrace();
         }
     }
@@ -61,11 +61,11 @@ public class RedisMessagingDatabase implements MessagingDatabaseProvider {
     public void disconnect() {
         if (jedisPool != null && !jedisPool.isClosed()) {
             jedisPool.close();
-            DataProviderApp.getLogger().info("[RedisMessagingDatabase] JedisPool closed.");
+            DataProvider.getLogger().info("[RedisMessagingDatabase] JedisPool closed.");
         }
         if (executor != null && !executor.isShutdown()) {
             executor.shutdown();
-            DataProviderApp.getLogger().info("[RedisMessagingDatabase] ExecutorService shut down.");
+            DataProvider.getLogger().info("[RedisMessagingDatabase] ExecutorService shut down.");
         }
         connected = false;
     }

@@ -1,6 +1,6 @@
-package nl.hauntedmc.dataprovider.security;
+package nl.hauntedmc.dataprovider.internal;
 
-import nl.hauntedmc.dataprovider.DataProviderApp;
+import nl.hauntedmc.dataprovider.DataProvider;
 import org.spongepowered.configurate.CommentedConfigurationNode;
 import org.spongepowered.configurate.loader.ConfigurationLoader;
 import org.spongepowered.configurate.serialize.SerializationException;
@@ -27,17 +27,17 @@ public class SecurityManager {
 
     public SecurityManager() {
         // Ensure the plugin data folder exists.
-        Path dataFolder = DataProviderApp.getDataPath();
+        Path dataFolder = DataProvider.getDataPath();
         try {
             Files.createDirectories(dataFolder);
         } catch (IOException e) {
-            DataProviderApp.getLogger().error("Failed to create plugin data folder", e);
+            DataProvider.getLogger().error("Failed to create plugin data folder", e);
         }
         // Define the secret file path and the YAML loader.
         this.secretFile = dataFolder.resolve(SECRET_FILE_NAME);
         this.loader = YamlConfigurationLoader.builder().path(secretFile).build();
         initialize();
-        DataProviderApp.getLogger().info("DataProviderSecurityManager initialized.");
+        DataProvider.getLogger().info("DataProviderSecurityManager initialized.");
     }
 
     private void initialize() {
@@ -51,7 +51,7 @@ public class SecurityManager {
                 config = loader.load();
             }
         } catch (IOException e) {
-            DataProviderApp.getLogger().error("Error loading secret configuration", e);
+            DataProvider.getLogger().error("Error loading secret configuration", e);
             return;
         }
 
@@ -65,13 +65,13 @@ public class SecurityManager {
             }
             try {
                 loader.save(config);
-                DataProviderApp.getLogger().info("Generated new secret and saved to " + secretFile.toAbsolutePath());
+                DataProvider.getLogger().info("Generated new secret and saved to " + secretFile.toAbsolutePath());
             } catch (IOException e) {
-                DataProviderApp.getLogger().error("Failed to save secret file", e);
+                DataProvider.getLogger().error("Failed to save secret file", e);
             }
         } else {
             secret = config.node(SECRET_KEY).getString();
-            DataProviderApp.getLogger().info("Loaded secret from " + secretFile.toAbsolutePath());
+            DataProvider.getLogger().info("Loaded secret from " + secretFile.toAbsolutePath());
         }
     }
 
@@ -86,10 +86,10 @@ public class SecurityManager {
     public boolean authorize(String pluginName, String token) {
         if (pluginName != null && secret != null && secret.equals(token)) {
             authorizedPlugins.add(pluginName);
-            DataProviderApp.getLogger().info("Plugin " + pluginName + " authorized successfully.");
+            DataProvider.getLogger().info("Plugin " + pluginName + " authorized successfully.");
             return true;
         }
-        DataProviderApp.getLogger().error("Failed to authorize plugin " + pluginName + ": Invalid token.");
+        DataProvider.getLogger().error("Failed to authorize plugin " + pluginName + ": Invalid token.");
         return false;
     }
 

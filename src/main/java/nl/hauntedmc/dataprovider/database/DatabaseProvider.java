@@ -1,10 +1,10 @@
-package nl.hauntedmc.dataprovider.database.base;
+package nl.hauntedmc.dataprovider.database;
 
 /**
  * The minimal shared parent for all database providers (relational or NoSQL).
  * Allows storing them in a common map.
  */
-public interface BaseDatabaseProvider {
+public interface DatabaseProvider {
 
     /**
      * Establish a connection to the database.
@@ -28,5 +28,5 @@ public interface BaseDatabaseProvider {
      *
      * @return the data access object
      */
-    BaseDataAccess getDataAccess();
+    DataAccess getDataAccess();
 }

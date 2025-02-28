@@ -1,13 +1,13 @@
 package nl.hauntedmc.dataprovider.database.messaging;
 
-import nl.hauntedmc.dataprovider.database.base.BaseDataAccess;
+import nl.hauntedmc.dataprovider.database.DataAccess;
 import java.util.concurrent.CompletableFuture;
 
 /**
  * Defines messaging–related methods (e.g. event publishing and subscription)
  * in a vendor–neutral way.
  */
-public interface MessagingDataAccess extends BaseDataAccess {
+public interface MessagingDataAccess extends DataAccess {
 
     /**
      * Sends an event message to the specified destination.

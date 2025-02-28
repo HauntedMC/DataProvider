@@ -1,6 +1,6 @@
 package nl.hauntedmc.dataprovider.database.keyvalue.impl.redis;
 
-import nl.hauntedmc.dataprovider.DataProviderApp;
+import nl.hauntedmc.dataprovider.DataProvider;
 import nl.hauntedmc.dataprovider.database.keyvalue.KeyValueDataAccess;
 import nl.hauntedmc.dataprovider.database.keyvalue.KeyValueDatabaseProvider;
 import org.spongepowered.configurate.CommentedConfigurationNode;
@@ -28,7 +28,7 @@ public class RedisDatabase implements KeyValueDatabaseProvider {
     @Override
     public void connect() {
         if (connected && jedisPool != null) {
-            DataProviderApp.getLogger().info("[RedisDatabase] Already connected; skipping re–initialization.");
+            DataProvider.getLogger().info("[RedisDatabase] Already connected; skipping re–initialization.");
             return;
         }
         try {
@@ -51,9 +51,9 @@ public class RedisDatabase implements KeyValueDatabaseProvider {
             dataAccess = new RedisDataAccess(jedisPool, executor);
 
             connected = true;
-            DataProviderApp.getLogger().info(String.format("[RedisDatabase] Connected to Redis at %s:%d (DB %d), poolSize=%d", host, port, databaseIndex, poolSize));
+            DataProvider.getLogger().info(String.format("[RedisDatabase] Connected to Redis at %s:%d (DB %d), poolSize=%d", host, port, databaseIndex, poolSize));
         } catch (Exception e) {
-            DataProviderApp.getLogger().error("[RedisDatabase] Connection failed: " + e.getMessage());
+            DataProvider.getLogger().error("[RedisDatabase] Connection failed: " + e.getMessage());
             e.printStackTrace();
         }
     }
@@ -62,11 +62,11 @@ public class RedisDatabase implements KeyValueDatabaseProvider {
     public void disconnect() {
         if (jedisPool != null && !jedisPool.isClosed()) {
             jedisPool.close();
-            DataProviderApp.getLogger().info("[RedisDatabase] JedisPool closed.");
+            DataProvider.getLogger().info("[RedisDatabase] JedisPool closed.");
         }
         if (executor != null && !executor.isShutdown()) {
             executor.shutdown();
-            DataProviderApp.getLogger().info("[RedisDatabase] ExecutorService shut down.");
+            DataProvider.getLogger().info("[RedisDatabase] ExecutorService shut down.");
         }
         connected = false;
     }

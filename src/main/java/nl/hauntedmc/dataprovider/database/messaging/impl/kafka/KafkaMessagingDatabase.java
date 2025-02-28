@@ -1,6 +1,6 @@
 package nl.hauntedmc.dataprovider.database.messaging.impl.kafka;
 
-import nl.hauntedmc.dataprovider.DataProviderApp;
+import nl.hauntedmc.dataprovider.DataProvider;
 import nl.hauntedmc.dataprovider.database.messaging.MessagingDataAccess;
 import nl.hauntedmc.dataprovider.database.messaging.MessagingDatabaseProvider;
 import org.apache.kafka.clients.consumer.KafkaConsumer;
@@ -31,7 +31,7 @@ public class KafkaMessagingDatabase implements MessagingDatabaseProvider {
     @Override
     public void connect() {
         if (connected) {
-            DataProviderApp.getLogger().info("[KafkaMessagingDatabase] Already connected; skipping re–initialization.");
+            DataProvider.getLogger().info("[KafkaMessagingDatabase] Already connected; skipping re–initialization.");
             return;
         }
         try {
@@ -58,9 +58,9 @@ public class KafkaMessagingDatabase implements MessagingDatabaseProvider {
 
             dataAccess = new KafkaMessagingDataAccess(producer, consumer, consumerExecutor);
             connected = true;
-            DataProviderApp.getLogger().info("[KafkaMessagingDatabase] Connected successfully to Kafka.");
+            DataProvider.getLogger().info("[KafkaMessagingDatabase] Connected successfully to Kafka.");
         } catch (Exception e) {
-            DataProviderApp.getLogger().error("[KafkaMessagingDatabase] Connection failed: " + e.getMessage());
+            DataProvider.getLogger().error("[KafkaMessagingDatabase] Connection failed: " + e.getMessage());
             e.printStackTrace();
         }
     }
@@ -69,15 +69,15 @@ public class KafkaMessagingDatabase implements MessagingDatabaseProvider {
     public void disconnect() {
         if (producer != null) {
             producer.close();
-            DataProviderApp.getLogger().info("[KafkaMessagingDatabase] Producer closed.");
+            DataProvider.getLogger().info("[KafkaMessagingDatabase] Producer closed.");
         }
         if (consumer != null) {
             consumer.close();
-            DataProviderApp.getLogger().info("[KafkaMessagingDatabase] Consumer closed.");
+            DataProvider.getLogger().info("[KafkaMessagingDatabase] Consumer closed.");
         }
         if (consumerExecutor != null && !consumerExecutor.isShutdown()) {
             consumerExecutor.shutdown();
-            DataProviderApp.getLogger().info("[KafkaMessagingDatabase] Consumer ExecutorService shut down.");
+            DataProvider.getLogger().info("[KafkaMessagingDatabase] Consumer ExecutorService shut down.");
         }
         connected = false;
     }

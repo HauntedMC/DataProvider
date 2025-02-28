@@ -1,10 +1,9 @@
 package nl.hauntedmc.dataprovider.internal;
 
-import nl.hauntedmc.dataprovider.DataProviderApp;
+import nl.hauntedmc.dataprovider.DataProvider;
 import nl.hauntedmc.dataprovider.database.DatabaseConnectionKey;
 import nl.hauntedmc.dataprovider.database.DatabaseType;
-import nl.hauntedmc.dataprovider.database.base.BaseDatabaseProvider;
-import nl.hauntedmc.dataprovider.security.SecurityManager;
+import nl.hauntedmc.dataprovider.database.DatabaseProvider;
 
 import java.util.concurrent.ConcurrentMap;
 
@@ -47,10 +46,10 @@ public class DataProviderHandler {
      * @param pluginName               the calling JavaPlugin instance (typically “this”)
      * @param databaseType         the type of database (e.g. MYSQL, MONGODB, etc.)
      * @param connectionIdentifier a unique identifier for the connection.
-     * @return the registered {@link BaseDatabaseProvider} instance.
+     * @return the registered {@link DatabaseProvider} instance.
      * @throws SecurityException if the plugin is not registered or not authorized.
      */
-    public BaseDatabaseProvider registerDatabase(String pluginName, DatabaseType databaseType, String connectionIdentifier) {
+    public DatabaseProvider registerDatabase(String pluginName, DatabaseType databaseType, String connectionIdentifier) {
         authorizationCheck(pluginName);
         return registry.registerDatabase(pluginName, databaseType, connectionIdentifier);
     }
@@ -92,10 +91,10 @@ public class DataProviderHandler {
      * @param pluginName               the calling JavaPlugin instance.
      * @param databaseType         the type of database.
      * @param connectionIdentifier the connection identifier.
-     * @return the {@link BaseDatabaseProvider} instance, or {@code null} if not registered.
+     * @return the {@link DatabaseProvider} instance, or {@code null} if not registered.
      * @throws SecurityException if the plugin is not registered or not authorized.
      */
-    public BaseDatabaseProvider getRegisteredDatabase(String pluginName, DatabaseType databaseType, String connectionIdentifier) {
+    public DatabaseProvider getRegisteredDatabase(String pluginName, DatabaseType databaseType, String connectionIdentifier) {
         authorizationCheck(pluginName);
         return registry.getDatabase(pluginName, databaseType, connectionIdentifier);
     }
@@ -108,13 +107,13 @@ public class DataProviderHandler {
      *
      * @return a {@link ConcurrentMap} of active connections.
      */
-    public ConcurrentMap<DatabaseConnectionKey, BaseDatabaseProvider> getActiveDatabases() {
+    public ConcurrentMap<DatabaseConnectionKey, DatabaseProvider> getActiveDatabases() {
         return registry.getActiveDatabases();
     }
 
     private void authorizationCheck(String pluginName) {
         if (!securityManager.isAuthorized(pluginName)) {
-            DataProviderApp.getLogger().error("Plugin " + pluginName + " is not authorized. Please authenticate first.");
+            DataProvider.getLogger().error("Plugin " + pluginName + " is not authorized. Please authenticate first.");
             throw new SecurityException("Plugin " + pluginName + " is not authorized. Please authenticate first.");
         }
     }

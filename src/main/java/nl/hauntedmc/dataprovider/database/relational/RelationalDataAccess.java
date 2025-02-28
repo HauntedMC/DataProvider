@@ -1,6 +1,6 @@
 package nl.hauntedmc.dataprovider.database.relational;
 
-import nl.hauntedmc.dataprovider.database.base.BaseDataAccess;
+import nl.hauntedmc.dataprovider.database.DataAccess;
 
 import java.util.List;
 import java.util.Map;
@@ -9,7 +9,7 @@ import java.util.concurrent.CompletableFuture;
 /**
  * DataAccess methods specific to relational (SQL) usage.
  */
-public interface RelationalDataAccess extends BaseDataAccess {
+public interface RelationalDataAccess extends DataAccess {
 
     CompletableFuture<Void> executeUpdate(String query, Object... params);
 

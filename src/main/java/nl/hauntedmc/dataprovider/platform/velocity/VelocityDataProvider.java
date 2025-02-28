@@ -1,4 +1,4 @@
-package nl.hauntedmc.dataprovider;
+package nl.hauntedmc.dataprovider.platform.velocity;
 
 import com.google.inject.Inject;
 import com.google.inject.Injector;
@@ -10,6 +10,7 @@ import com.velocitypowered.api.event.Subscribe;
 import com.velocitypowered.api.plugin.Plugin;
 import com.velocitypowered.api.plugin.annotation.DataDirectory;
 import com.velocitypowered.api.proxy.ProxyServer;
+import nl.hauntedmc.dataprovider.DataProvider;
 import nl.hauntedmc.dataprovider.api.DataProviderAPI;
 import nl.hauntedmc.dataprovider.platform.velocity.command.DataProviderCommand;
 import nl.hauntedmc.dataprovider.platform.velocity.logger.SLF4JLoggerAdapter;
@@ -29,7 +30,7 @@ public class VelocityDataProvider {
     private final ProxyServer proxyServer;
     private final Logger logger;
     private final Path dataDirectory;
-    private static DataProviderApp dataProviderApp;
+    private static DataProvider dataProvider;
 
     @Inject
     private Injector injector;
@@ -44,7 +45,7 @@ public class VelocityDataProvider {
     @Subscribe
     public void onProxyInitialize(ProxyInitializeEvent event) {
         SLF4JLoggerAdapter logInstance = new SLF4JLoggerAdapter(logger);
-        dataProviderApp = new DataProviderApp(logInstance, dataDirectory, getClass().getClassLoader());
+        dataProvider = new DataProvider(logInstance, dataDirectory, getClass().getClassLoader());
 
         CommandManager commandManager = proxyServer.getCommandManager();
         CommandMeta meta = commandManager.metaBuilder("dataproviderproxy")
@@ -56,17 +57,17 @@ public class VelocityDataProvider {
 
     @Subscribe
     public void onProxyShutdown(ProxyShutdownEvent event) {
-        dataProviderApp.shutdownAllDatabases();
+        dataProvider.shutdownAllDatabases();
         logger.info("DataProvider plugin disabled on Velocity.");
     }
 
-    public DataProviderApp getDataProvider() {
-        return dataProviderApp;
+    public DataProvider getDataProvider() {
+        return dataProvider;
     }
 
     // START EXTERNALLY ACCESSIBLE
     public static DataProviderAPI getDataProviderAPI() {
-        return new DataProviderAPI(dataProviderApp.getDataProviderHandler());
+        return new DataProviderAPI(dataProvider.getDataProviderHandler());
     }
     // END EXTERNALLY ACCESSIBLE
 }

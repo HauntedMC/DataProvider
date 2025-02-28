@@ -4,9 +4,9 @@ import com.velocitypowered.api.command.CommandSource;
 import com.velocitypowered.api.command.SimpleCommand;
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.format.NamedTextColor;
-import nl.hauntedmc.dataprovider.VelocityDataProvider;
+import nl.hauntedmc.dataprovider.platform.velocity.VelocityDataProvider;
 import nl.hauntedmc.dataprovider.database.DatabaseConnectionKey;
-import nl.hauntedmc.dataprovider.database.base.BaseDatabaseProvider;
+import nl.hauntedmc.dataprovider.database.DatabaseProvider;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -41,7 +41,7 @@ public class DataProviderCommand implements SimpleCommand {
                 return;
             }
 
-            ConcurrentMap<DatabaseConnectionKey, BaseDatabaseProvider> activeDatabases =
+            ConcurrentMap<DatabaseConnectionKey, DatabaseProvider> activeDatabases =
                     plugin.getDataProvider().getDataProviderHandler().getActiveDatabases();
 
             if (activeDatabases.isEmpty()) {
@@ -50,7 +50,7 @@ public class DataProviderCommand implements SimpleCommand {
             }
 
             source.sendMessage(Component.text("Active Database Connections:", NamedTextColor.GREEN));
-            for (Map.Entry<DatabaseConnectionKey, BaseDatabaseProvider> entry : activeDatabases.entrySet()) {
+            for (Map.Entry<DatabaseConnectionKey, DatabaseProvider> entry : activeDatabases.entrySet()) {
                 Component connectionInfo = getConnectionComponent(entry);
                 source.sendMessage(connectionInfo);
             }
@@ -60,9 +60,9 @@ public class DataProviderCommand implements SimpleCommand {
         source.sendMessage(Component.text("Unknown subcommand. Use /dataprovider help for usage.", NamedTextColor.RED));
     }
 
-    private static Component getConnectionComponent(Map.Entry<DatabaseConnectionKey, BaseDatabaseProvider> entry) {
+    private static Component getConnectionComponent(Map.Entry<DatabaseConnectionKey, DatabaseProvider> entry) {
         DatabaseConnectionKey key = entry.getKey();
-        BaseDatabaseProvider provider = entry.getValue();
+        DatabaseProvider provider = entry.getValue();
 
         Component statusComponent = provider.isConnected()
                 ? Component.text("Connected", NamedTextColor.GREEN)

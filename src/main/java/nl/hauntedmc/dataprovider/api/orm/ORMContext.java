@@ -1,6 +1,6 @@
-package nl.hauntedmc.dataprovider.orm;
+package nl.hauntedmc.dataprovider.api.orm;
 
-import nl.hauntedmc.dataprovider.DataProviderApp;
+import nl.hauntedmc.dataprovider.DataProvider;
 import org.hibernate.Session;
 import org.hibernate.SessionFactory;
 import org.hibernate.Transaction;
@@ -62,25 +62,25 @@ public class ORMContext {
 
             for (Class<?> entityClass : entityClasses) {
                 metadataSources.addAnnotatedClass(entityClass);
-                DataProviderApp.getLogger().info("Initializing Annotated Class: " + entityClass.getName());
+                DataProvider.getLogger().info("Initializing Annotated Class: " + entityClass.getName());
             }
 
             // Build the Metadata and SessionFactory.
             Metadata metadata = metadataSources.getMetadataBuilder().build();
 
             if (metadata.getEntityBindings().isEmpty()) {
-                DataProviderApp.getLogger().warn("No entity bindings were found in metadata");
+                DataProvider.getLogger().warn("No entity bindings were found in metadata");
             } else {
                 metadata.getEntityBindings().forEach(
-                        entityBinding -> DataProviderApp.getLogger().info("Entity binding: " + entityBinding.getEntityName())
+                        entityBinding -> DataProvider.getLogger().info("Entity binding: " + entityBinding.getEntityName())
                 );
             }
 
             sessionFactory = metadata.getSessionFactoryBuilder().build();
 
-            DataProviderApp.getLogger().info("Hibernate ORMContext initialized successfully for plugin: " + plugin);
+            DataProvider.getLogger().info("Hibernate ORMContext initialized successfully for plugin: " + plugin);
         } catch (Exception e) {
-            DataProviderApp.getLogger().error("Failed to initialize Hibernate ORMContext for plugin: " + plugin);
+            DataProvider.getLogger().error("Failed to initialize Hibernate ORMContext for plugin: " + plugin);
             throw new RuntimeException("ORMContext initialization failed", e);
         }
     }
@@ -126,7 +126,7 @@ public class ORMContext {
             if (tx != null && tx.isActive()) {
                 tx.rollback();
             }
-            DataProviderApp.getLogger().error("Transaction failed in plugin: " + plugin + " - " + e.getMessage());
+            DataProvider.getLogger().error("Transaction failed in plugin: " + plugin + " - " + e.getMessage());
             throw new RuntimeException("Transaction failed", e);
         }
     }
@@ -144,7 +144,7 @@ public class ORMContext {
             StandardServiceRegistryBuilder.destroy(registry);
             registry = null;
         }
-        DataProviderApp.getLogger().info("Hibernate ORMContext shut down for plugin: " + plugin);
+        DataProvider.getLogger().info("Hibernate ORMContext shut down for plugin: " + plugin);
     }
 
     /**

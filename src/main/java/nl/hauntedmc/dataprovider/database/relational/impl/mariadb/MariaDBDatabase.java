@@ -2,7 +2,7 @@ package nl.hauntedmc.dataprovider.database.relational.impl.mariadb;
 
 import com.zaxxer.hikari.HikariConfig;
 import com.zaxxer.hikari.HikariDataSource;
-import nl.hauntedmc.dataprovider.DataProviderApp;
+import nl.hauntedmc.dataprovider.DataProvider;
 import nl.hauntedmc.dataprovider.database.relational.RelationalDataAccess;
 import nl.hauntedmc.dataprovider.database.relational.RelationalDatabaseProvider;
 import nl.hauntedmc.dataprovider.database.relational.schema.SchemaManager;
@@ -31,7 +31,7 @@ public class MariaDBDatabase implements RelationalDatabaseProvider {
     @Override
     public void connect() {
         if (dataSource != null && !dataSource.isClosed()) {
-            DataProviderApp.getLogger().info("[MariaDBDatabase] Already connected, skipping re–initialization.");
+            DataProvider.getLogger().info("[MariaDBDatabase] Already connected, skipping re–initialization.");
             return;
         }
         try {
@@ -62,9 +62,9 @@ public class MariaDBDatabase implements RelationalDatabaseProvider {
             this.dataAccess = new MariaDBDataAccess(dataSource, executor);
             this.schemaManager = new MariaDBSchemaManager(dataSource, executor);
 
-            DataProviderApp.getLogger().info("[MariaDBDatabase] Connected successfully to " + jdbcUrl);
+            DataProvider.getLogger().info("[MariaDBDatabase] Connected successfully to " + jdbcUrl);
         } catch (Exception e) {
-            DataProviderApp.getLogger().error("[MariaDBDatabase] Connection failed!", e);
+            DataProvider.getLogger().error("[MariaDBDatabase] Connection failed!", e);
         }
     }
 
@@ -72,11 +72,11 @@ public class MariaDBDatabase implements RelationalDatabaseProvider {
     public void disconnect() {
         if (dataSource != null && !dataSource.isClosed()) {
             dataSource.close();
-            DataProviderApp.getLogger().info("[MariaDBDatabase] DataSource closed.");
+            DataProvider.getLogger().info("[MariaDBDatabase] DataSource closed.");
         }
         if (executor != null && !executor.isShutdown()) {
             executor.shutdown();
-            DataProviderApp.getLogger().info("[MariaDBDatabase] ExecutorService shut down.");
+            DataProvider.getLogger().info("[MariaDBDatabase] ExecutorService shut down.");
         }
     }
 
@@ -88,7 +88,7 @@ public class MariaDBDatabase implements RelationalDatabaseProvider {
         try (var conn = dataSource.getConnection()) {
             return conn.isValid(2);
         } catch (Exception e) {
-            DataProviderApp.getLogger().warn("[MariaDBDatabase] Connection validation failed: " + e.getMessage());
+            DataProvider.getLogger().warn("[MariaDBDatabase] Connection validation failed: " + e.getMessage());
             return false;
         }
     }

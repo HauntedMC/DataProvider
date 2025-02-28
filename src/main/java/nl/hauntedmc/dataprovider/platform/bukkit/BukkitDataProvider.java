@@ -1,5 +1,6 @@
-package nl.hauntedmc.dataprovider;
+package nl.hauntedmc.dataprovider.platform.bukkit;
 
+import nl.hauntedmc.dataprovider.DataProvider;
 import nl.hauntedmc.dataprovider.api.DataProviderAPI;
 import nl.hauntedmc.dataprovider.platform.bukkit.command.DataProviderCommand;
 import nl.hauntedmc.dataprovider.platform.bukkit.logger.BukkitLoggerAdapter;
@@ -9,14 +10,14 @@ import java.util.Objects;
 
 public class BukkitDataProvider extends JavaPlugin {
 
-    private static DataProviderApp dataProviderApp;
+    private static DataProvider dataProvider;
 
 
     @Override
     public void onEnable() {
 
         BukkitLoggerAdapter logInstance = new BukkitLoggerAdapter(getLogger());
-        dataProviderApp = new DataProviderApp(logInstance, getDataPath(), this.getClassLoader());
+        dataProvider = new DataProvider(logInstance, getDataPath(), this.getClassLoader());
 
         // Init Bukkit Command
         DataProviderCommand commandExecutor = new DataProviderCommand(this);
@@ -28,17 +29,17 @@ public class BukkitDataProvider extends JavaPlugin {
 
     @Override
     public void onDisable() {
-        dataProviderApp.shutdownAllDatabases();
+        dataProvider.shutdownAllDatabases();
         getLogger().info("Disabled.");
     }
 
-    public DataProviderApp getDataProvider() {
-        return dataProviderApp;
+    public DataProvider getDataProvider() {
+        return dataProvider;
     }
 
     // START EXTERNALLY ACCESSIBLE
     public static DataProviderAPI getDataProviderAPI() {
-        return new DataProviderAPI(dataProviderApp.getDataProviderHandler());
+        return new DataProviderAPI(dataProvider.getDataProviderHandler());
     }
     // END EXTERNALLY ACCESSIBLE
 }

@@ -11,7 +11,7 @@ import java.net.URL;
 import java.net.URLConnection;
 import java.nio.file.Path;
 
-public class DataProviderApp {
+public class DataProvider {
 
     private final DataProviderHandler dataProviderHandler;
 
@@ -20,7 +20,7 @@ public class DataProviderApp {
     private static Path dataPath;
     private static ClassLoader parentClassLoader;
 
-    public DataProviderApp(ILoggerAdapter logger, Path dataDirectory, ClassLoader classLoader) {
+    public DataProvider(ILoggerAdapter logger, Path dataDirectory, ClassLoader classLoader) {
         parentClassLoader = classLoader;;
         logInstance = logger;
         dataPath = dataDirectory;

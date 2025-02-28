@@ -1,6 +1,6 @@
 package nl.hauntedmc.dataprovider.database.messaging.impl.redis;
 
-import nl.hauntedmc.dataprovider.DataProviderApp;
+import nl.hauntedmc.dataprovider.DataProvider;
 import nl.hauntedmc.dataprovider.database.messaging.MessagingDataAccess;
 import nl.hauntedmc.dataprovider.database.messaging.MessageListener;
 import redis.clients.jedis.Jedis;
@@ -53,7 +53,7 @@ public class RedisMessagingDataAccess implements MessagingDataAccess {
                     try (Jedis jedis = jedisPool.getResource()) {
                         jedis.subscribe(pubSub, destination);
                     } catch (Exception e) {
-                        DataProviderApp.getLogger().error("Error in Redis subscription: " + e.getMessage());
+                        DataProvider.getLogger().error("Error in Redis subscription: " + e.getMessage());
                     }
                 });
             } catch (Exception e) {

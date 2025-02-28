@@ -2,9 +2,9 @@ package nl.hauntedmc.dataprovider.platform.bukkit.command;
 
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.format.NamedTextColor;
-import nl.hauntedmc.dataprovider.BukkitDataProvider;
+import nl.hauntedmc.dataprovider.platform.bukkit.BukkitDataProvider;
 import nl.hauntedmc.dataprovider.database.DatabaseConnectionKey;
-import nl.hauntedmc.dataprovider.database.base.BaseDatabaseProvider;
+import nl.hauntedmc.dataprovider.database.DatabaseProvider;
 import org.bukkit.command.Command;
 import org.bukkit.command.CommandExecutor;
 import org.bukkit.command.CommandSender;
@@ -41,7 +41,7 @@ public class DataProviderCommand implements CommandExecutor, TabCompleter {
                 return true;
             }
 
-            ConcurrentMap<DatabaseConnectionKey, BaseDatabaseProvider> activeDatabases =
+            ConcurrentMap<DatabaseConnectionKey, DatabaseProvider> activeDatabases =
                     plugin.getDataProvider().getDataProviderHandler().getActiveDatabases();
 
             if (activeDatabases.isEmpty()) {
@@ -50,7 +50,7 @@ public class DataProviderCommand implements CommandExecutor, TabCompleter {
             }
 
             sender.sendMessage(Component.text("Active Database Connections:", NamedTextColor.GREEN));
-            for (Map.Entry<DatabaseConnectionKey, BaseDatabaseProvider> entry : activeDatabases.entrySet()) {
+            for (Map.Entry<DatabaseConnectionKey, DatabaseProvider> entry : activeDatabases.entrySet()) {
                 Component connectionInfo = getConnectionComponent(entry);
                 sender.sendMessage(connectionInfo);
             }
@@ -61,9 +61,9 @@ public class DataProviderCommand implements CommandExecutor, TabCompleter {
         return true;
     }
 
-    private static @NotNull Component getConnectionComponent(Map.Entry<DatabaseConnectionKey, BaseDatabaseProvider> entry) {
+    private static @NotNull Component getConnectionComponent(Map.Entry<DatabaseConnectionKey, DatabaseProvider> entry) {
         DatabaseConnectionKey key = entry.getKey();
-        BaseDatabaseProvider provider = entry.getValue();
+        DatabaseProvider provider = entry.getValue();
 
         Component statusComponent = provider.isConnected()
                 ? Component.text("Connected", NamedTextColor.GREEN)

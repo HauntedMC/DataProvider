@@ -1,6 +1,6 @@
 package nl.hauntedmc.dataprovider.database.keyvalue;
 
-import nl.hauntedmc.dataprovider.database.base.BaseDataAccess;
+import nl.hauntedmc.dataprovider.database.DataAccess;
 
 import java.util.List;
 import java.util.Map;
@@ -10,7 +10,7 @@ import java.util.concurrent.CompletableFuture;
 /**
  * Defines methods for basic key–value operations as well as some advanced features.
  */
-public interface KeyValueDataAccess extends BaseDataAccess {
+public interface KeyValueDataAccess extends DataAccess {
 
     CompletableFuture<Void> setKey(String key, String value);
 

@@ -4,7 +4,7 @@ import com.mongodb.ConnectionString;
 import com.mongodb.MongoClientSettings;
 import com.mongodb.client.MongoClient;
 import com.mongodb.client.MongoClients;
-import nl.hauntedmc.dataprovider.DataProviderApp;
+import nl.hauntedmc.dataprovider.DataProvider;
 import nl.hauntedmc.dataprovider.database.document.DocumentDataAccess;
 import nl.hauntedmc.dataprovider.database.document.DocumentDatabaseProvider;
 import org.spongepowered.configurate.CommentedConfigurationNode;
@@ -31,7 +31,7 @@ public class MongoDBDatabase implements DocumentDatabaseProvider {
     @Override
     public void connect() {
         if (connected && mongoClient != null) {
-            DataProviderApp.getLogger().info("[MongoDBDatabase] Already connected; skipping re–initialization.");
+            DataProvider.getLogger().info("[MongoDBDatabase] Already connected; skipping re–initialization.");
             return;
         }
         try {
@@ -50,7 +50,7 @@ public class MongoDBDatabase implements DocumentDatabaseProvider {
                 connectionString = String.format("mongodb://%s:%d/%s", host, port, databaseName);
             }
 
-            DataProviderApp.getLogger().info("[MongoDBDatabase] Connecting with: " + connectionString);
+            DataProvider.getLogger().info("[MongoDBDatabase] Connecting with: " + connectionString);
 
             ConnectionString connString = new ConnectionString(connectionString);
             MongoClientSettings settings = MongoClientSettings.builder()
@@ -66,9 +66,9 @@ public class MongoDBDatabase implements DocumentDatabaseProvider {
             dataAccess = new MongoDBDataAccess(mongoClient, databaseName, executor);
 
             connected = true;
-            DataProviderApp.getLogger().info(String.format("[MongoDBDatabase] Connected successfully to Mongo at %s:%d", host, port));
+            DataProvider.getLogger().info(String.format("[MongoDBDatabase] Connected successfully to Mongo at %s:%d", host, port));
         } catch (Exception e) {
-            DataProviderApp.getLogger().error("[MongoDBDatabase] Connection failed: " + e.getMessage());
+            DataProvider.getLogger().error("[MongoDBDatabase] Connection failed: " + e.getMessage());
             e.printStackTrace();
         }
     }
@@ -77,11 +77,11 @@ public class MongoDBDatabase implements DocumentDatabaseProvider {
     public void disconnect() {
         if (mongoClient != null) {
             mongoClient.close();
-            DataProviderApp.getLogger().info("[MongoDBDatabase] MongoClient closed.");
+            DataProvider.getLogger().info("[MongoDBDatabase] MongoClient closed.");
         }
         if (executor != null && !executor.isShutdown()) {
             executor.shutdown();
-            DataProviderApp.getLogger().info("[MongoDBDatabase] ExecutorService shut down.");
+            DataProvider.getLogger().info("[MongoDBDatabase] ExecutorService shut down.");
         }
         connected = false;
     }

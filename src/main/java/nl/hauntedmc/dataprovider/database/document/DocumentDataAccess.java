@@ -1,6 +1,6 @@
 package nl.hauntedmc.dataprovider.database.document;
 
-import nl.hauntedmc.dataprovider.database.base.BaseDataAccess;
+import nl.hauntedmc.dataprovider.database.DataAccess;
 import nl.hauntedmc.dataprovider.database.document.model.DocumentQuery;
 import nl.hauntedmc.dataprovider.database.document.model.DocumentUpdate;
 import nl.hauntedmc.dataprovider.database.document.model.DocumentUpdateOptions;
@@ -16,7 +16,7 @@ import java.util.concurrent.CompletableFuture;
  * Queries and updates are represented by custom DSL classes
  * (DocumentQuery, DocumentUpdate, DocumentUpdateOptions).
  */
-public interface DocumentDataAccess extends BaseDataAccess {
+public interface DocumentDataAccess extends DataAccess {
 
     CompletableFuture<Void> insertOne(String collection, Map<String, Object> document);
 
