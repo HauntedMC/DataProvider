@@ -50,18 +50,32 @@ public class ORMContext {
         try {
             // Build the StandardServiceRegistry using hibernate.cfg.xml and override the connection settings with our DataSource.
             registry = new StandardServiceRegistryBuilder()
-                    .configure() // Loads hibernate.cfg.xml from the classpath.
                     .applySetting("hibernate.connection.datasource", dataSource)
+                    .applySetting("hibernate.hbm2ddl.auto", "create-drop")
+                    .applySetting("hibernate.show_sql", "true")
+                    .applySetting("hibernate.format_sql", "true")
+                    .applySetting("hibernate.use_sql_comments", "true")
                     .build();
 
             // Create MetadataSources and register each provided entity class.
             MetadataSources metadataSources = new MetadataSources(registry);
+
             for (Class<?> entityClass : entityClasses) {
                 metadataSources.addAnnotatedClass(entityClass);
+                DataProviderApp.getLogger().info("Initializing Annotated Class: " + entityClass.getName());
             }
 
             // Build the Metadata and SessionFactory.
             Metadata metadata = metadataSources.getMetadataBuilder().build();
+
+            if (metadata.getEntityBindings().isEmpty()) {
+                DataProviderApp.getLogger().warn("No entity bindings were found in metadata");
+            } else {
+                metadata.getEntityBindings().forEach(
+                        entityBinding -> DataProviderApp.getLogger().info("Entity binding: " + entityBinding.getEntityName())
+                );
+            }
+
             sessionFactory = metadata.getSessionFactoryBuilder().build();
 
             DataProviderApp.getLogger().info("Hibernate ORMContext initialized successfully for plugin: " + plugin);
