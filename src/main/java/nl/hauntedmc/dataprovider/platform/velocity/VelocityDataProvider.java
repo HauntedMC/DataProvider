@@ -44,6 +44,15 @@ public class VelocityDataProvider {
 
     @Subscribe
     public void onProxyInitialize(ProxyInitializeEvent event) {
+
+        // Load driver on class path
+        // TODO: do this in a special class
+        try {
+            Class.forName("com.mysql.cj.jdbc.Driver");
+        } catch (ClassNotFoundException e) {
+            logger.error("MySQL JDBC Driver not found!", e);
+        }
+
         SLF4JLoggerAdapter logInstance = new SLF4JLoggerAdapter(logger);
         dataProvider = new DataProvider(logInstance, dataDirectory, getClass().getClassLoader());
 

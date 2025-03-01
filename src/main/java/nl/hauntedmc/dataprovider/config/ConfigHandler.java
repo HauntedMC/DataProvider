@@ -11,7 +11,6 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.file.Paths;
 
 public class ConfigHandler {
 
@@ -24,7 +23,7 @@ public class ConfigHandler {
      */
     public ConfigHandler() {
         // Define a default data directory, for example "plugins/DataProvider" relative to the working directory.
-        Path dataDir = Paths.get("plugins", "DataProvider");
+        Path dataDir = DataProvider.getDataPath();
         this.configFile = dataDir.resolve("config.yml");
         this.loader = YamlConfigurationLoader.builder()
                 .path(configFile)
