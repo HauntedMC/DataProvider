@@ -1,5 +1,7 @@
 package nl.hauntedmc.dataprovider.database;
 
+import javax.sql.DataSource;
+
 /**
  * The minimal shared parent for all database providers (relational or NoSQL).
  * Allows storing them in a common map.
@@ -29,4 +31,11 @@ public interface DatabaseProvider {
      * @return the data access object
      */
     DataAccess getDataAccess();
+
+    /**
+     * Returns a BaseDataAccess object for this database.
+     *
+     * @return the data access object
+     */
+    DataSource getDataSource();
 }
