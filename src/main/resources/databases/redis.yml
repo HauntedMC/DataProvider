@@ -1,6 +1,9 @@
 default_credentials:
-  host: localhost
+  host: "localhost"
   port: 6379
-  database: 0
+  user: "plugin"
   password: ""
-  pool_size: 8
+  database: 0
+  pool:
+    connections: 8
+    threads:     8

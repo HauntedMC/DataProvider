@@ -1,7 +1,11 @@
 package nl.hauntedmc.dataprovider.database.messaging;
 
 import nl.hauntedmc.dataprovider.database.DataAccess;
+import nl.hauntedmc.dataprovider.database.messaging.api.EventMessage;
+import nl.hauntedmc.dataprovider.database.messaging.api.Subscription;
+
 import java.util.concurrent.CompletableFuture;
+import java.util.function.Consumer;
 
 /**
  * Defines messaging–related methods (e.g. event publishing and subscription)
@@ -10,28 +14,22 @@ import java.util.concurrent.CompletableFuture;
 public interface MessagingDataAccess extends DataAccess {
 
     /**
-     * Sends an event message to the specified destination.
-     *
-     * @param destination the destination (e.g. exchange, topic, or queue)
-     * @param message the message payload
-     * @return a CompletableFuture that completes when the message is sent
+     * Publish a typed message to the given destination (channel/topic).
      */
-    CompletableFuture<Void> sendEvent(String destination, String message);
+    <T extends EventMessage> CompletableFuture<Void> publish(
+            String destination, T message
+    );
 
     /**
-     * Subscribes to events from the given destination.
-     *
-     * @param destination the destination (e.g. queue or topic)
-     * @param listener the callback to receive messages
-     * @return a CompletableFuture that completes when the subscription is established
+     * Subscribe to messages of a given type on the destination.
+     * Returns a handle for unsubscription.
      */
-    CompletableFuture<Void> subscribe(String destination, MessageListener listener);
+    <T extends EventMessage> Subscription subscribe(
+            String destination,
+            Class<T> type,
+            Consumer<T> handler
+    );
 
-    /**
-     * Unsubscribes from the given destination.
-     *
-     * @param destination the destination (e.g. queue or topic)
-     * @return a CompletableFuture that completes when unsubscribed
-     */
-    CompletableFuture<Void> unsubscribe(String destination);
+    /** Gracefully shut down all background resources. */
+    CompletableFuture<Void> shutdown();
 }

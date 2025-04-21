@@ -1,82 +1,72 @@
 package nl.hauntedmc.dataprovider.database.messaging.impl.redis;
 
-import nl.hauntedmc.dataprovider.DataProvider;
 import nl.hauntedmc.dataprovider.database.messaging.MessagingDataAccess;
 import nl.hauntedmc.dataprovider.database.messaging.MessagingDatabaseProvider;
 import org.spongepowered.configurate.CommentedConfigurationNode;
-import redis.clients.jedis.JedisPool;
-import redis.clients.jedis.JedisPoolConfig;
+import redis.clients.jedis.*;
 
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
 /**
- * RedisMessagingDatabase implements MessagingDatabaseProvider using Redis Pub/Sub.
+ * Production‑ready Redis back‑end using ACL user/password and Pub/Sub.
  */
-public class RedisMessagingDatabase implements MessagingDatabaseProvider {
+public final class RedisMessagingDatabase implements MessagingDatabaseProvider {
 
-    private final CommentedConfigurationNode config;
+    private final CommentedConfigurationNode cfg;
+    private JedisPool pool;
+    private ExecutorService workers;
+    private RedisMessagingDataAccess bus;
+    private volatile boolean connected;
 
-    private JedisPool jedisPool;
-    private ExecutorService executor;
-    private RedisMessagingDataAccess dataAccess;
-    private boolean connected;
-
-    public RedisMessagingDatabase(CommentedConfigurationNode config) {
-        this.config = config;
+    public RedisMessagingDatabase(CommentedConfigurationNode cfg) {
+        this.cfg = cfg;
     }
 
     @Override
-    public void connect() {
-        if (connected && jedisPool != null) {
-            DataProvider.getLogger().info("[RedisMessagingDatabase] Already connected; skipping re–initialization.");
-            return;
-        }
-        try {
-            String host = config.node("host").getString("localhost");
-            int port = config.node("port").getInt(6379);
-            String password = config.node("password").getString("");
-            int databaseIndex = config.node("database").getInt(0);
-            int poolSize = config.node("pool_size").getInt(4);
+    public synchronized void connect() {
+        if (connected) return;
 
-            JedisPoolConfig poolConfig = new JedisPoolConfig();
-            poolConfig.setMaxTotal(poolSize);
-            if (!password.isEmpty()) {
-                jedisPool = new JedisPool(poolConfig, host, port, 2000, password, databaseIndex);
-            } else {
-                jedisPool = new JedisPool(poolConfig, host, port, 2000, null, databaseIndex);
-            }
+        String host = cfg.node("host").getString("localhost");
+        int port = cfg.node("port").getInt(6379);
+        int db = cfg.node("database").getInt(0);
+        String user = cfg.node("user").getString("plugin");
+        String pass = cfg.node("password").getString("");
 
-            executor = Executors.newFixedThreadPool(poolSize);
-            dataAccess = new RedisMessagingDataAccess(jedisPool, executor);
-            connected = true;
-            DataProvider.getLogger().info("[RedisMessagingDatabase] Connected successfully to Redis for messaging.");
-        } catch (Exception e) {
-            DataProvider.getLogger().error("[RedisMessagingDatabase] Connection failed: " + e.getMessage());
-            e.printStackTrace();
-        }
+        JedisPoolConfig poolConfig = new JedisPoolConfig();
+        poolConfig.setMaxTotal(cfg.node("pool", "connections").getInt(4));
+
+        DefaultJedisClientConfig clientConfig = DefaultJedisClientConfig.builder()
+                .user(user)
+                .password(pass.isEmpty() ? null : pass)
+                .database(db)
+                .build();
+
+        HostAndPort nodeHp = new HostAndPort(host, port);
+        pool = new JedisPool(poolConfig, nodeHp, clientConfig);
+
+        workers = Executors.newFixedThreadPool(cfg.node("pool", "threads").getInt(8));
+        bus = new RedisMessagingDataAccess(pool, workers);
+
+        connected = true;
     }
 
     @Override
-    public void disconnect() {
-        if (jedisPool != null && !jedisPool.isClosed()) {
-            jedisPool.close();
-            DataProvider.getLogger().info("[RedisMessagingDatabase] JedisPool closed.");
-        }
-        if (executor != null && !executor.isShutdown()) {
-            executor.shutdown();
-            DataProvider.getLogger().info("[RedisMessagingDatabase] ExecutorService shut down.");
-        }
+    public synchronized void disconnect() {
+        if (!connected) return;
+        bus.shutdown();
+        workers.shutdownNow();
+        pool.close();
         connected = false;
     }
 
     @Override
     public boolean isConnected() {
-        return connected && jedisPool != null && !jedisPool.isClosed();
+        return connected;
     }
 
     @Override
     public MessagingDataAccess getDataAccess() {
-        return dataAccess;
+        return bus;
     }
 }

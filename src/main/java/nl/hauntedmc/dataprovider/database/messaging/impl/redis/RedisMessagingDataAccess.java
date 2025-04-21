@@ -2,71 +2,93 @@ package nl.hauntedmc.dataprovider.database.messaging.impl.redis;
 
 import nl.hauntedmc.dataprovider.DataProvider;
 import nl.hauntedmc.dataprovider.database.messaging.MessagingDataAccess;
-import nl.hauntedmc.dataprovider.database.messaging.MessageListener;
-import redis.clients.jedis.Jedis;
-import redis.clients.jedis.JedisPool;
-import redis.clients.jedis.JedisPubSub;
+import nl.hauntedmc.dataprovider.database.messaging.api.EventMessage;
+import nl.hauntedmc.dataprovider.database.messaging.api.MessageRegistry;
+import nl.hauntedmc.dataprovider.database.messaging.api.Subscription;
+import redis.clients.jedis.*;
 
-import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.ExecutorService;
+import java.util.Map;
+import java.util.concurrent.*;
+import java.util.function.Consumer;
 
-/**
- * RedisMessagingDataAccess implements MessagingDataAccess using Redis Pub/Sub.
- */
-public class RedisMessagingDataAccess implements MessagingDataAccess {
+final class RedisMessagingDataAccess implements MessagingDataAccess {
 
-    private final JedisPool jedisPool;
-    private final ExecutorService executor;
+    private final JedisPool pool;
+    private final ExecutorService workers;
+    private final Map<String, SubscriptionImpl> subs = new ConcurrentHashMap<>();
 
-    public RedisMessagingDataAccess(JedisPool jedisPool, ExecutorService executor) {
-        this.jedisPool = jedisPool;
-        this.executor = executor;
+    RedisMessagingDataAccess(JedisPool pool, ExecutorService workers) {
+        this.pool = pool;
+        this.workers = workers;
     }
 
     @Override
-    public CompletableFuture<Void> sendEvent(String destination, String message) {
+    public <T extends EventMessage> CompletableFuture<Void> publish(String dest, T msg) {
+        String json = MessageRegistry.toJson(msg);
         return CompletableFuture.runAsync(() -> {
-            try (Jedis jedis = jedisPool.getResource()) {
-                jedis.publish(destination, message);
-            } catch (Exception e) {
-                throw new RuntimeException("Failed to send message via Redis", e);
+            try (Jedis j = pool.getResource()) {
+                j.publish(dest, json);
             }
-        }, executor);
+        }, workers);
     }
 
     @Override
-    public CompletableFuture<Void> subscribe(String destination, MessageListener listener) {
-        return CompletableFuture.runAsync(() -> {
-            // Create a dedicated Jedis instance for subscription.
-            // Create a new JedisPubSub instance to handle messages.
-            JedisPubSub pubSub = new JedisPubSub() {
-                @Override
-                public void onMessage(String channel, String message) {
-                    if (channel.equals(destination)) {
-                        listener.onMessage(message);
-                    }
-                }
-            };
-            try {
-                // Run the subscription in a separate thread since subscribe() is blocking.
-                executor.submit(() -> {
-                    try (Jedis jedis = jedisPool.getResource()) {
-                        jedis.subscribe(pubSub, destination);
-                    } catch (Exception e) {
-                        DataProvider.getLogger().error("Error in Redis subscription: " + e.getMessage());
+    public <T extends EventMessage> Subscription subscribe(
+            String dest, Class<T> type, Consumer<T> handler
+    ) {
+        if (subs.containsKey(dest)) {
+            return subs.get(dest);
+        }
+
+        JedisPubSub ps = new JedisPubSub() {
+            @Override
+            public void onMessage(String channel, String raw) {
+                T msg = MessageRegistry.fromJson(raw, type);
+                handler.accept(msg);
+            }
+        };
+
+        Thread t = new Thread(() -> {
+            try (Jedis j = pool.getResource()) {
+                j.subscribe(ps, dest);
+            } catch (Exception ex) {
+                DataProvider.getLogger().error("Error while subscribing to " + dest, ex);
+            }
+        }, "redis-sub-" + dest);
+        t.setDaemon(true);
+        t.start();
+
+        SubscriptionImpl sub = new SubscriptionImpl(ps, t);
+        subs.put(dest, sub);
+        return sub;
+    }
+
+    @Override
+    public CompletableFuture<Void> shutdown() {
+        subs.values().forEach(SubscriptionImpl::unsubscribe);
+        subs.clear();
+        return CompletableFuture.completedFuture(null);
+    }
+
+    /**
+     * Private Subscription implementation
+     */
+        private record SubscriptionImpl(JedisPubSub ps, Thread thread) implements Subscription {
+
+        @Override
+            public CompletableFuture<Void> unsubscribe() {
+                return CompletableFuture.runAsync(() -> {
+                    ps.unsubscribe();
+                    try {
+                        thread.join(500);
+                    } catch (InterruptedException ignored) {
                     }
                 });
-            } catch (Exception e) {
-                throw new RuntimeException("Failed to subscribe to Redis channel", e);
             }
-        }, executor);
-    }
 
-    @Override
-    public CompletableFuture<Void> unsubscribe(String destination) {
-        return CompletableFuture.runAsync(() -> {
-            // In a full implementation you would retain a reference to your JedisPubSub and call unsubscribe().
-            // For this simplified example, this method is a no-op.
-        }, executor);
-    }
+            @Override
+            public void close() {
+                unsubscribe();
+            }
+        }
 }
