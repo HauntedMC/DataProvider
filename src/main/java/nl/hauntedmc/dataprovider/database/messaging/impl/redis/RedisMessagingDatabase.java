@@ -39,7 +39,7 @@ public final class RedisMessagingDatabase implements MessagingDatabaseProvider {
         String host = cfg.node("host").getString("localhost");
         int port = cfg.node("port").getInt(6379);
         int db = cfg.node("database").getInt(0);
-        String user = cfg.node("user").getString(null);
+        String user = cfg.node("user").getString("");
         String pass = cfg.node("password").getString("");
         int connectionPoolSize = Math.max(1, cfg.node("pool", "connections").getInt(4));
         int workerPoolSize = Math.max(1, cfg.node("pool", "threads").getInt(8));
@@ -65,8 +65,8 @@ public final class RedisMessagingDatabase implements MessagingDatabaseProvider {
             poolConfig.setMaxTotal(connectionPoolSize);
 
             DefaultJedisClientConfig.Builder clientConfigBuilder = DefaultJedisClientConfig.builder()
-                    .user((user == null || user.isBlank()) ? null : user)
-                    .password(pass.isEmpty() ? null : pass)
+                    .user(user.isBlank() ? null : user)
+                    .password(pass.isBlank() ? null : pass)
                     .database(db)
                     .ssl(tlsEnabled);
             if (tlsEnabled && trustAllCertificates) {
@@ -93,7 +93,7 @@ public final class RedisMessagingDatabase implements MessagingDatabaseProvider {
                     host,
                     port,
                     db,
-                    pass.isEmpty() ? "disabled" : "enabled",
+                    pass.isBlank() ? "disabled" : "enabled",
                     tlsEnabled ? "enabled" : "disabled",
                     maxSubscriptions,
                     workerQueueCapacity,

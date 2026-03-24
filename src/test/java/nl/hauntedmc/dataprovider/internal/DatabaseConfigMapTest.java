@@ -7,6 +7,7 @@ import org.junit.jupiter.api.io.TempDir;
 import org.spongepowered.configurate.CommentedConfigurationNode;
 
 import java.io.IOException;
+import java.net.URL;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -74,6 +75,44 @@ class DatabaseConfigMapTest {
                 message.contains("No configuration section found for 'default'")
                         && message.contains("default_credentials")
         ));
+    }
+
+    @Test
+    void returnsNullWhenNoConfigCanBeLoaded() {
+        RecordingLoggerAdapter logger = new RecordingLoggerAdapter();
+        ClassLoader emptyClassLoader = new ClassLoader(null) {
+            @Override
+            public URL getResource(String name) {
+                return null;
+            }
+        };
+
+        DatabaseConfigMap configMap = new DatabaseConfigMap(tempDir, logger, emptyClassLoader);
+
+        CommentedConfigurationNode node = configMap.getConfig(DatabaseType.MYSQL, "default");
+        assertNull(node);
+        assertTrue(logger.warnMessages().stream().anyMatch(message ->
+                message.contains("No default config found for MYSQL")));
+        assertTrue(logger.warnMessages().stream().anyMatch(message ->
+                message.contains("No configuration loaded for database type MYSQL")));
+    }
+
+    @Test
+    void logsYamlLoadFailureAndSkipsBrokenConfig() throws IOException {
+        Path databasesDir = tempDir.resolve("databases");
+        Files.createDirectories(databasesDir);
+        Files.writeString(
+                databasesDir.resolve(DatabaseType.MYSQL.getConfigFileName()),
+                "invalid: [yaml",
+                StandardCharsets.UTF_8
+        );
+
+        RecordingLoggerAdapter logger = new RecordingLoggerAdapter();
+        DatabaseConfigMap configMap = new DatabaseConfigMap(tempDir, logger, getClass().getClassLoader());
+
+        CommentedConfigurationNode node = configMap.getConfig(DatabaseType.MYSQL, "default");
+        assertNull(node);
+        assertTrue(logger.errorMessages().stream().anyMatch(message -> message.contains("Failed to load config for MYSQL")));
     }
 
     private void writeMySqlConfig(String content) throws IOException {

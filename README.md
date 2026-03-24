@@ -41,6 +41,7 @@ bus.ifPresent(redisBus -> {
 - [Usage guide](docs/USAGE_GUIDE.md)
 - [Best practices](docs/BEST_PRACTICES.md)
 - [Architecture and maintainability review](docs/ARCHITECTURE_REVIEW.md)
+- [Testing and CI](docs/TESTING_AND_CI.md)
 - [Examples](docs/examples)
 
 ## Notes

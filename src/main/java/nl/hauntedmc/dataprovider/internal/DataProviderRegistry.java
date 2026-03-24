@@ -21,7 +21,7 @@ class DataProviderRegistry {
     private final ILoggerAdapter logger;
 
     public DataProviderRegistry(DatabaseFactory factory, ConfigHandler configHandler, ILoggerAdapter logger) {
-        this.factory = factory;
+        this.factory = Objects.requireNonNull(factory, "Factory cannot be null.");
         this.configHandler = Objects.requireNonNull(configHandler, "Config handler cannot be null.");
         this.logger = Objects.requireNonNull(logger, "Logger cannot be null.");
     }

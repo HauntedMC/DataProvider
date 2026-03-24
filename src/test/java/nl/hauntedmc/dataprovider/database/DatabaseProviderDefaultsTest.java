@@ -88,6 +88,24 @@ class DatabaseProviderDefaultsTest {
         assertEquals(dataSource, optional.get());
     }
 
+    @Test
+    void getDataAccessOptionalRejectsNullExpectedType() {
+        DatabaseProvider provider = new StubDatabaseProvider(new StringDataAccess(), null, TestDataSource::new);
+        assertThrows(NullPointerException.class, () -> provider.getDataAccessOptional(null));
+    }
+
+    @Test
+    void requireDataAccessRejectsNullExpectedType() {
+        DatabaseProvider provider = new StubDatabaseProvider(new StringDataAccess(), null, TestDataSource::new);
+        assertThrows(NullPointerException.class, () -> provider.requireDataAccess(null));
+    }
+
+    @Test
+    void getDataSourceOptionalReturnsEmptyWhenProviderReturnsNull() {
+        DatabaseProvider provider = new StubDatabaseProvider(new StringDataAccess(), null, () -> null);
+        assertEquals(Optional.empty(), provider.getDataSourceOptional());
+    }
+
     private static final class StringDataAccess implements DataAccess {
     }
 

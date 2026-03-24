@@ -14,6 +14,7 @@ class DocumentQueryUpdateValidationTest {
     void eqRejectsBlankFieldName() {
         DocumentQuery query = new DocumentQuery();
         assertThrows(IllegalArgumentException.class, () -> query.eq(" ", 1));
+        assertThrows(IllegalArgumentException.class, () -> query.eq(null, 1));
     }
 
     @Test
@@ -32,6 +33,7 @@ class DocumentQueryUpdateValidationTest {
     void setRejectsBlankFieldName() {
         DocumentUpdate update = new DocumentUpdate();
         assertThrows(IllegalArgumentException.class, () -> update.set(" ", "value"));
+        assertThrows(IllegalArgumentException.class, () -> update.set(null, "value"));
     }
 
     @Test
@@ -55,9 +57,20 @@ class DocumentQueryUpdateValidationTest {
         Map<String, Object> updateMap = update.toMap();
 
         assertEquals("abc", queryMap.get("uuid"));
+        assertEquals(true, queryMap.get("active"));
         assertTrue(queryMap.containsKey("score"));
         assertTrue(queryMap.containsKey("active"));
         assertTrue(updateMap.containsKey("$set"));
         assertTrue(updateMap.containsKey("$inc"));
+
+        @SuppressWarnings("unchecked")
+        Map<String, Object> setMap = (Map<String, Object>) updateMap.get("$set");
+        @SuppressWarnings("unchecked")
+        Map<String, Object> incMap = (Map<String, Object>) updateMap.get("$inc");
+        assertEquals("Remy", setMap.get("name"));
+        assertEquals(2, incMap.get("score"));
+
+        assertThrows(UnsupportedOperationException.class, () -> queryMap.put("x", "y"));
+        assertThrows(UnsupportedOperationException.class, () -> updateMap.put("x", "y"));
     }
 }

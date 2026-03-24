@@ -43,8 +43,8 @@ public class RedisDatabase implements KeyValueDatabaseProvider {
         try {
             final String host = config.node("host").getString("localhost");
             final int port = config.node("port").getInt(6379);
-            final String user = config.node("user").getString(null);
-            final String password = config.node("password").getString(null);
+            final String user = config.node("user").getString("");
+            final String password = config.node("password").getString("");
             final int databaseIndex = config.node("database").getInt(0);
             final int poolSize = Math.max(1,
                     config.node("pool_size").getInt(config.node("pool", "connections").getInt(8)));
@@ -67,8 +67,8 @@ public class RedisDatabase implements KeyValueDatabaseProvider {
             poolConfig.setMaxTotal(poolSize);
 
             DefaultJedisClientConfig.Builder clientConfigBuilder = DefaultJedisClientConfig.builder()
-                    .user((user == null || user.isBlank()) ? null : user)
-                    .password((password == null || password.isBlank()) ? null : password)
+                    .user(user.isBlank() ? null : user)
+                    .password(password.isBlank() ? null : password)
                     .database(databaseIndex)
                     .connectionTimeoutMillis(2000)
                     .socketTimeoutMillis(2000)
@@ -101,7 +101,7 @@ public class RedisDatabase implements KeyValueDatabaseProvider {
                     host,
                     port,
                     databaseIndex,
-                    (password != null && !password.isBlank()) ? "enabled" : "disabled",
+                    !password.isBlank() ? "enabled" : "disabled",
                     tlsEnabled ? "enabled" : "disabled",
                     poolSize,
                     queueCapacity

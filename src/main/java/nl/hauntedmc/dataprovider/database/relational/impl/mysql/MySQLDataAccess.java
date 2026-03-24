@@ -1,9 +1,9 @@
 package nl.hauntedmc.dataprovider.database.relational.impl.mysql;
 
-import com.zaxxer.hikari.HikariDataSource;
 import nl.hauntedmc.dataprovider.database.relational.RelationalDataAccess;
 import nl.hauntedmc.dataprovider.database.relational.TransactionCallback;
 
+import javax.sql.DataSource;
 import java.sql.*;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -17,10 +17,10 @@ import java.util.concurrent.ExecutorService;
  */
 public class MySQLDataAccess implements RelationalDataAccess {
 
-    private final HikariDataSource dataSource;
+    private final DataSource dataSource;
     private final ExecutorService executor;
 
-    public MySQLDataAccess(HikariDataSource dataSource, ExecutorService executor) {
+    public MySQLDataAccess(DataSource dataSource, ExecutorService executor) {
         this.dataSource = dataSource;
         this.executor = executor;
     }

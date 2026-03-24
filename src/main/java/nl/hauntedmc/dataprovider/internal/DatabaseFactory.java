@@ -17,7 +17,7 @@ class DatabaseFactory {
     private final ILoggerAdapter logger;
 
     protected DatabaseFactory(DatabaseConfigMap configMap, ILoggerAdapter logger) {
-        this.configMap = configMap;
+        this.configMap = Objects.requireNonNull(configMap, "Config map cannot be null.");
         this.logger = Objects.requireNonNull(logger, "Logger cannot be null.");
     }
 

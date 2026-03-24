@@ -1,10 +1,10 @@
 package nl.hauntedmc.dataprovider.database.relational.impl.mysql;
 
-import com.zaxxer.hikari.HikariDataSource;
 import nl.hauntedmc.dataprovider.database.relational.schema.ColumnDefinition;
 import nl.hauntedmc.dataprovider.database.relational.schema.SchemaManager;
 import nl.hauntedmc.dataprovider.database.relational.schema.TableDefinition;
 
+import javax.sql.DataSource;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
@@ -23,10 +23,10 @@ public class MySQLSchemaManager implements SchemaManager {
     private static final Pattern IDENTIFIER_PATTERN = Pattern.compile("[A-Za-z_][A-Za-z0-9_]{0,63}");
     private static final Pattern SQL_TYPE_PATTERN = Pattern.compile("[A-Za-z0-9_(),\\s]+");
 
-    private final HikariDataSource dataSource;
+    private final DataSource dataSource;
     private final ExecutorService executor;
 
-    public MySQLSchemaManager(HikariDataSource dataSource, ExecutorService executor) {
+    public MySQLSchemaManager(DataSource dataSource, ExecutorService executor) {
         this.dataSource = dataSource;
         this.executor = executor;
     }

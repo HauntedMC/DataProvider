@@ -40,12 +40,24 @@ public class DataProviderHandler {
         Objects.requireNonNull(resourceClassLoader, "Resource class loader cannot be null.");
         Objects.requireNonNull(configHandler, "Config handler cannot be null.");
         this.logger = Objects.requireNonNull(logger, "Logger cannot be null.");
+        this.callerContextResolver = Objects.requireNonNull(callerContextResolver, "Caller context resolver cannot be null.");
         this.ownClassLoader = resourceClassLoader;
 
         DatabaseConfigMap configMap = new DatabaseConfigMap(dataPath, this.logger, resourceClassLoader);
         DatabaseFactory factory = new DatabaseFactory(configMap, this.logger);
         this.registry = new DataProviderRegistry(factory, configHandler, this.logger);
+    }
+
+    DataProviderHandler(
+            DataProviderRegistry registry,
+            CallerContextResolver callerContextResolver,
+            ILoggerAdapter logger,
+            ClassLoader ownClassLoader
+    ) {
+        this.logger = Objects.requireNonNull(logger, "Logger cannot be null.");
+        this.registry = Objects.requireNonNull(registry, "Registry cannot be null.");
         this.callerContextResolver = Objects.requireNonNull(callerContextResolver, "Caller context resolver cannot be null.");
+        this.ownClassLoader = Objects.requireNonNull(ownClassLoader, "Own class loader cannot be null.");
     }
 
     /**
@@ -112,7 +124,7 @@ public class DataProviderHandler {
 
     private CallerContext resolveCallerContext() {
         CallerContext caller = callerContextResolver.resolveCaller();
-        if (caller == null || caller.pluginId() == null || caller.pluginId().isBlank()) {
+        if (caller == null) {
             logger.error("Could not resolve caller plugin context for API operation.");
             throw new SecurityException("Could not resolve caller plugin context.");
         }
