@@ -4,6 +4,11 @@ default_credentials:
   user: "plugin"
   password: ""
   database: 0
+  require_secure_transport: false
+  tls:
+    enabled: false
+    verify_hostname: true
+    trust_all_certificates: false
   pool:
     connections: 8
     threads:     8

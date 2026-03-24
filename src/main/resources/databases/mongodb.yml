@@ -5,4 +5,9 @@ default_credentials:
   username: ""
   password: ""
   authSource: minecraft
+  require_secure_transport: false
+  tls:
+    enabled: false
+    allow_invalid_hostnames: false
+    trust_all_certificates: false
   pool_size: 8

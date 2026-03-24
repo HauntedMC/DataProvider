@@ -3,6 +3,7 @@ package nl.hauntedmc.dataprovider.database.messaging.impl.redis;
 import nl.hauntedmc.dataprovider.database.messaging.MessagingDataAccess;
 import nl.hauntedmc.dataprovider.database.messaging.MessagingDatabaseProvider;
 import nl.hauntedmc.dataprovider.database.messaging.api.MessageRegistry;
+import nl.hauntedmc.dataprovider.database.security.TlsSupport;
 import nl.hauntedmc.dataprovider.platform.common.logger.ILoggerAdapter;
 import org.spongepowered.configurate.CommentedConfigurationNode;
 import redis.clients.jedis.*;
@@ -38,20 +39,41 @@ public final class RedisMessagingDatabase implements MessagingDatabaseProvider {
         String host = cfg.node("host").getString("localhost");
         int port = cfg.node("port").getInt(6379);
         int db = cfg.node("database").getInt(0);
-        String user = cfg.node("user").getString("plugin");
+        String user = cfg.node("user").getString(null);
         String pass = cfg.node("password").getString("");
         int connectionPoolSize = Math.max(1, cfg.node("pool", "connections").getInt(4));
         int workerPoolSize = Math.max(1, cfg.node("pool", "threads").getInt(8));
+        int maxSubscriptions = Math.max(1, cfg.node("pool", "max_subscriptions").getInt(64));
+        boolean tlsEnabled = cfg.node("tls", "enabled").getBoolean(false);
+        boolean verifyHostname = cfg.node("tls", "verify_hostname").getBoolean(true);
+        boolean trustAllCertificates = cfg.node("tls", "trust_all_certificates").getBoolean(false);
+        boolean requireSecureTransport = cfg.node("require_secure_transport").getBoolean(false);
+
+        if (requireSecureTransport && !tlsEnabled) {
+            throw new IllegalStateException("Redis messaging require_secure_transport=true but tls.enabled=false");
+        }
+        if (!tlsEnabled) {
+            logger.warn("[RedisMessagingDatabase] Redis messaging is running without TLS.");
+        } else if (!verifyHostname || trustAllCertificates) {
+            logger.warn("[RedisMessagingDatabase] Redis messaging TLS uses relaxed verification settings.");
+        }
 
         try {
             JedisPoolConfig poolConfig = new JedisPoolConfig();
             poolConfig.setMaxTotal(connectionPoolSize);
 
-            DefaultJedisClientConfig clientConfig = DefaultJedisClientConfig.builder()
-                    .user(user)
+            DefaultJedisClientConfig.Builder clientConfigBuilder = DefaultJedisClientConfig.builder()
+                    .user((user == null || user.isBlank()) ? null : user)
                     .password(pass.isEmpty() ? null : pass)
                     .database(db)
-                    .build();
+                    .ssl(tlsEnabled);
+            if (tlsEnabled && trustAllCertificates) {
+                clientConfigBuilder.sslSocketFactory(TlsSupport.createTrustAllSslContext().getSocketFactory());
+            }
+            if (tlsEnabled && !verifyHostname) {
+                clientConfigBuilder.hostnameVerifier(TlsSupport.trustAllHostnameVerifier());
+            }
+            DefaultJedisClientConfig clientConfig = clientConfigBuilder.build();
 
             HostAndPort nodeHp = new HostAndPort(host, port);
             pool = new JedisPool(poolConfig, nodeHp, clientConfig);
@@ -61,15 +83,17 @@ public final class RedisMessagingDatabase implements MessagingDatabaseProvider {
             }
 
             workers = Executors.newFixedThreadPool(workerPoolSize);
-            bus = new RedisMessagingDataAccess(pool, workers, logger, messageRegistry);
+            bus = new RedisMessagingDataAccess(pool, workers, logger, messageRegistry, maxSubscriptions);
             connected = true;
 
             logger.info(String.format(
-                    "[RedisMessagingDatabase] Connected to Redis messaging at %s:%d (db=%d, auth=%s)",
+                    "[RedisMessagingDatabase] Connected to Redis messaging at %s:%d (db=%d, auth=%s, tls=%s, maxSubscriptions=%d)",
                     host,
                     port,
                     db,
-                    pass.isEmpty() ? "disabled" : "enabled"
+                    pass.isEmpty() ? "disabled" : "enabled",
+                    tlsEnabled ? "enabled" : "disabled",
+                    maxSubscriptions
             ));
         } catch (Exception e) {
             connected = false;

@@ -9,7 +9,9 @@ import nl.hauntedmc.dataprovider.platform.common.logger.ILoggerAdapter;
 import org.spongepowered.configurate.CommentedConfigurationNode;
 
 import javax.sql.DataSource;
+import java.util.Locale;
 import java.util.Objects;
+import java.util.Set;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
@@ -18,6 +20,8 @@ import java.util.concurrent.TimeUnit;
  * MySQL implementation of RelationalDatabaseProvider.
  */
 public class MySQLDatabase implements RelationalDatabaseProvider {
+
+    private static final Set<String> SECURE_SSL_MODES = Set.of("REQUIRED", "VERIFY_CA", "VERIFY_IDENTITY");
 
     private final CommentedConfigurationNode config;
     private final ILoggerAdapter logger;
@@ -49,14 +53,25 @@ public class MySQLDatabase implements RelationalDatabaseProvider {
             final String user = config.node("username").getString("root");
             final String password = config.node("password").getString("");
             final String sslMode = config.node("ssl_mode").getString("PREFERRED");
+            final String normalizedSslMode = (sslMode == null ? "PREFERRED" : sslMode).trim().toUpperCase(Locale.ROOT);
             final boolean allowPublicKeyRetrieval = config.node("allow_public_key_retrieval").getBoolean(false);
+            final boolean requireSecureTransport = config.node("require_secure_transport").getBoolean(false);
+
+            if (requireSecureTransport && !SECURE_SSL_MODES.contains(normalizedSslMode)) {
+                throw new IllegalStateException("MySQL require_secure_transport=true requires ssl_mode to be one of "
+                        + SECURE_SSL_MODES + ", but got " + normalizedSslMode);
+            }
+            if (!SECURE_SSL_MODES.contains(normalizedSslMode)) {
+                logger.warn("[MySQLDatabase] MySQL connection is not configured for strict TLS verification "
+                        + "(ssl_mode=" + normalizedSslMode + ").");
+            }
 
             final String jdbcUrl = String.format(
                     "jdbc:mysql://%s:%d/%s?characterEncoding=UTF-8&sslMode=%s&allowPublicKeyRetrieval=%s",
                     host,
                     port,
                     databaseName,
-                    sslMode,
+                    normalizedSslMode,
                     allowPublicKeyRetrieval
             );
             hikariConfig.setJdbcUrl(jdbcUrl);
@@ -89,7 +104,7 @@ public class MySQLDatabase implements RelationalDatabaseProvider {
                     host,
                     port,
                     databaseName,
-                    sslMode
+                    normalizedSslMode
             ));
         } catch (Exception e) {
             if (createdExecutor != null) {

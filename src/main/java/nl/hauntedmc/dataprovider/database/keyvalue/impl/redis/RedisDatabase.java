@@ -2,6 +2,7 @@ package nl.hauntedmc.dataprovider.database.keyvalue.impl.redis;
 
 import nl.hauntedmc.dataprovider.database.keyvalue.KeyValueDataAccess;
 import nl.hauntedmc.dataprovider.database.keyvalue.KeyValueDatabaseProvider;
+import nl.hauntedmc.dataprovider.database.security.TlsSupport;
 import nl.hauntedmc.dataprovider.platform.common.logger.ILoggerAdapter;
 import org.spongepowered.configurate.CommentedConfigurationNode;
 import redis.clients.jedis.DefaultJedisClientConfig;
@@ -47,17 +48,38 @@ public class RedisDatabase implements KeyValueDatabaseProvider {
             final int databaseIndex = config.node("database").getInt(0);
             final int poolSize = Math.max(1,
                     config.node("pool_size").getInt(config.node("pool", "connections").getInt(8)));
+            final boolean tlsEnabled = config.node("tls", "enabled").getBoolean(false);
+            final boolean verifyHostname = config.node("tls", "verify_hostname").getBoolean(true);
+            final boolean trustAllCertificates = config.node("tls", "trust_all_certificates").getBoolean(false);
+            final boolean requireSecureTransport = config.node("require_secure_transport").getBoolean(false);
+
+            if (requireSecureTransport && !tlsEnabled) {
+                throw new IllegalStateException("Redis require_secure_transport=true but tls.enabled=false");
+            }
+            if (!tlsEnabled) {
+                logger.warn("[RedisDatabase] Redis connection is running without TLS.");
+            } else if (!verifyHostname || trustAllCertificates) {
+                logger.warn("[RedisDatabase] Redis TLS is enabled with relaxed certificate/hostname verification.");
+            }
 
             JedisPoolConfig poolConfig = new JedisPoolConfig();
             poolConfig.setMaxTotal(poolSize);
 
-            DefaultJedisClientConfig clientConfig = DefaultJedisClientConfig.builder()
+            DefaultJedisClientConfig.Builder clientConfigBuilder = DefaultJedisClientConfig.builder()
                     .user((user == null || user.isBlank()) ? null : user)
                     .password((password == null || password.isBlank()) ? null : password)
                     .database(databaseIndex)
                     .connectionTimeoutMillis(2000)
                     .socketTimeoutMillis(2000)
-                    .build();
+                    .ssl(tlsEnabled);
+            if (tlsEnabled && trustAllCertificates) {
+                clientConfigBuilder.sslSocketFactory(TlsSupport.createTrustAllSslContext().getSocketFactory());
+            }
+            if (tlsEnabled && !verifyHostname) {
+                clientConfigBuilder.hostnameVerifier(TlsSupport.trustAllHostnameVerifier());
+            }
+
+            DefaultJedisClientConfig clientConfig = clientConfigBuilder.build();
 
             createdPool = new JedisPool(poolConfig, new HostAndPort(host, port), clientConfig);
             try (var jedis = createdPool.getResource()) {
@@ -74,11 +96,12 @@ public class RedisDatabase implements KeyValueDatabaseProvider {
 
             connected = true;
             logger.info(String.format(
-                    "[RedisDatabase] Connected to Redis at %s:%d (DB %d, auth=%s), poolSize=%d",
+                    "[RedisDatabase] Connected to Redis at %s:%d (DB %d, auth=%s, tls=%s), poolSize=%d",
                     host,
                     port,
                     databaseIndex,
                     (password != null && !password.isBlank()) ? "enabled" : "disabled",
+                    tlsEnabled ? "enabled" : "disabled",
                     poolSize
             ));
         } catch (Exception e) {

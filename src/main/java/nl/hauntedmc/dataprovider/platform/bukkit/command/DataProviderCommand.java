@@ -63,11 +63,8 @@ public class DataProviderCommand implements CommandExecutor, TabCompleter {
 
     private static @NotNull Component getConnectionComponent(Map.Entry<DatabaseConnectionKey, DatabaseProvider> entry) {
         DatabaseConnectionKey key = entry.getKey();
-        DatabaseProvider provider = entry.getValue();
 
-        Component statusComponent = provider.isConnected()
-                ? Component.text("Connected", NamedTextColor.GREEN)
-                : Component.text("Disconnected", NamedTextColor.RED);
+        Component statusComponent = Component.text("Registered", NamedTextColor.GREEN);
 
         return Component.text("Plugin: ", NamedTextColor.YELLOW)
                 .append(Component.text(key.pluginName(), NamedTextColor.WHITE))

@@ -6,10 +6,12 @@ import com.mongodb.client.MongoClient;
 import com.mongodb.client.MongoClients;
 import nl.hauntedmc.dataprovider.database.document.DocumentDataAccess;
 import nl.hauntedmc.dataprovider.database.document.DocumentDatabaseProvider;
+import nl.hauntedmc.dataprovider.database.security.TlsSupport;
 import nl.hauntedmc.dataprovider.platform.common.logger.ILoggerAdapter;
 import org.spongepowered.configurate.CommentedConfigurationNode;
 import org.bson.Document;
 
+import javax.net.ssl.SSLContext;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.util.Objects;
@@ -51,6 +53,19 @@ public class MongoDBDatabase implements DocumentDatabaseProvider {
             final String user = config.node("username").getString("");
             final String password = config.node("password").getString("");
             final String authSource = config.node("authSource").getString(configuredDatabaseName);
+            final boolean tlsEnabled = config.node("tls", "enabled").getBoolean(false);
+            final boolean allowInvalidHostnames = config.node("tls", "allow_invalid_hostnames").getBoolean(false);
+            final boolean trustAllCertificates = config.node("tls", "trust_all_certificates").getBoolean(false);
+            final boolean requireSecureTransport = config.node("require_secure_transport").getBoolean(false);
+
+            if (requireSecureTransport && !tlsEnabled) {
+                throw new IllegalStateException("MongoDB require_secure_transport=true but tls.enabled=false");
+            }
+            if (!tlsEnabled) {
+                logger.warn("[MongoDBDatabase] MongoDB connection is running without TLS.");
+            } else if (trustAllCertificates || allowInvalidHostnames) {
+                logger.warn("[MongoDBDatabase] MongoDB TLS is enabled with relaxed certificate/hostname verification.");
+            }
 
             final String connectionString;
             if (!user.isEmpty() && !password.isEmpty()) {
@@ -61,18 +76,31 @@ public class MongoDBDatabase implements DocumentDatabaseProvider {
             }
 
             logger.info(String.format(
-                    "[MongoDBDatabase] Connecting to Mongo at %s:%d (database=%s, auth=%s)",
+                    "[MongoDBDatabase] Connecting to Mongo at %s:%d (database=%s, auth=%s, tls=%s)",
                     host,
                     port,
                     configuredDatabaseName,
-                    (!user.isEmpty() && !password.isEmpty()) ? "enabled" : "disabled"
+                    (!user.isEmpty() && !password.isEmpty()) ? "enabled" : "disabled",
+                    tlsEnabled ? "enabled" : "disabled"
             ));
 
             ConnectionString connString = new ConnectionString(connectionString);
-            MongoClientSettings settings = MongoClientSettings.builder()
+            MongoClientSettings.Builder settingsBuilder = MongoClientSettings.builder()
                     .applyConnectionString(connString)
                     .retryWrites(true)
-                    .build();
+                    ;
+            if (tlsEnabled) {
+                SSLContext sslContext = trustAllCertificates ? TlsSupport.createTrustAllSslContext() : null;
+                settingsBuilder.applyToSslSettings(ssl -> {
+                    ssl.enabled(true);
+                    ssl.invalidHostNameAllowed(allowInvalidHostnames);
+                    if (sslContext != null) {
+                        ssl.context(sslContext);
+                    }
+                });
+            }
+
+            MongoClientSettings settings = settingsBuilder.build();
 
             createdClient = MongoClients.create(settings);
             createdClient.getDatabase(configuredDatabaseName).runCommand(new Document("ping", 1));
@@ -86,7 +114,12 @@ public class MongoDBDatabase implements DocumentDatabaseProvider {
             dataAccess = new MongoDBDataAccess(mongoClient, databaseName, executor);
 
             connected = true;
-            logger.info(String.format("[MongoDBDatabase] Connected successfully to Mongo at %s:%d", host, port));
+            logger.info(String.format(
+                    "[MongoDBDatabase] Connected successfully to Mongo at %s:%d (tls=%s)",
+                    host,
+                    port,
+                    tlsEnabled ? "enabled" : "disabled"
+            ));
         } catch (Exception e) {
             if (createdExecutor != null) {
                 createdExecutor.shutdownNow();
