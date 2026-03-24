@@ -6,7 +6,7 @@ import javax.sql.DataSource;
 
 /**
  * KeyValueDatabaseProvider is the parent interface for key–value
- * databases like Redis, Memcached, etc.
+ * databases like Redis.
  */
 public interface KeyValueDatabaseProvider extends DatabaseProvider {
 

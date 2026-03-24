@@ -16,12 +16,12 @@ public final class RelationalOrmExample {
     public void onEnable(DataProviderAPI api, ILoggerAdapter logger) {
         Optional<RelationalDatabaseProvider> relational = api.registerDatabaseAs(
                 DatabaseType.MYSQL,
-                "player_data_rw",
+                "example",
                 RelationalDatabaseProvider.class
         );
 
         if (relational.isEmpty()) {
-            logger.error("Could not initialize MySQL connection 'player_data_rw'.");
+            logger.error("Could not initialize MySQL connection 'example'.");
             return;
         }
 
@@ -40,7 +40,7 @@ public final class RelationalOrmExample {
             ormContext.shutdown();
             ormContext = null;
         }
-        api.unregisterDatabase(DatabaseType.MYSQL, "player_data_rw");
+        api.unregisterDatabase(DatabaseType.MYSQL, "example");
     }
 
     private static final class PlayerEntity {

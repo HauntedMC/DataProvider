@@ -11,7 +11,6 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -22,10 +21,10 @@ class DatabaseConfigMapTest {
     Path tempDir;
 
     @Test
-    void fallsBackFromDefaultToLegacyIdentifier() throws IOException {
+    void resolvesExactIdentifierOnly() throws IOException {
         writeMySqlConfig("""
-                default_credentials:
-                  host: legacy-host
+                default:
+                  host: modern-host
                   port: 3306
                 """);
 
@@ -34,11 +33,8 @@ class DatabaseConfigMapTest {
 
         CommentedConfigurationNode node = configMap.getConfig(DatabaseType.MYSQL, "default");
         assertNotNull(node);
-        assertEquals("legacy-host", node.node("host").getString());
-        assertTrue(logger.warnMessages().stream().anyMatch(message ->
-                message.contains("Connection identifier 'default'")
-                        && message.contains("default_credentials")
-        ));
+        assertTrue("modern-host".equals(node.node("host").getString()));
+        assertTrue(logger.warnMessages().isEmpty());
     }
 
     @Test
@@ -63,10 +59,8 @@ class DatabaseConfigMapTest {
     }
 
     @Test
-    void exactIdentifierTakesPrecedenceOverLegacyAlias() throws IOException {
+    void doesNotFallbackToLegacyIdentifiers() throws IOException {
         writeMySqlConfig("""
-                default:
-                  host: modern-host
                 default_credentials:
                   host: legacy-host
                 """);
@@ -75,10 +69,9 @@ class DatabaseConfigMapTest {
         DatabaseConfigMap configMap = new DatabaseConfigMap(tempDir, logger, getClass().getClassLoader());
 
         CommentedConfigurationNode node = configMap.getConfig(DatabaseType.MYSQL, "default");
-        assertNotNull(node);
-        assertEquals("modern-host", node.node("host").getString());
-        assertTrue(logger.warnMessages().stream().noneMatch(message ->
-                message.contains("Connection identifier 'default'")
+        assertNull(node);
+        assertTrue(logger.warnMessages().stream().anyMatch(message ->
+                message.contains("No configuration section found for 'default'")
                         && message.contains("default_credentials")
         ));
     }

@@ -41,11 +41,10 @@ bus.ifPresent(redisBus -> {
 - [Usage guide](docs/USAGE_GUIDE.md)
 - [Best practices](docs/BEST_PRACTICES.md)
 - [Architecture and maintainability review](docs/ARCHITECTURE_REVIEW.md)
-- [ProxyFeatures integration notes](docs/PROXYFEATURES_INTEGRATION.md)
 - [Examples](docs/examples)
 
 ## Notes
 
 - Caller identity is resolved at runtime from the platform plugin context.
 - `registerDatabase(...)` is reference-counted internally; repeated registrations reuse the same connection.
-- 
+- Use explicit, current config section names only (for example: `default`, `example`).

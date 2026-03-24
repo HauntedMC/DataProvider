@@ -21,7 +21,7 @@ Caller identity is resolved automatically from the plugin runtime context.
 Basic:
 
 ```java
-DatabaseProvider provider = api.registerDatabase(DatabaseType.MYSQL, "player_data_rw");
+DatabaseProvider provider = api.registerDatabase(DatabaseType.MYSQL, "example");
 if (provider == null || !provider.isConnected()) {
     // handle unavailable database
 }
@@ -30,7 +30,7 @@ if (provider == null || !provider.isConnected()) {
 Optional style:
 
 ```java
-Optional<DatabaseProvider> provider = api.registerDatabaseOptional(DatabaseType.MYSQL, "player_data_rw");
+Optional<DatabaseProvider> provider = api.registerDatabaseOptional(DatabaseType.MYSQL, "example");
 ```
 
 Typed provider style:
@@ -38,7 +38,7 @@ Typed provider style:
 ```java
 Optional<RelationalDatabaseProvider> relational = api.registerDatabaseAs(
         DatabaseType.MYSQL,
-        "player_data_rw",
+        "example",
         RelationalDatabaseProvider.class
 );
 ```
@@ -56,6 +56,7 @@ Optional<MessagingDataAccess> redisBus = api.registerDataAccess(
 Identifier guidance:
 
 - Prefer `default` for single-connection setups.
+- Use explicit names like `example` for relational read/write paths.
 
 ## 3. Use the provider safely
 
@@ -71,7 +72,7 @@ Optional<DataSource> dataSource = provider.getDataSourceOptional();
 Release a specific connection:
 
 ```java
-api.unregisterDatabase(DatabaseType.MYSQL, "player_data_rw");
+api.unregisterDatabase(DatabaseType.MYSQL, "example");
 ```
 
 Release all connections for your plugin context:

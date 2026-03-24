@@ -18,7 +18,6 @@ Reviewed on: 2026-03-24
 ## Key Findings (Before Improvements)
 
 - Test coverage was effectively absent (`src/test/java/Test.java` placeholder only).
-- Bundled database templates used `default_credentials`, while docs/examples/integration commonly used `default`.
 - API default helper methods had null/readiness edge-cases that could produce unclear failures.
 - Missing docs files referenced by README reduced maintainability and onboarding quality.
 
@@ -33,15 +32,14 @@ Reviewed on: 2026-03-24
   - `requireDataAccess(...)` now reports null provider data access explicitly.
   - `getDataSourceOptional()` now tolerates unsupported and not-ready provider states.
 - Improved config usability:
-  - Added compatibility alias resolution between `default` and `default_credentials`.
   - Added clearer missing-section warnings with available section names.
-  - Updated bundled config templates to include `default` as the primary identifier.
-  - Added `player_data_rw` MySQL template for common ORM write usage.
+- Removed legacy compatibility paths:
+  - Removed old identifier alias behavior from config resolution.
+  - Removed Memcached implementation and dependency.
 - Hardened registry lookups:
   - Stale/disconnected providers are now evicted during lookup, not just during registration.
 
 ## Residual Risks / Next Steps
 
 - Most tests are unit-level; no automated integration tests currently validate real MySQL/Mongo/Redis instances.
-- Memcached implementations exist but are not reachable through `DatabaseType`; either expose or remove to reduce dead surface area.
 - Consider adding CI quality gates (`checkstyle`, test coverage thresholds, and smoke integration matrix).
