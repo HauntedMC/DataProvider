@@ -6,6 +6,7 @@ import nl.hauntedmc.dataprovider.database.DatabaseType;
 import nl.hauntedmc.dataprovider.config.ConfigHandler;
 import nl.hauntedmc.dataprovider.internal.identity.CallerContext;
 import nl.hauntedmc.dataprovider.internal.identity.CallerContextResolver;
+import nl.hauntedmc.dataprovider.internal.identity.StackCallerClassLoaderResolver;
 import nl.hauntedmc.dataprovider.platform.common.logger.ILoggerAdapter;
 
 import java.util.Objects;
@@ -19,11 +20,13 @@ import java.util.regex.Pattern;
  */
 public class DataProviderHandler {
 
+    private static final String INTERNAL_PACKAGE_PREFIX = "nl.hauntedmc.dataprovider.internal";
     private static final Pattern CONNECTION_IDENTIFIER_PATTERN = Pattern.compile("[A-Za-z0-9_.:-]{1,128}");
 
     private final DataProviderRegistry registry;
     private final CallerContextResolver callerContextResolver;
     private final ILoggerAdapter logger;
+    private final ClassLoader ownClassLoader;
 
     public DataProviderHandler(
             Path dataPath,
@@ -36,6 +39,7 @@ public class DataProviderHandler {
         Objects.requireNonNull(resourceClassLoader, "Resource class loader cannot be null.");
         Objects.requireNonNull(configHandler, "Config handler cannot be null.");
         this.logger = Objects.requireNonNull(logger, "Logger cannot be null.");
+        this.ownClassLoader = resourceClassLoader;
 
         DatabaseConfigMap configMap = new DatabaseConfigMap(dataPath, this.logger, resourceClassLoader);
         DatabaseFactory factory = new DatabaseFactory(configMap, this.logger);
@@ -75,6 +79,7 @@ public class DataProviderHandler {
      * Shuts down all active database connections.
      */
     public void shutdownAllDatabases() {
+        requireInternalCaller();
         registry.shutdownAllDatabases();
     }
 
@@ -92,6 +97,7 @@ public class DataProviderHandler {
      * Returns a snapshot of active database connections.
      */
     public ConcurrentMap<DatabaseConnectionKey, DatabaseProvider> getActiveDatabases() {
+        requireInternalCaller();
         return registry.getActiveDatabases();
     }
 
@@ -110,6 +116,14 @@ public class DataProviderHandler {
         }
         if (!CONNECTION_IDENTIFIER_PATTERN.matcher(connectionIdentifier).matches()) {
             throw new IllegalArgumentException("Connection identifier contains unsupported characters.");
+        }
+    }
+
+    private void requireInternalCaller() {
+        ClassLoader callerLoader = StackCallerClassLoaderResolver.resolveNearestCallerOutsidePackage(INTERNAL_PACKAGE_PREFIX);
+        if (callerLoader == null || callerLoader != ownClassLoader) {
+            logger.error("Rejected privileged operation from non-internal caller.");
+            throw new SecurityException("Privileged DataProvider operation is restricted to internal callers.");
         }
     }
 }

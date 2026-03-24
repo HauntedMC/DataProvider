@@ -1,5 +1,6 @@
 package nl.hauntedmc.dataprovider.database.keyvalue.impl.memcached;
 
+import nl.hauntedmc.dataprovider.internal.concurrent.BoundedExecutorFactory;
 import nl.hauntedmc.dataprovider.database.keyvalue.KeyValueDataAccess;
 import nl.hauntedmc.dataprovider.database.keyvalue.KeyValueDatabaseProvider;
 import nl.hauntedmc.dataprovider.platform.common.logger.ILoggerAdapter;
@@ -9,7 +10,6 @@ import net.spy.memcached.MemcachedClient;
 import java.net.InetSocketAddress;
 import java.util.Objects;
 import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 
 /**
@@ -41,6 +41,7 @@ public class MemcachedDatabase implements KeyValueDatabaseProvider {
             final String host = config.node("host").getString("localhost");
             final int port = config.node("port").getInt(11211);
             final int poolSize = Math.max(1, config.node("pool_size").getInt(8));
+            final int queueCapacity = Math.max(poolSize, config.node("queue_capacity").getInt(poolSize * 200));
 
             createdClient = new MemcachedClient(new InetSocketAddress(host, port));
             if (createdClient.getAvailableServers().isEmpty()) {
@@ -48,7 +49,7 @@ public class MemcachedDatabase implements KeyValueDatabaseProvider {
             }
             logger.info(String.format("[MemcachedDatabase] Connected to Memcached at %s:%d", host, port));
 
-            createdExecutor = Executors.newFixedThreadPool(poolSize);
+            createdExecutor = BoundedExecutorFactory.create("dataprovider-memcached", poolSize, queueCapacity);
 
             memcachedClient = createdClient;
             executor = createdExecutor;

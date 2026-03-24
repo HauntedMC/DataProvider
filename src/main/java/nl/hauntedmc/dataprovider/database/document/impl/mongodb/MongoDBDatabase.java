@@ -4,6 +4,7 @@ import com.mongodb.ConnectionString;
 import com.mongodb.MongoClientSettings;
 import com.mongodb.client.MongoClient;
 import com.mongodb.client.MongoClients;
+import nl.hauntedmc.dataprovider.internal.concurrent.BoundedExecutorFactory;
 import nl.hauntedmc.dataprovider.database.document.DocumentDataAccess;
 import nl.hauntedmc.dataprovider.database.document.DocumentDatabaseProvider;
 import nl.hauntedmc.dataprovider.database.security.TlsSupport;
@@ -16,7 +17,6 @@ import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.util.Objects;
 import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 
 /**
@@ -106,7 +106,8 @@ public class MongoDBDatabase implements DocumentDatabaseProvider {
             createdClient.getDatabase(configuredDatabaseName).runCommand(new Document("ping", 1));
 
             final int poolSize = Math.max(1, config.node("pool_size").getInt(8));
-            createdExecutor = Executors.newFixedThreadPool(poolSize);
+            final int queueCapacity = Math.max(poolSize, config.node("queue_capacity").getInt(poolSize * 200));
+            createdExecutor = BoundedExecutorFactory.create("dataprovider-mongodb", poolSize, queueCapacity);
 
             mongoClient = createdClient;
             executor = createdExecutor;
@@ -115,10 +116,11 @@ public class MongoDBDatabase implements DocumentDatabaseProvider {
 
             connected = true;
             logger.info(String.format(
-                    "[MongoDBDatabase] Connected successfully to Mongo at %s:%d (tls=%s)",
+                    "[MongoDBDatabase] Connected successfully to Mongo at %s:%d (tls=%s, queueCapacity=%d)",
                     host,
                     port,
-                    tlsEnabled ? "enabled" : "disabled"
+                    tlsEnabled ? "enabled" : "disabled",
+                    queueCapacity
             ));
         } catch (Exception e) {
             if (createdExecutor != null) {

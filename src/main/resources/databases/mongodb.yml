@@ -11,3 +11,4 @@ default_credentials:
     allow_invalid_hostnames: false
     trust_all_certificates: false
   pool_size: 8
+  queue_capacity: 1600

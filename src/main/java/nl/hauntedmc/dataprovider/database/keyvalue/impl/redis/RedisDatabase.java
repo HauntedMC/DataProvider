@@ -1,5 +1,6 @@
 package nl.hauntedmc.dataprovider.database.keyvalue.impl.redis;
 
+import nl.hauntedmc.dataprovider.internal.concurrent.BoundedExecutorFactory;
 import nl.hauntedmc.dataprovider.database.keyvalue.KeyValueDataAccess;
 import nl.hauntedmc.dataprovider.database.keyvalue.KeyValueDatabaseProvider;
 import nl.hauntedmc.dataprovider.database.security.TlsSupport;
@@ -12,7 +13,6 @@ import redis.clients.jedis.JedisPoolConfig;
 
 import java.util.Objects;
 import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 
 /**
@@ -48,6 +48,7 @@ public class RedisDatabase implements KeyValueDatabaseProvider {
             final int databaseIndex = config.node("database").getInt(0);
             final int poolSize = Math.max(1,
                     config.node("pool_size").getInt(config.node("pool", "connections").getInt(8)));
+            final int queueCapacity = Math.max(poolSize, config.node("queue_capacity").getInt(poolSize * 200));
             final boolean tlsEnabled = config.node("tls", "enabled").getBoolean(false);
             final boolean verifyHostname = config.node("tls", "verify_hostname").getBoolean(true);
             final boolean trustAllCertificates = config.node("tls", "trust_all_certificates").getBoolean(false);
@@ -88,7 +89,7 @@ public class RedisDatabase implements KeyValueDatabaseProvider {
                 }
             }
 
-            createdExecutor = Executors.newFixedThreadPool(poolSize);
+            createdExecutor = BoundedExecutorFactory.create("dataprovider-redis", poolSize, queueCapacity);
 
             jedisPool = createdPool;
             executor = createdExecutor;
@@ -96,13 +97,14 @@ public class RedisDatabase implements KeyValueDatabaseProvider {
 
             connected = true;
             logger.info(String.format(
-                    "[RedisDatabase] Connected to Redis at %s:%d (DB %d, auth=%s, tls=%s), poolSize=%d",
+                    "[RedisDatabase] Connected to Redis at %s:%d (DB %d, auth=%s, tls=%s), poolSize=%d, queueCapacity=%d",
                     host,
                     port,
                     databaseIndex,
                     (password != null && !password.isBlank()) ? "enabled" : "disabled",
                     tlsEnabled ? "enabled" : "disabled",
-                    poolSize
+                    poolSize,
+                    queueCapacity
             ));
         } catch (Exception e) {
             if (createdExecutor != null) {

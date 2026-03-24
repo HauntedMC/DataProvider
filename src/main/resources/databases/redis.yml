@@ -12,3 +12,4 @@ default_credentials:
   pool:
     connections: 8
     threads:     8
+  queue_capacity: 1600

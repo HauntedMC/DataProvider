@@ -2,6 +2,7 @@ package nl.hauntedmc.dataprovider.database.relational.impl.mysql;
 
 import com.zaxxer.hikari.HikariConfig;
 import com.zaxxer.hikari.HikariDataSource;
+import nl.hauntedmc.dataprovider.internal.concurrent.BoundedExecutorFactory;
 import nl.hauntedmc.dataprovider.database.relational.RelationalDataAccess;
 import nl.hauntedmc.dataprovider.database.relational.RelationalDatabaseProvider;
 import nl.hauntedmc.dataprovider.database.relational.schema.SchemaManager;
@@ -13,7 +14,6 @@ import java.util.Locale;
 import java.util.Objects;
 import java.util.Set;
 import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 
 /**
@@ -79,6 +79,7 @@ public class MySQLDatabase implements RelationalDatabaseProvider {
             hikariConfig.setPassword(password);
 
             final int poolSize = Math.max(1, config.node("pool_size").getInt(10));
+            final int queueCapacity = Math.max(poolSize, config.node("queue_capacity").getInt(poolSize * 200));
             hikariConfig.setMaximumPoolSize(poolSize);
             hikariConfig.setConnectionTimeout(30000);
             hikariConfig.setIdleTimeout(600000);
@@ -86,7 +87,7 @@ public class MySQLDatabase implements RelationalDatabaseProvider {
             hikariConfig.setLeakDetectionThreshold(2000);
 
             createdDataSource = new HikariDataSource(hikariConfig);
-            createdExecutor = Executors.newFixedThreadPool(poolSize);
+            createdExecutor = BoundedExecutorFactory.create("dataprovider-mysql", poolSize, queueCapacity);
 
             try (var connection = createdDataSource.getConnection()) {
                 if (!connection.isValid(2)) {
@@ -100,11 +101,12 @@ public class MySQLDatabase implements RelationalDatabaseProvider {
             this.schemaManager = new MySQLSchemaManager(dataSource, executor);
 
             logger.info(String.format(
-                    "[MySQLDatabase] Connected successfully to MySQL at %s:%d (database=%s, sslMode=%s)",
+                    "[MySQLDatabase] Connected successfully to MySQL at %s:%d (database=%s, sslMode=%s, queueCapacity=%d)",
                     host,
                     port,
                     databaseName,
-                    normalizedSslMode
+                    normalizedSslMode,
+                    queueCapacity
             ));
         } catch (Exception e) {
             if (createdExecutor != null) {

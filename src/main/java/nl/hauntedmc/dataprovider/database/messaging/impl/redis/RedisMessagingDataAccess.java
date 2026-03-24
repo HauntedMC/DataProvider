@@ -17,14 +17,18 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Consumer;
+import java.util.regex.Pattern;
 
 final class RedisMessagingDataAccess implements MessagingDataAccess {
+
+    private static final Pattern DESTINATION_PATTERN = Pattern.compile("[A-Za-z0-9_.:-]{1,128}");
 
     private final JedisPool pool;
     private final ExecutorService workers;
     private final ILoggerAdapter logger;
     private final MessageRegistry messageRegistry;
     private final int maxSubscriptions;
+    private final int maxPayloadChars;
     private final Map<String, ChannelSubscription> channelSubscriptions = new ConcurrentHashMap<>();
     private final Object subscriptionLock = new Object();
     private final AtomicBoolean shuttingDown = new AtomicBoolean(false);
@@ -34,7 +38,8 @@ final class RedisMessagingDataAccess implements MessagingDataAccess {
             ExecutorService workers,
             ILoggerAdapter logger,
             MessageRegistry messageRegistry,
-            int maxSubscriptions
+            int maxSubscriptions,
+            int maxPayloadChars
     ) {
         this.pool = Objects.requireNonNull(pool, "Pool cannot be null");
         this.workers = Objects.requireNonNull(workers, "Workers cannot be null");
@@ -44,11 +49,15 @@ final class RedisMessagingDataAccess implements MessagingDataAccess {
             throw new IllegalArgumentException("maxSubscriptions must be greater than zero");
         }
         this.maxSubscriptions = maxSubscriptions;
+        if (maxPayloadChars < 1) {
+            throw new IllegalArgumentException("maxPayloadChars must be greater than zero");
+        }
+        this.maxPayloadChars = maxPayloadChars;
     }
 
     @Override
     public <T extends EventMessage> CompletableFuture<Void> publish(String dest, T msg) {
-        Objects.requireNonNull(dest, "Destination cannot be null");
+        String destination = validateDestination(dest);
         Objects.requireNonNull(msg, "Message cannot be null");
 
         if (shuttingDown.get()) {
@@ -56,9 +65,13 @@ final class RedisMessagingDataAccess implements MessagingDataAccess {
         }
 
         String json = messageRegistry.toJson(msg);
+        if (json.length() > maxPayloadChars) {
+            return CompletableFuture.failedFuture(new IllegalArgumentException(
+                    "Message payload exceeds maxPayloadChars (" + maxPayloadChars + ")"));
+        }
         return CompletableFuture.runAsync(() -> {
             try (Jedis j = pool.getResource()) {
-                j.publish(dest, json);
+                j.publish(destination, json);
             }
         }, workers);
     }
@@ -67,7 +80,7 @@ final class RedisMessagingDataAccess implements MessagingDataAccess {
     public <T extends EventMessage> Subscription subscribe(
             String dest, Class<T> type, Consumer<T> handler
     ) {
-        Objects.requireNonNull(dest, "Destination cannot be null");
+        String destination = validateDestination(dest);
         Objects.requireNonNull(type, "Type cannot be null");
         Objects.requireNonNull(handler, "Handler cannot be null");
 
@@ -78,13 +91,13 @@ final class RedisMessagingDataAccess implements MessagingDataAccess {
         ChannelSubscription channelSubscription;
         boolean created = false;
         synchronized (subscriptionLock) {
-            channelSubscription = channelSubscriptions.get(dest);
+            channelSubscription = channelSubscriptions.get(destination);
             if (channelSubscription == null) {
                 if (channelSubscriptions.size() >= maxSubscriptions) {
                     throw new IllegalStateException("Maximum active Redis subscriptions reached (" + maxSubscriptions + ")");
                 }
-                channelSubscription = new ChannelSubscription(dest);
-                channelSubscriptions.put(dest, channelSubscription);
+                channelSubscription = new ChannelSubscription(destination);
+                channelSubscriptions.put(destination, channelSubscription);
                 created = true;
             }
         }
@@ -126,6 +139,15 @@ final class RedisMessagingDataAccess implements MessagingDataAccess {
             this.pubSub = new JedisPubSub() {
                 @Override
                 public void onMessage(String channel, String raw) {
+                    if (raw == null || raw.isBlank()) {
+                        logger.warn("Received empty message while subscribing to channel " + channel);
+                        return;
+                    }
+                    if (raw.length() > maxPayloadChars) {
+                        logger.warn("Dropped oversized message on channel " + channel + " (length="
+                                + raw.length() + ", maxPayloadChars=" + maxPayloadChars + ")");
+                        return;
+                    }
                     for (HandlerRegistration<?> registration : handlers.values()) {
                         registration.dispatch(channel, raw);
                     }
@@ -213,5 +235,13 @@ final class RedisMessagingDataAccess implements MessagingDataAccess {
                 logger.error("Error while handling message from channel " + channel, ex);
             }
         }
+    }
+
+    private static String validateDestination(String destination) {
+        Objects.requireNonNull(destination, "Destination cannot be null");
+        if (!DESTINATION_PATTERN.matcher(destination).matches()) {
+            throw new IllegalArgumentException("Destination contains unsupported characters.");
+        }
+        return destination;
     }
 }

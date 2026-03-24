@@ -6,6 +6,7 @@ import nl.hauntedmc.dataprovider.internal.identity.StackCallerClassLoaderResolve
 import org.bukkit.Bukkit;
 import org.bukkit.plugin.Plugin;
 
+import java.util.List;
 import java.util.Objects;
 
 /**
@@ -21,17 +22,37 @@ public final class BukkitCallerContextResolver implements CallerContextResolver 
 
     @Override
     public CallerContext resolveCaller() {
-        ClassLoader callerLoader = StackCallerClassLoaderResolver.resolveExternalCaller(ownClassLoader);
-        if (callerLoader == null) {
-            throw new SecurityException("Could not resolve caller class loader.");
-        }
+        List<ClassLoader> callerChain = StackCallerClassLoaderResolver.resolveExternalCallerChain(ownClassLoader);
+        Plugin resolvedPlugin = null;
+        ClassLoader resolvedLoader = null;
 
-        for (Plugin plugin : Bukkit.getPluginManager().getPlugins()) {
-            if (plugin.getClass().getClassLoader() == callerLoader) {
-                return new CallerContext(plugin.getName(), callerLoader);
+        for (ClassLoader callerLoader : callerChain) {
+            Plugin plugin = findPluginByClassLoader(callerLoader);
+            if (plugin == null) {
+                continue;
+            }
+            if (resolvedPlugin == null) {
+                resolvedPlugin = plugin;
+                resolvedLoader = callerLoader;
+                continue;
+            }
+            if (callerLoader != resolvedLoader) {
+                throw new SecurityException("Ambiguous caller plugin chain detected.");
             }
         }
 
-        throw new SecurityException("Caller class loader is not mapped to a Bukkit plugin.");
+        if (resolvedPlugin == null || resolvedLoader == null) {
+            throw new SecurityException("Caller class loader is not mapped to a Bukkit plugin.");
+        }
+        return new CallerContext(resolvedPlugin.getName(), resolvedLoader);
+    }
+
+    private static Plugin findPluginByClassLoader(ClassLoader callerLoader) {
+        for (Plugin plugin : Bukkit.getPluginManager().getPlugins()) {
+            if (plugin.getClass().getClassLoader() == callerLoader) {
+                return plugin;
+            }
+        }
+        return null;
     }
 }

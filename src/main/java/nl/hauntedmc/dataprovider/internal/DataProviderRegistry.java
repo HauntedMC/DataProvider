@@ -27,10 +27,22 @@ class DataProviderRegistry {
     protected DatabaseProvider registerDatabase(String pluginName, DatabaseType databaseType, String connectionIdentifier) {
         DatabaseConnectionKey key = new DatabaseConnectionKey(pluginName, databaseType, connectionIdentifier);
 
-        DatabaseProvider existingProvider = activeDatabases.get(key);
-        if (existingProvider != null) {
-            logger.info(pluginName + " already has a " + databaseType.name() + " connection with identifier: " + connectionIdentifier);
-            return existingProvider;
+        while (true) {
+            DatabaseProvider existingProvider = activeDatabases.get(key);
+            if (existingProvider == null) {
+                break;
+            }
+            if (isProviderHealthy(existingProvider, key)) {
+                logger.info(pluginName + " already has a " + databaseType.name() + " connection with identifier: " + connectionIdentifier);
+                return existingProvider;
+            }
+            if (!activeDatabases.remove(key, existingProvider)) {
+                continue;
+            }
+            disconnectQuietly(existingProvider, key, "stale existing connection");
+            logger.warn("Removed stale " + databaseType.name() + " connection for " + pluginName
+                    + " (" + connectionIdentifier + ") before re-registering.");
+            break;
         }
 
         if (!configHandler.isDatabaseTypeEnabled(databaseType)) {
@@ -76,6 +88,23 @@ class DataProviderRegistry {
             }
             logger.error("Failed to register database for " + pluginName, e);
             return null;
+        }
+    }
+
+    private boolean isProviderHealthy(DatabaseProvider provider, DatabaseConnectionKey key) {
+        try {
+            return provider.isConnected();
+        } catch (Exception e) {
+            logger.warn("Provider health check failed for " + key + ". Treating connection as stale.");
+            return false;
+        }
+    }
+
+    private void disconnectQuietly(DatabaseProvider provider, DatabaseConnectionKey key, String reason) {
+        try {
+            provider.disconnect();
+        } catch (Exception e) {
+            logger.error("Failed to clean up " + reason + " for " + key, e);
         }
     }
 

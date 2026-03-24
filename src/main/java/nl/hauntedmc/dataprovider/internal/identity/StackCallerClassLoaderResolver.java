@@ -1,5 +1,6 @@
 package nl.hauntedmc.dataprovider.internal.identity;
 
+import java.util.List;
 import java.util.Objects;
 
 /**
@@ -21,6 +22,29 @@ public final class StackCallerClassLoaderResolver {
                 .map(Class::getClassLoader)
                 .filter(Objects::nonNull)
                 .filter(classLoader -> classLoader != ownClassLoader)
+                .findFirst()
+                .orElse(null));
+    }
+
+    public static List<ClassLoader> resolveExternalCallerChain(ClassLoader ownClassLoader) {
+        Objects.requireNonNull(ownClassLoader, "Own class loader cannot be null.");
+
+        return STACK_WALKER.walk(frames -> frames
+                .map(StackWalker.StackFrame::getDeclaringClass)
+                .map(Class::getClassLoader)
+                .filter(Objects::nonNull)
+                .filter(classLoader -> classLoader != ownClassLoader)
+                .toList());
+    }
+
+    public static ClassLoader resolveNearestCallerOutsidePackage(String packagePrefix) {
+        Objects.requireNonNull(packagePrefix, "Package prefix cannot be null.");
+
+        return STACK_WALKER.walk(frames -> frames
+                .map(StackWalker.StackFrame::getDeclaringClass)
+                .filter(declaringClass -> !declaringClass.getName().startsWith(packagePrefix))
+                .map(Class::getClassLoader)
+                .filter(Objects::nonNull)
                 .findFirst()
                 .orElse(null));
     }

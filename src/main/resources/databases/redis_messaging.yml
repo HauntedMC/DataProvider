@@ -12,4 +12,7 @@ default_credentials:
   pool:
     connections: 8
     threads:     8
+    queue_capacity: 1600
     max_subscriptions: 64
+  security:
+    max_payload_chars: 32768

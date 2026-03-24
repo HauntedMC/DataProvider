@@ -1,5 +1,6 @@
 package nl.hauntedmc.dataprovider.database.messaging.impl.redis;
 
+import nl.hauntedmc.dataprovider.internal.concurrent.BoundedExecutorFactory;
 import nl.hauntedmc.dataprovider.database.messaging.MessagingDataAccess;
 import nl.hauntedmc.dataprovider.database.messaging.MessagingDatabaseProvider;
 import nl.hauntedmc.dataprovider.database.messaging.api.MessageRegistry;
@@ -10,7 +11,6 @@ import redis.clients.jedis.*;
 
 import java.util.Objects;
 import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 
 /**
@@ -43,7 +43,9 @@ public final class RedisMessagingDatabase implements MessagingDatabaseProvider {
         String pass = cfg.node("password").getString("");
         int connectionPoolSize = Math.max(1, cfg.node("pool", "connections").getInt(4));
         int workerPoolSize = Math.max(1, cfg.node("pool", "threads").getInt(8));
+        int workerQueueCapacity = Math.max(workerPoolSize, cfg.node("pool", "queue_capacity").getInt(workerPoolSize * 200));
         int maxSubscriptions = Math.max(1, cfg.node("pool", "max_subscriptions").getInt(64));
+        int maxPayloadChars = Math.max(256, cfg.node("security", "max_payload_chars").getInt(32_768));
         boolean tlsEnabled = cfg.node("tls", "enabled").getBoolean(false);
         boolean verifyHostname = cfg.node("tls", "verify_hostname").getBoolean(true);
         boolean trustAllCertificates = cfg.node("tls", "trust_all_certificates").getBoolean(false);
@@ -82,18 +84,20 @@ public final class RedisMessagingDatabase implements MessagingDatabaseProvider {
                 jedis.ping();
             }
 
-            workers = Executors.newFixedThreadPool(workerPoolSize);
-            bus = new RedisMessagingDataAccess(pool, workers, logger, messageRegistry, maxSubscriptions);
+            workers = BoundedExecutorFactory.create("dataprovider-redis-msg", workerPoolSize, workerQueueCapacity);
+            bus = new RedisMessagingDataAccess(pool, workers, logger, messageRegistry, maxSubscriptions, maxPayloadChars);
             connected = true;
 
             logger.info(String.format(
-                    "[RedisMessagingDatabase] Connected to Redis messaging at %s:%d (db=%d, auth=%s, tls=%s, maxSubscriptions=%d)",
+                    "[RedisMessagingDatabase] Connected to Redis messaging at %s:%d (db=%d, auth=%s, tls=%s, maxSubscriptions=%d, queueCapacity=%d, maxPayloadChars=%d)",
                     host,
                     port,
                     db,
                     pass.isEmpty() ? "disabled" : "enabled",
                     tlsEnabled ? "enabled" : "disabled",
-                    maxSubscriptions
+                    maxSubscriptions,
+                    workerQueueCapacity,
+                    maxPayloadChars
             ));
         } catch (Exception e) {
             connected = false;

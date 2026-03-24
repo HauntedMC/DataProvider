@@ -5,6 +5,7 @@ import nl.hauntedmc.dataprovider.internal.identity.CallerContext;
 import nl.hauntedmc.dataprovider.internal.identity.CallerContextResolver;
 import nl.hauntedmc.dataprovider.internal.identity.StackCallerClassLoaderResolver;
 
+import java.util.List;
 import java.util.Objects;
 
 /**
@@ -22,17 +23,34 @@ public final class VelocityCallerContextResolver implements CallerContextResolve
 
     @Override
     public CallerContext resolveCaller() {
-        ClassLoader callerLoader = StackCallerClassLoaderResolver.resolveExternalCaller(ownClassLoader);
-        if (callerLoader == null) {
-            throw new SecurityException("Could not resolve caller class loader.");
+        List<ClassLoader> callerChain = StackCallerClassLoaderResolver.resolveExternalCallerChain(ownClassLoader);
+        String resolvedPluginId = null;
+        ClassLoader resolvedLoader = null;
+
+        for (ClassLoader callerLoader : callerChain) {
+            String pluginId = proxyServer.getPluginManager().getPlugins().stream()
+                    .filter(container -> container.getInstance()
+                            .map(instance -> instance.getClass().getClassLoader() == callerLoader)
+                            .orElse(false))
+                    .findFirst()
+                    .map(container -> container.getDescription().getId())
+                    .orElse(null);
+            if (pluginId == null) {
+                continue;
+            }
+            if (resolvedLoader == null) {
+                resolvedLoader = callerLoader;
+                resolvedPluginId = pluginId;
+                continue;
+            }
+            if (resolvedLoader != callerLoader) {
+                throw new SecurityException("Ambiguous caller plugin chain detected.");
+            }
         }
 
-        return proxyServer.getPluginManager().getPlugins().stream()
-                .filter(container -> container.getInstance()
-                        .map(instance -> instance.getClass().getClassLoader() == callerLoader)
-                        .orElse(false))
-                .findFirst()
-                .map(container -> new CallerContext(container.getDescription().getId(), callerLoader))
-                .orElseThrow(() -> new SecurityException("Caller class loader is not mapped to a Velocity plugin."));
+        if (resolvedPluginId == null || resolvedLoader == null) {
+            throw new SecurityException("Caller class loader is not mapped to a Velocity plugin.");
+        }
+        return new CallerContext(resolvedPluginId, resolvedLoader);
     }
 }

@@ -8,3 +8,4 @@ default_credentials:
   require_secure_transport: false
   allow_public_key_retrieval: false
   pool_size: 10
+  queue_capacity: 2000
