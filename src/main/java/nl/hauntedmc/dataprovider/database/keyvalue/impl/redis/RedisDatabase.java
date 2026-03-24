@@ -4,6 +4,8 @@ import nl.hauntedmc.dataprovider.DataProvider;
 import nl.hauntedmc.dataprovider.database.keyvalue.KeyValueDataAccess;
 import nl.hauntedmc.dataprovider.database.keyvalue.KeyValueDatabaseProvider;
 import org.spongepowered.configurate.CommentedConfigurationNode;
+import redis.clients.jedis.DefaultJedisClientConfig;
+import redis.clients.jedis.HostAndPort;
 import redis.clients.jedis.JedisPool;
 import redis.clients.jedis.JedisPoolConfig;
 
@@ -34,27 +36,39 @@ public class RedisDatabase implements KeyValueDatabaseProvider {
         try {
             final String host = config.node("host").getString("localhost");
             final int port = config.node("port").getInt(6379);
+            final String user = config.node("user").getString(null);
             final String password = config.node("password").getString(null);
             final int databaseIndex = config.node("database").getInt(0);
-            final int poolSize = config.node("pool_size").getInt(8);
+            final int poolSize = Math.max(1,
+                    config.node("pool_size").getInt(config.node("pool", "connections").getInt(8)));
 
             JedisPoolConfig poolConfig = new JedisPoolConfig();
             poolConfig.setMaxTotal(poolSize);
 
-            if (password != null && !password.isEmpty()) {
-                jedisPool = new JedisPool(poolConfig, host, port, 2000, password, databaseIndex);
-            } else {
-                jedisPool = new JedisPool(poolConfig, host, port, 2000, null, databaseIndex);
-            }
+            DefaultJedisClientConfig clientConfig = DefaultJedisClientConfig.builder()
+                    .user((user == null || user.isBlank()) ? null : user)
+                    .password((password == null || password.isBlank()) ? null : password)
+                    .database(databaseIndex)
+                    .connectionTimeoutMillis(2000)
+                    .socketTimeoutMillis(2000)
+                    .build();
+
+            jedisPool = new JedisPool(poolConfig, new HostAndPort(host, port), clientConfig);
 
             executor = Executors.newFixedThreadPool(poolSize);
             dataAccess = new RedisDataAccess(jedisPool, executor);
 
             connected = true;
-            DataProvider.getLogger().info(String.format("[RedisDatabase] Connected to Redis at %s:%d (DB %d), poolSize=%d", host, port, databaseIndex, poolSize));
+            DataProvider.getLogger().info(String.format(
+                    "[RedisDatabase] Connected to Redis at %s:%d (DB %d, auth=%s), poolSize=%d",
+                    host,
+                    port,
+                    databaseIndex,
+                    (password != null && !password.isBlank()) ? "enabled" : "disabled",
+                    poolSize
+            ));
         } catch (Exception e) {
-            DataProvider.getLogger().error("[RedisDatabase] Connection failed: " + e.getMessage());
-            e.printStackTrace();
+            DataProvider.getLogger().error("[RedisDatabase] Connection failed.", e);
         }
     }
 

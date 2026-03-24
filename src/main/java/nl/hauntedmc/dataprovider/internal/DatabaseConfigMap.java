@@ -16,13 +16,14 @@ import java.util.Map;
 
 class DatabaseConfigMap {
 
-    private static final Map<DatabaseType, CommentedConfigurationNode> configMap = new HashMap<>();
+    private final Map<DatabaseType, CommentedConfigurationNode> configMap = new HashMap<>();
 
     protected DatabaseConfigMap() {
         initialize();
     }
 
     private void initialize() {
+        configMap.clear();
         File databasesFolder = new File(String.valueOf(DataProvider.getDataPath()), "databases");
         if (!databasesFolder.exists() && !databasesFolder.mkdirs()) {
             DataProvider.getLogger().warn("Failed to create databases folder at: " + databasesFolder.getAbsolutePath());

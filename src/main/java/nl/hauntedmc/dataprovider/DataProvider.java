@@ -21,7 +21,7 @@ public class DataProvider {
     private static ClassLoader parentClassLoader;
 
     public DataProvider(ILoggerAdapter logger, Path dataDirectory, ClassLoader classLoader) {
-        parentClassLoader = classLoader;;
+        parentClassLoader = classLoader;
         logInstance = logger;
         dataPath = dataDirectory;
 

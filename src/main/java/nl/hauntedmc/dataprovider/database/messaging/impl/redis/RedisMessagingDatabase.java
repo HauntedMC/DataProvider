@@ -32,9 +32,11 @@ public final class RedisMessagingDatabase implements MessagingDatabaseProvider {
         int db = cfg.node("database").getInt(0);
         String user = cfg.node("user").getString("plugin");
         String pass = cfg.node("password").getString("");
+        int connectionPoolSize = Math.max(1, cfg.node("pool", "connections").getInt(4));
+        int workerPoolSize = Math.max(1, cfg.node("pool", "threads").getInt(8));
 
         JedisPoolConfig poolConfig = new JedisPoolConfig();
-        poolConfig.setMaxTotal(cfg.node("pool", "connections").getInt(4));
+        poolConfig.setMaxTotal(connectionPoolSize);
 
         DefaultJedisClientConfig clientConfig = DefaultJedisClientConfig.builder()
                 .user(user)
@@ -45,7 +47,7 @@ public final class RedisMessagingDatabase implements MessagingDatabaseProvider {
         HostAndPort nodeHp = new HostAndPort(host, port);
         pool = new JedisPool(poolConfig, nodeHp, clientConfig);
 
-        workers = Executors.newFixedThreadPool(cfg.node("pool", "threads").getInt(8));
+        workers = Executors.newFixedThreadPool(workerPoolSize);
         bus = new RedisMessagingDataAccess(pool, workers);
 
         connected = true;

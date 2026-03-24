@@ -9,6 +9,8 @@ import nl.hauntedmc.dataprovider.database.document.DocumentDataAccess;
 import nl.hauntedmc.dataprovider.database.document.DocumentDatabaseProvider;
 import org.spongepowered.configurate.CommentedConfigurationNode;
 
+import java.net.URLEncoder;
+import java.nio.charset.StandardCharsets;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
@@ -45,12 +47,18 @@ public class MongoDBDatabase implements DocumentDatabaseProvider {
             final String connectionString;
             if (!user.isEmpty() && !password.isEmpty()) {
                 connectionString = String.format("mongodb://%s:%s@%s:%d/%s?authSource=%s",
-                        user, password, host, port, databaseName, authSource);
+                        encodeCredential(user), encodeCredential(password), host, port, databaseName, authSource);
             } else {
                 connectionString = String.format("mongodb://%s:%d/%s", host, port, databaseName);
             }
 
-            DataProvider.getLogger().info("[MongoDBDatabase] Connecting with: " + connectionString);
+            DataProvider.getLogger().info(String.format(
+                    "[MongoDBDatabase] Connecting to Mongo at %s:%d (database=%s, auth=%s)",
+                    host,
+                    port,
+                    databaseName,
+                    (!user.isEmpty() && !password.isEmpty()) ? "enabled" : "disabled"
+            ));
 
             ConnectionString connString = new ConnectionString(connectionString);
             MongoClientSettings settings = MongoClientSettings.builder()
@@ -60,7 +68,7 @@ public class MongoDBDatabase implements DocumentDatabaseProvider {
 
             mongoClient = MongoClients.create(settings);
 
-            final int poolSize = config.node("pool_size").getInt(8);
+            final int poolSize = Math.max(1, config.node("pool_size").getInt(8));
             executor = Executors.newFixedThreadPool(poolSize);
 
             dataAccess = new MongoDBDataAccess(mongoClient, databaseName, executor);
@@ -68,8 +76,7 @@ public class MongoDBDatabase implements DocumentDatabaseProvider {
             connected = true;
             DataProvider.getLogger().info(String.format("[MongoDBDatabase] Connected successfully to Mongo at %s:%d", host, port));
         } catch (Exception e) {
-            DataProvider.getLogger().error("[MongoDBDatabase] Connection failed: " + e.getMessage());
-            e.printStackTrace();
+            DataProvider.getLogger().error("[MongoDBDatabase] Connection failed.", e);
         }
     }
 
@@ -94,5 +101,9 @@ public class MongoDBDatabase implements DocumentDatabaseProvider {
     @Override
     public DocumentDataAccess getDataAccess() {
         return dataAccess;
+    }
+
+    private static String encodeCredential(String value) {
+        return URLEncoder.encode(value, StandardCharsets.UTF_8).replace("+", "%20");
     }
 }

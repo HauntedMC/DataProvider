@@ -42,13 +42,22 @@ public class MySQLDatabase implements RelationalDatabaseProvider {
             final String databaseName = config.node("database").getString("minecraft");
             final String user = config.node("username").getString("root");
             final String password = config.node("password").getString("");
+            final String sslMode = config.node("ssl_mode").getString("PREFERRED");
+            final boolean allowPublicKeyRetrieval = config.node("allow_public_key_retrieval").getBoolean(false);
 
-            final String jdbcUrl = String.format("jdbc:mysql://%s:%d/%s?useSSL=false&characterEncoding=UTF-8", host, port, databaseName);
+            final String jdbcUrl = String.format(
+                    "jdbc:mysql://%s:%d/%s?characterEncoding=UTF-8&sslMode=%s&allowPublicKeyRetrieval=%s",
+                    host,
+                    port,
+                    databaseName,
+                    sslMode,
+                    allowPublicKeyRetrieval
+            );
             hikariConfig.setJdbcUrl(jdbcUrl);
             hikariConfig.setUsername(user);
             hikariConfig.setPassword(password);
 
-            final int poolSize = config.node("pool_size").getInt(10);
+            final int poolSize = Math.max(1, config.node("pool_size").getInt(10));
             hikariConfig.setMaximumPoolSize(poolSize);
             hikariConfig.setConnectionTimeout(30000);
             hikariConfig.setIdleTimeout(600000);
@@ -60,7 +69,13 @@ public class MySQLDatabase implements RelationalDatabaseProvider {
             this.dataAccess = new MySQLDataAccess(dataSource, executor);
             this.schemaManager = new MySQLSchemaManager(dataSource, executor);
 
-            DataProvider.getLogger().info("[MySQLDatabase] Connected successfully to " + jdbcUrl);
+            DataProvider.getLogger().info(String.format(
+                    "[MySQLDatabase] Connected successfully to MySQL at %s:%d (database=%s, sslMode=%s)",
+                    host,
+                    port,
+                    databaseName,
+                    sslMode
+            ));
         } catch (Exception e) {
             DataProvider.getLogger().error("[MySQLDatabase] Connection failed!", e);
         }

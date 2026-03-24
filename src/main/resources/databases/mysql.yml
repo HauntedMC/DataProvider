@@ -4,4 +4,6 @@ default_credentials:
   database: minecraft
   username: root
   password: ""
+  ssl_mode: PREFERRED
+  allow_public_key_retrieval: false
   pool_size: 10

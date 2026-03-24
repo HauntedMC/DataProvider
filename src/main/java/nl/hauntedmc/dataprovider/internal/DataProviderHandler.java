@@ -5,6 +5,7 @@ import nl.hauntedmc.dataprovider.database.DatabaseConnectionKey;
 import nl.hauntedmc.dataprovider.database.DatabaseType;
 import nl.hauntedmc.dataprovider.database.DatabaseProvider;
 
+import java.util.Objects;
 import java.util.concurrent.ConcurrentMap;
 
 /**
@@ -37,6 +38,7 @@ public class DataProviderHandler {
      * @throws SecurityException if the provided plugin instance is not registered.
      */
     public boolean authenticate(String pluginName, String token) {
+        requirePluginName(pluginName);
         return securityManager.authorize(pluginName, token);
     }
 
@@ -50,6 +52,9 @@ public class DataProviderHandler {
      * @throws SecurityException if the plugin is not registered or not authorized.
      */
     public DatabaseProvider registerDatabase(String pluginName, DatabaseType databaseType, String connectionIdentifier) {
+        requirePluginName(pluginName);
+        Objects.requireNonNull(databaseType, "Database type cannot be null");
+        requireConnectionIdentifier(connectionIdentifier);
         authorizationCheck(pluginName);
         return registry.registerDatabase(pluginName, databaseType, connectionIdentifier);
     }
@@ -63,6 +68,9 @@ public class DataProviderHandler {
      * @throws SecurityException if the plugin is not registered or not authorized.
      */
     public void unregisterDatabase(String pluginName, DatabaseType databaseType, String connectionIdentifier) {
+        requirePluginName(pluginName);
+        Objects.requireNonNull(databaseType, "Database type cannot be null");
+        requireConnectionIdentifier(connectionIdentifier);
         authorizationCheck(pluginName);
         registry.unregisterDatabase(pluginName, databaseType, connectionIdentifier);
     }
@@ -74,8 +82,10 @@ public class DataProviderHandler {
      * @throws SecurityException if the plugin is not registered or not authorized.
      */
     public void unregisterAllDatabases(String pluginName) {
+        requirePluginName(pluginName);
         authorizationCheck(pluginName);
         registry.unregisterAllDatabases(pluginName);
+        securityManager.revokeAuthorization(pluginName);
     }
 
     /**
@@ -95,12 +105,15 @@ public class DataProviderHandler {
      * @throws SecurityException if the plugin is not registered or not authorized.
      */
     public DatabaseProvider getRegisteredDatabase(String pluginName, DatabaseType databaseType, String connectionIdentifier) {
+        requirePluginName(pluginName);
+        Objects.requireNonNull(databaseType, "Database type cannot be null");
+        requireConnectionIdentifier(connectionIdentifier);
         authorizationCheck(pluginName);
         return registry.getDatabase(pluginName, databaseType, connectionIdentifier);
     }
 
     /**
-     * Returns a view of the active database connections.
+     * Returns a snapshot of active database connections.
      * <p>
      * Note: This method is provided for debugging/administrative purposes.
      * </p>
@@ -115,6 +128,18 @@ public class DataProviderHandler {
         if (!securityManager.isAuthorized(pluginName)) {
             DataProvider.getLogger().error("Plugin " + pluginName + " is not authorized. Please authenticate first.");
             throw new SecurityException("Plugin " + pluginName + " is not authorized. Please authenticate first.");
+        }
+    }
+
+    private static void requirePluginName(String pluginName) {
+        if (pluginName == null || pluginName.isBlank()) {
+            throw new IllegalArgumentException("Plugin name cannot be null or blank.");
+        }
+    }
+
+    private static void requireConnectionIdentifier(String connectionIdentifier) {
+        if (connectionIdentifier == null || connectionIdentifier.isBlank()) {
+            throw new IllegalArgumentException("Connection identifier cannot be null or blank.");
         }
     }
 

@@ -34,7 +34,7 @@ public class MemcachedDatabase implements KeyValueDatabaseProvider {
         try {
             final String host = config.node("host").getString("localhost");
             final int port = config.node("port").getInt(11211);
-            final int poolSize = config.node("pool_size").getInt(8);
+            final int poolSize = Math.max(1, config.node("pool_size").getInt(8));
 
             memcachedClient = new MemcachedClient(new InetSocketAddress(host, port));
             DataProvider.getLogger().info(String.format("[MemcachedDatabase] Connected to Memcached at %s:%d", host, port));
@@ -44,8 +44,7 @@ public class MemcachedDatabase implements KeyValueDatabaseProvider {
 
             connected = true;
         } catch (Exception e) {
-            DataProvider.getLogger().error("[MemcachedDatabase] Connection failed: " + e.getMessage());
-            e.printStackTrace();
+            DataProvider.getLogger().error("[MemcachedDatabase] Connection failed.", e);
         }
     }
 

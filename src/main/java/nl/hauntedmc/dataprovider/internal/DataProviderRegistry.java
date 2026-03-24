@@ -14,16 +14,17 @@ class DataProviderRegistry {
     private final ConcurrentMap<DatabaseConnectionKey, DatabaseProvider> activeDatabases = new ConcurrentHashMap<>();
     private final DatabaseFactory factory;
 
-    public DataProviderRegistry( DatabaseFactory factory) {
+    public DataProviderRegistry(DatabaseFactory factory) {
         this.factory = factory;
     }
 
     protected DatabaseProvider registerDatabase(String pluginName, DatabaseType databaseType, String connectionIdentifier) {
         DatabaseConnectionKey key = new DatabaseConnectionKey(pluginName, databaseType, connectionIdentifier);
 
-        if (activeDatabases.containsKey(key)) {
+        DatabaseProvider existingProvider = activeDatabases.get(key);
+        if (existingProvider != null) {
             DataProvider.getLogger().info(pluginName + " already has a " + databaseType.name() + " connection with identifier: " + connectionIdentifier);
-            return activeDatabases.get(key);
+            return existingProvider;
         }
 
         if (!DataProvider.getConfigHandler().isDatabaseTypeEnabled(databaseType)) {
@@ -41,7 +42,16 @@ class DataProviderRegistry {
                 DataProvider.getLogger().error("Failed to establish connection for " + pluginName + " with " + databaseType.name() + " (" + connectionIdentifier + ")");
                 return null;
             }
-            activeDatabases.put(key, databaseProvider);
+            DatabaseProvider raceWinner = activeDatabases.putIfAbsent(key, databaseProvider);
+            if (raceWinner != null) {
+                try {
+                    databaseProvider.disconnect();
+                } catch (Exception e) {
+                    DataProvider.getLogger().error("Failed to clean up duplicate connection for " + key, e);
+                }
+                DataProvider.getLogger().info(pluginName + " already has a " + databaseType.name() + " connection with identifier: " + connectionIdentifier);
+                return raceWinner;
+            }
             DataProvider.getLogger().info(pluginName + " registered " + databaseType.name() + " connection (" + connectionIdentifier + ")");
             return databaseProvider;
         } catch (Exception e) {
@@ -91,6 +101,6 @@ class DataProviderRegistry {
     }
 
     protected ConcurrentMap<DatabaseConnectionKey, DatabaseProvider> getActiveDatabases() {
-        return activeDatabases;
+        return new ConcurrentHashMap<>(activeDatabases);
     }
 }
