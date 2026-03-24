@@ -1,7 +1,7 @@
 package nl.hauntedmc.dataprovider.config;
 
-import nl.hauntedmc.dataprovider.DataProvider;
 import nl.hauntedmc.dataprovider.database.DatabaseType;
+import nl.hauntedmc.dataprovider.platform.common.logger.ILoggerAdapter;
 import org.spongepowered.configurate.CommentedConfigurationNode;
 import org.spongepowered.configurate.loader.ConfigurationLoader;
 import org.spongepowered.configurate.serialize.SerializationException;
@@ -12,13 +12,15 @@ import java.io.InputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Locale;
+import java.util.Objects;
 import java.util.Set;
 
 public class ConfigHandler {
 
-    private static final String DEFAULT_ORM_SCHEMA_MODE = "update";
-    private static final Set<String> SUPPORTED_ORM_SCHEMA_MODES = Set.of("update", "create", "validate", "none");
+    private static final String DEFAULT_ORM_SCHEMA_MODE = "validate";
+    private static final Set<String> SUPPORTED_ORM_SCHEMA_MODES = Set.of("validate", "none", "update", "create");
 
+    private final ILoggerAdapter logger;
     private CommentedConfigurationNode config;
     private final Path configFile;
     private final ConfigurationLoader<CommentedConfigurationNode> loader;
@@ -26,9 +28,9 @@ public class ConfigHandler {
     /**
      * Creates a new ConfigHandler using a default data directory and config file.
      */
-    public ConfigHandler() {
-        // Define a default data directory, for example "plugins/DataProvider" relative to the working directory.
-        Path dataDir = DataProvider.getDataPath();
+    public ConfigHandler(Path dataDir, ILoggerAdapter logger) {
+        this.logger = Objects.requireNonNull(logger, "Logger cannot be null.");
+        Objects.requireNonNull(dataDir, "Data directory cannot be null.");
         this.configFile = dataDir.resolve("config.yml");
         this.loader = YamlConfigurationLoader.builder()
                 .path(configFile)
@@ -53,7 +55,7 @@ public class ConfigHandler {
                     } else {
                         // Keep bootstrap deterministic even if the resource is missing.
                         Files.createFile(configFile);
-                        DataProvider.getLogger().warn("Default config.yml not found in resources. Created an empty config.yml.");
+                        logger.warn("Default config.yml not found in resources. Created an empty config.yml.");
                     }
                 }
             }
@@ -106,7 +108,7 @@ public class ConfigHandler {
 
         if (changed) {
             saveConfig();
-            DataProvider.getLogger().info("Updated config.yml with missing default values.");
+            logger.info("Updated config.yml with missing default values.");
         }
     }
 
@@ -164,7 +166,7 @@ public class ConfigHandler {
             return normalizedMode;
         }
 
-        DataProvider.getLogger().warn("Invalid orm.schema_mode '" + configuredMode
+        logger.warn("Invalid orm.schema_mode '" + configuredMode
                 + "'. Falling back to '" + DEFAULT_ORM_SCHEMA_MODE
                 + "'. Supported values: update, create, validate, none.");
         return DEFAULT_ORM_SCHEMA_MODE;

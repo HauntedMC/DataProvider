@@ -1,0 +1,27 @@
+package nl.hauntedmc.dataprovider.internal.identity;
+
+import java.util.Objects;
+
+/**
+ * Resolves caller class loaders from stack frames.
+ */
+public final class StackCallerClassLoaderResolver {
+
+    private static final StackWalker STACK_WALKER =
+            StackWalker.getInstance(StackWalker.Option.RETAIN_CLASS_REFERENCE);
+
+    private StackCallerClassLoaderResolver() {
+    }
+
+    public static ClassLoader resolveExternalCaller(ClassLoader ownClassLoader) {
+        Objects.requireNonNull(ownClassLoader, "Own class loader cannot be null.");
+
+        return STACK_WALKER.walk(frames -> frames
+                .map(StackWalker.StackFrame::getDeclaringClass)
+                .map(Class::getClassLoader)
+                .filter(Objects::nonNull)
+                .filter(classLoader -> classLoader != ownClassLoader)
+                .findFirst()
+                .orElse(null));
+    }
+}

@@ -1,7 +1,7 @@
 package nl.hauntedmc.dataprovider.internal;
 
-import nl.hauntedmc.dataprovider.DataProvider;
 import nl.hauntedmc.dataprovider.database.DatabaseType;
+import nl.hauntedmc.dataprovider.platform.common.logger.ILoggerAdapter;
 import org.spongepowered.configurate.CommentedConfigurationNode;
 import org.spongepowered.configurate.loader.ConfigurationLoader;
 import org.spongepowered.configurate.yaml.YamlConfigurationLoader;
@@ -9,33 +9,42 @@ import org.spongepowered.configurate.yaml.YamlConfigurationLoader;
 import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
+import java.net.URL;
+import java.net.URLConnection;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.Objects;
 
 class DatabaseConfigMap {
 
+    private final Path dataPath;
+    private final ILoggerAdapter logger;
+    private final ClassLoader resourceClassLoader;
     private final Map<DatabaseType, CommentedConfigurationNode> configMap = new HashMap<>();
 
-    protected DatabaseConfigMap() {
+    protected DatabaseConfigMap(Path dataPath, ILoggerAdapter logger, ClassLoader resourceClassLoader) {
+        this.dataPath = Objects.requireNonNull(dataPath, "Data path cannot be null.");
+        this.logger = Objects.requireNonNull(logger, "Logger cannot be null.");
+        this.resourceClassLoader = Objects.requireNonNull(resourceClassLoader, "Resource class loader cannot be null.");
         initialize();
     }
 
     private void initialize() {
         configMap.clear();
-        File databasesFolder = new File(String.valueOf(DataProvider.getDataPath()), "databases");
+        File databasesFolder = new File(String.valueOf(dataPath), "databases");
         if (!databasesFolder.exists() && !databasesFolder.mkdirs()) {
-            DataProvider.getLogger().warn("Failed to create databases folder at: " + databasesFolder.getAbsolutePath());
+            logger.warn("Failed to create databases folder at: " + databasesFolder.getAbsolutePath());
         } else {
-            DataProvider.getLogger().info("Databases folder located at: " + databasesFolder.getAbsolutePath());
+            logger.info("Databases folder located at: " + databasesFolder.getAbsolutePath());
         }
 
         for (DatabaseType type : DatabaseType.values()) {
             File configFile = new File(databasesFolder, type.getConfigFileName());
             if (!configFile.exists()) {
                 if (!copyDefaultConfigFromResources(type.getConfigFileName(), configFile)) {
-                    DataProvider.getLogger().warn("No default config found for " + type.name()
+                    logger.warn("No default config found for " + type.name()
                             + ". Please create " + configFile.getName() + " manually if needed.");
                 }
             }
@@ -48,25 +57,35 @@ class DatabaseConfigMap {
                     CommentedConfigurationNode node = loader.load();
                     configMap.put(type, node);
                 } catch (IOException e) {
-                    DataProvider.getLogger().error("Failed to load config for " + type.name(), e);
+                    logger.error("Failed to load config for " + type.name(), e);
                 }
             }
         }
-        DataProvider.getLogger().info("Loaded " + configMap.size() + " database configurations.");
+        logger.info("Loaded " + configMap.size() + " database configurations.");
     }
 
     private boolean copyDefaultConfigFromResources(String resourcePath, File destinationFile) {
-        try (InputStream in = DataProvider.getResource("databases/" + resourcePath)) {
+        try (InputStream in = openResource("databases/" + resourcePath)) {
             if (in == null) {
                 return false;
             }
             Files.copy(in, destinationFile.toPath());
-            DataProvider.getLogger().info("Copied default config: " + resourcePath);
+            logger.info("Copied default config: " + resourcePath);
             return true;
         } catch (IOException e) {
-            DataProvider.getLogger().error("Failed to copy default config: " + resourcePath, e);
+            logger.error("Failed to copy default config: " + resourcePath, e);
             return false;
         }
+    }
+
+    private InputStream openResource(String resourcePath) throws IOException {
+        URL url = resourceClassLoader.getResource(resourcePath);
+        if (url == null) {
+            return null;
+        }
+        URLConnection connection = url.openConnection();
+        connection.setUseCaches(false);
+        return connection.getInputStream();
     }
 
     /**
@@ -81,12 +100,12 @@ class DatabaseConfigMap {
         if (config != null) {
             CommentedConfigurationNode section = config.node(connectionIdentifier);
             if (section.virtual()) {
-                DataProvider.getLogger().warn("No configuration section found for " + connectionIdentifier + " in " + type.getConfigFileName());
+                logger.warn("No configuration section found for " + connectionIdentifier + " in " + type.getConfigFileName());
                 return null;
             }
             return section;
         } else {
-            DataProvider.getLogger().warn("No configuration loaded for database type " + type.name());
+            logger.warn("No configuration loaded for database type " + type.name());
             return null;
         }
     }

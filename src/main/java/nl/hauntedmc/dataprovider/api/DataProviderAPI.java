@@ -25,57 +25,41 @@ public class DataProviderAPI {
     }
 
     /**
-     * Authenticates the calling plugin using a secret token.
+     * Registers a database connection for the resolved caller plugin.
      *
-     * @param pluginName the calling plugin (typically "this")
-     * @param token  the secret token provided by the plugin
-     * @return true if authentication is successful, false otherwise.
-     */
-    public boolean authenticate(String pluginName, String token) {
-        return handler.authenticate(pluginName, token);
-    }
-
-    /**
-     * Registers a database connection for the calling plugin.
-     *
-     * @param pluginName               the calling plugin (typically "this")
      * @param databaseType         the type of database (e.g. MYSQL, MONGODB, etc.)
      * @param connectionIdentifier a unique identifier for the connection
      * @return the registered {@link DatabaseProvider} instance.
      */
-    public DatabaseProvider registerDatabase(String pluginName, DatabaseType databaseType, String connectionIdentifier) {
-        return handler.registerDatabase(pluginName, databaseType, connectionIdentifier);
+    public DatabaseProvider registerDatabase(DatabaseType databaseType, String connectionIdentifier) {
+        return handler.registerDatabase(databaseType, connectionIdentifier);
     }
 
     /**
-     * Unregisters a specific database connection for the calling plugin.
+     * Unregisters a specific database connection for the resolved caller plugin.
      *
-     * @param pluginName               the calling plugin (typically "this")
      * @param databaseType         the type of database.
      * @param connectionIdentifier the connection identifier.
      */
-    public void unregisterDatabase(String pluginName, DatabaseType databaseType, String connectionIdentifier) {
-        handler.unregisterDatabase(pluginName, databaseType, connectionIdentifier);
+    public void unregisterDatabase(DatabaseType databaseType, String connectionIdentifier) {
+        handler.unregisterDatabase(databaseType, connectionIdentifier);
     }
 
     /**
-     * Unregisters all database connections for the calling plugin.
-     *
-     * @param pluginName the calling plugin (typically "this")
+     * Unregisters all database connections for the resolved caller plugin.
      */
-    public void unregisterAllDatabases(String pluginName) {
-        handler.unregisterAllDatabases(pluginName);
+    public void unregisterAllDatabases() {
+        handler.unregisterAllDatabases();
     }
 
     /**
-     * Retrieves a registered database connection for the calling plugin.
+     * Retrieves a registered database connection for the resolved caller plugin.
      *
-     * @param pluginName               the calling plugin (typically "this")
      * @param databaseType         the type of database.
      * @param connectionIdentifier the connection identifier.
      * @return the {@link DatabaseProvider} instance, or null if not registered.
      */
-    public DatabaseProvider getRegisteredDatabase(String pluginName, DatabaseType databaseType, String connectionIdentifier) {
-        return handler.getRegisteredDatabase(pluginName, databaseType, connectionIdentifier);
+    public DatabaseProvider getRegisteredDatabase(DatabaseType databaseType, String connectionIdentifier) {
+        return handler.getRegisteredDatabase(databaseType, connectionIdentifier);
     }
 }

@@ -1,16 +1,18 @@
 package nl.hauntedmc.dataprovider.database.keyvalue.impl.redis;
 
-import nl.hauntedmc.dataprovider.DataProvider;
 import nl.hauntedmc.dataprovider.database.keyvalue.KeyValueDataAccess;
 import nl.hauntedmc.dataprovider.database.keyvalue.KeyValueDatabaseProvider;
+import nl.hauntedmc.dataprovider.platform.common.logger.ILoggerAdapter;
 import org.spongepowered.configurate.CommentedConfigurationNode;
 import redis.clients.jedis.DefaultJedisClientConfig;
 import redis.clients.jedis.HostAndPort;
 import redis.clients.jedis.JedisPool;
 import redis.clients.jedis.JedisPoolConfig;
 
+import java.util.Objects;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
 
 /**
  * RedisDatabase implements KeyValueDatabaseProvider, managing a JedisPool and an ExecutorService.
@@ -18,21 +20,25 @@ import java.util.concurrent.Executors;
 public class RedisDatabase implements KeyValueDatabaseProvider {
 
     private final CommentedConfigurationNode config;
+    private final ILoggerAdapter logger;
     private JedisPool jedisPool;
     private ExecutorService executor;
     private RedisDataAccess dataAccess;
     private boolean connected;
 
-    public RedisDatabase(CommentedConfigurationNode config) {
+    public RedisDatabase(CommentedConfigurationNode config, ILoggerAdapter logger) {
         this.config = config;
+        this.logger = Objects.requireNonNull(logger, "Logger cannot be null.");
     }
 
     @Override
     public void connect() {
         if (connected && jedisPool != null) {
-            DataProvider.getLogger().info("[RedisDatabase] Already connected; skipping re–initialization.");
+            logger.info("[RedisDatabase] Already connected; skipping re–initialization.");
             return;
         }
+        JedisPool createdPool = null;
+        ExecutorService createdExecutor = null;
         try {
             final String host = config.node("host").getString("localhost");
             final int port = config.node("port").getInt(6379);
@@ -53,13 +59,21 @@ public class RedisDatabase implements KeyValueDatabaseProvider {
                     .socketTimeoutMillis(2000)
                     .build();
 
-            jedisPool = new JedisPool(poolConfig, new HostAndPort(host, port), clientConfig);
+            createdPool = new JedisPool(poolConfig, new HostAndPort(host, port), clientConfig);
+            try (var jedis = createdPool.getResource()) {
+                if (!"PONG".equalsIgnoreCase(jedis.ping())) {
+                    throw new IllegalStateException("Redis ping check failed.");
+                }
+            }
 
-            executor = Executors.newFixedThreadPool(poolSize);
+            createdExecutor = Executors.newFixedThreadPool(poolSize);
+
+            jedisPool = createdPool;
+            executor = createdExecutor;
             dataAccess = new RedisDataAccess(jedisPool, executor);
 
             connected = true;
-            DataProvider.getLogger().info(String.format(
+            logger.info(String.format(
                     "[RedisDatabase] Connected to Redis at %s:%d (DB %d, auth=%s), poolSize=%d",
                     host,
                     port,
@@ -68,26 +82,52 @@ public class RedisDatabase implements KeyValueDatabaseProvider {
                     poolSize
             ));
         } catch (Exception e) {
-            DataProvider.getLogger().error("[RedisDatabase] Connection failed.", e);
+            if (createdExecutor != null) {
+                createdExecutor.shutdownNow();
+            }
+            if (createdPool != null && !createdPool.isClosed()) {
+                createdPool.close();
+            }
+            connected = false;
+            dataAccess = null;
+            logger.error("[RedisDatabase] Connection failed.", e);
         }
     }
 
     @Override
     public void disconnect() {
-        if (jedisPool != null && !jedisPool.isClosed()) {
-            jedisPool.close();
-            DataProvider.getLogger().info("[RedisDatabase] JedisPool closed.");
-        }
         if (executor != null && !executor.isShutdown()) {
             executor.shutdown();
-            DataProvider.getLogger().info("[RedisDatabase] ExecutorService shut down.");
+            try {
+                if (!executor.awaitTermination(2, TimeUnit.SECONDS)) {
+                    executor.shutdownNow();
+                }
+            } catch (InterruptedException e) {
+                executor.shutdownNow();
+                Thread.currentThread().interrupt();
+            }
+            logger.info("[RedisDatabase] ExecutorService shut down.");
         }
+        if (jedisPool != null && !jedisPool.isClosed()) {
+            jedisPool.close();
+            logger.info("[RedisDatabase] JedisPool closed.");
+        }
+        executor = null;
+        jedisPool = null;
+        dataAccess = null;
         connected = false;
     }
 
     @Override
     public boolean isConnected() {
-        return connected && jedisPool != null && !jedisPool.isClosed();
+        if (!connected || jedisPool == null || jedisPool.isClosed()) {
+            return false;
+        }
+        try (var jedis = jedisPool.getResource()) {
+            return "PONG".equalsIgnoreCase(jedis.ping());
+        } catch (Exception e) {
+            return false;
+        }
     }
 
     @Override

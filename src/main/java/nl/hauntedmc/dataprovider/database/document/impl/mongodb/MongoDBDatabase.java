@@ -4,15 +4,18 @@ import com.mongodb.ConnectionString;
 import com.mongodb.MongoClientSettings;
 import com.mongodb.client.MongoClient;
 import com.mongodb.client.MongoClients;
-import nl.hauntedmc.dataprovider.DataProvider;
 import nl.hauntedmc.dataprovider.database.document.DocumentDataAccess;
 import nl.hauntedmc.dataprovider.database.document.DocumentDatabaseProvider;
+import nl.hauntedmc.dataprovider.platform.common.logger.ILoggerAdapter;
 import org.spongepowered.configurate.CommentedConfigurationNode;
+import org.bson.Document;
 
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
+import java.util.Objects;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
 
 /**
  * MongoDBDatabase implements DocumentDatabaseProvider for MongoDB.
@@ -21,42 +24,47 @@ import java.util.concurrent.Executors;
 public class MongoDBDatabase implements DocumentDatabaseProvider {
 
     private final CommentedConfigurationNode config;
+    private final ILoggerAdapter logger;
     private MongoClient mongoClient;
     private ExecutorService executor;
     private MongoDBDataAccess dataAccess;
     private boolean connected;
+    private String databaseName;
 
-    public MongoDBDatabase(CommentedConfigurationNode config) {
+    public MongoDBDatabase(CommentedConfigurationNode config, ILoggerAdapter logger) {
         this.config = config;
+        this.logger = Objects.requireNonNull(logger, "Logger cannot be null.");
     }
 
     @Override
     public void connect() {
         if (connected && mongoClient != null) {
-            DataProvider.getLogger().info("[MongoDBDatabase] Already connected; skipping re–initialization.");
+            logger.info("[MongoDBDatabase] Already connected; skipping re–initialization.");
             return;
         }
+        MongoClient createdClient = null;
+        ExecutorService createdExecutor = null;
         try {
             final String host = config.node("host").getString("localhost");
             final int port = config.node("port").getInt(27017);
-            final String databaseName = config.node("database").getString("minecraft");
+            final String configuredDatabaseName = config.node("database").getString("minecraft");
             final String user = config.node("username").getString("");
             final String password = config.node("password").getString("");
-            final String authSource = config.node("authSource").getString(databaseName);
+            final String authSource = config.node("authSource").getString(configuredDatabaseName);
 
             final String connectionString;
             if (!user.isEmpty() && !password.isEmpty()) {
                 connectionString = String.format("mongodb://%s:%s@%s:%d/%s?authSource=%s",
-                        encodeCredential(user), encodeCredential(password), host, port, databaseName, authSource);
+                        encodeCredential(user), encodeCredential(password), host, port, configuredDatabaseName, authSource);
             } else {
-                connectionString = String.format("mongodb://%s:%d/%s", host, port, databaseName);
+                connectionString = String.format("mongodb://%s:%d/%s", host, port, configuredDatabaseName);
             }
 
-            DataProvider.getLogger().info(String.format(
+            logger.info(String.format(
                     "[MongoDBDatabase] Connecting to Mongo at %s:%d (database=%s, auth=%s)",
                     host,
                     port,
-                    databaseName,
+                    configuredDatabaseName,
                     (!user.isEmpty() && !password.isEmpty()) ? "enabled" : "disabled"
             ));
 
@@ -66,36 +74,69 @@ public class MongoDBDatabase implements DocumentDatabaseProvider {
                     .retryWrites(true)
                     .build();
 
-            mongoClient = MongoClients.create(settings);
+            createdClient = MongoClients.create(settings);
+            createdClient.getDatabase(configuredDatabaseName).runCommand(new Document("ping", 1));
 
             final int poolSize = Math.max(1, config.node("pool_size").getInt(8));
-            executor = Executors.newFixedThreadPool(poolSize);
+            createdExecutor = Executors.newFixedThreadPool(poolSize);
 
+            mongoClient = createdClient;
+            executor = createdExecutor;
+            databaseName = configuredDatabaseName;
             dataAccess = new MongoDBDataAccess(mongoClient, databaseName, executor);
 
             connected = true;
-            DataProvider.getLogger().info(String.format("[MongoDBDatabase] Connected successfully to Mongo at %s:%d", host, port));
+            logger.info(String.format("[MongoDBDatabase] Connected successfully to Mongo at %s:%d", host, port));
         } catch (Exception e) {
-            DataProvider.getLogger().error("[MongoDBDatabase] Connection failed.", e);
+            if (createdExecutor != null) {
+                createdExecutor.shutdownNow();
+            }
+            if (createdClient != null) {
+                createdClient.close();
+            }
+            connected = false;
+            dataAccess = null;
+            databaseName = null;
+            logger.error("[MongoDBDatabase] Connection failed.", e);
         }
     }
 
     @Override
     public void disconnect() {
-        if (mongoClient != null) {
-            mongoClient.close();
-            DataProvider.getLogger().info("[MongoDBDatabase] MongoClient closed.");
-        }
         if (executor != null && !executor.isShutdown()) {
             executor.shutdown();
-            DataProvider.getLogger().info("[MongoDBDatabase] ExecutorService shut down.");
+            try {
+                if (!executor.awaitTermination(2, TimeUnit.SECONDS)) {
+                    executor.shutdownNow();
+                }
+            } catch (InterruptedException e) {
+                executor.shutdownNow();
+                Thread.currentThread().interrupt();
+            }
+            logger.info("[MongoDBDatabase] ExecutorService shut down.");
         }
+        if (mongoClient != null) {
+            mongoClient.close();
+            logger.info("[MongoDBDatabase] MongoClient closed.");
+        }
+        executor = null;
+        mongoClient = null;
+        dataAccess = null;
+        databaseName = null;
         connected = false;
     }
 
     @Override
     public boolean isConnected() {
-        return connected && mongoClient != null;
+        if (!connected || mongoClient == null || databaseName == null || databaseName.isBlank()) {
+            return false;
+        }
+        try {
+            mongoClient.getDatabase(databaseName).runCommand(new Document("ping", 1));
+            return true;
+        } catch (Exception e) {
+            return false;
+        }
     }
 
     @Override

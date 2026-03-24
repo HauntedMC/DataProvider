@@ -1,11 +1,13 @@
 package nl.hauntedmc.dataprovider.database.messaging.impl.redis;
 
-import nl.hauntedmc.dataprovider.DataProvider;
 import nl.hauntedmc.dataprovider.database.messaging.MessagingDataAccess;
 import nl.hauntedmc.dataprovider.database.messaging.MessagingDatabaseProvider;
+import nl.hauntedmc.dataprovider.database.messaging.api.MessageRegistry;
+import nl.hauntedmc.dataprovider.platform.common.logger.ILoggerAdapter;
 import org.spongepowered.configurate.CommentedConfigurationNode;
 import redis.clients.jedis.*;
 
+import java.util.Objects;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
@@ -16,13 +18,17 @@ import java.util.concurrent.TimeUnit;
 public final class RedisMessagingDatabase implements MessagingDatabaseProvider {
 
     private final CommentedConfigurationNode cfg;
+    private final ILoggerAdapter logger;
+    private final MessageRegistry messageRegistry;
     private JedisPool pool;
     private ExecutorService workers;
     private RedisMessagingDataAccess bus;
     private volatile boolean connected;
 
-    public RedisMessagingDatabase(CommentedConfigurationNode cfg) {
+    public RedisMessagingDatabase(CommentedConfigurationNode cfg, ILoggerAdapter logger) {
         this.cfg = cfg;
+        this.logger = Objects.requireNonNull(logger, "Logger cannot be null.");
+        this.messageRegistry = new MessageRegistry(logger);
     }
 
     @Override
@@ -55,10 +61,10 @@ public final class RedisMessagingDatabase implements MessagingDatabaseProvider {
             }
 
             workers = Executors.newFixedThreadPool(workerPoolSize);
-            bus = new RedisMessagingDataAccess(pool, workers);
+            bus = new RedisMessagingDataAccess(pool, workers, logger, messageRegistry);
             connected = true;
 
-            DataProvider.getLogger().info(String.format(
+            logger.info(String.format(
                     "[RedisMessagingDatabase] Connected to Redis messaging at %s:%d (db=%d, auth=%s)",
                     host,
                     port,
@@ -68,7 +74,7 @@ public final class RedisMessagingDatabase implements MessagingDatabaseProvider {
         } catch (Exception e) {
             connected = false;
             cleanupResources();
-            DataProvider.getLogger().error("[RedisMessagingDatabase] Connection failed.", e);
+            logger.error("[RedisMessagingDatabase] Connection failed.", e);
         }
     }
 
@@ -80,7 +86,7 @@ public final class RedisMessagingDatabase implements MessagingDatabaseProvider {
                 bus.shutdown().get(3, TimeUnit.SECONDS);
             }
         } catch (Exception e) {
-            DataProvider.getLogger().warn("[RedisMessagingDatabase] Timed out while shutting down subscriptions.");
+            logger.warn("[RedisMessagingDatabase] Timed out while shutting down subscriptions.");
         } finally {
             cleanupResources();
         }

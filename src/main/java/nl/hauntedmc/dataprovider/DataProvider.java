@@ -2,6 +2,7 @@ package nl.hauntedmc.dataprovider;
 
 import nl.hauntedmc.dataprovider.config.ConfigHandler;
 import nl.hauntedmc.dataprovider.internal.DataProviderHandler;
+import nl.hauntedmc.dataprovider.internal.identity.CallerContextResolver;
 import nl.hauntedmc.dataprovider.platform.common.logger.ILoggerAdapter;
 import org.jspecify.annotations.Nullable;
 
@@ -10,41 +11,53 @@ import java.io.InputStream;
 import java.net.URL;
 import java.net.URLConnection;
 import java.nio.file.Path;
+import java.util.Objects;
 
 public class DataProvider {
 
+    private final ILoggerAdapter logger;
+    private final Path dataPath;
+    private final ClassLoader parentClassLoader;
+    private final ConfigHandler configHandler;
     private final DataProviderHandler dataProviderHandler;
 
-    private static ConfigHandler configHandler;
-    private static ILoggerAdapter logInstance;
-    private static Path dataPath;
-    private static ClassLoader parentClassLoader;
-
-    public DataProvider(ILoggerAdapter logger, Path dataDirectory, ClassLoader classLoader) {
-        parentClassLoader = classLoader;
-        logInstance = logger;
-        dataPath = dataDirectory;
+    public DataProvider(
+            ILoggerAdapter logger,
+            Path dataDirectory,
+            ClassLoader classLoader,
+            CallerContextResolver callerContextResolver
+    ) {
+        this.logger = Objects.requireNonNull(logger, "Logger cannot be null.");
+        this.dataPath = Objects.requireNonNull(dataDirectory, "Data directory cannot be null.");
+        this.parentClassLoader = Objects.requireNonNull(classLoader, "Class loader cannot be null.");
+        Objects.requireNonNull(callerContextResolver, "Caller context resolver cannot be null.");
 
         // Init Main Config
-        configHandler = new ConfigHandler();
+        this.configHandler = new ConfigHandler(dataPath, this.logger);
 
-        // Init Data Provider Handler
-        dataProviderHandler = new DataProviderHandler();
+        // Init Data Provider internals
+        dataProviderHandler = new DataProviderHandler(
+                dataPath,
+                parentClassLoader,
+                configHandler,
+                callerContextResolver,
+                this.logger
+        );
     }
 
-    public static ILoggerAdapter getLogger() {
-        return logInstance;
+    public ILoggerAdapter getLogger() {
+        return logger;
     }
 
     public DataProviderHandler getDataProviderHandler() {
         return dataProviderHandler;
     }
 
-    public static Path getDataPath() {
+    public Path getDataPath() {
         return dataPath;
     }
 
-    public static ConfigHandler getConfigHandler() {
+    public ConfigHandler getConfigHandler() {
         return configHandler;
     }
 
@@ -52,7 +65,7 @@ public class DataProvider {
         dataProviderHandler.shutdownAllDatabases();
     }
 
-    public static @Nullable InputStream getResource(String filename) {
+    public @Nullable InputStream getResource(String filename) {
         if (filename == null) {
             throw new IllegalArgumentException("Filename cannot be null");
         } else {

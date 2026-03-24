@@ -3,6 +3,7 @@ package nl.hauntedmc.dataprovider.platform.bukkit;
 import nl.hauntedmc.dataprovider.DataProvider;
 import nl.hauntedmc.dataprovider.api.DataProviderAPI;
 import nl.hauntedmc.dataprovider.platform.bukkit.command.DataProviderCommand;
+import nl.hauntedmc.dataprovider.platform.bukkit.identity.BukkitCallerContextResolver;
 import nl.hauntedmc.dataprovider.platform.bukkit.logger.BukkitLoggerAdapter;
 import org.bukkit.plugin.java.JavaPlugin;
 
@@ -17,7 +18,12 @@ public class BukkitDataProvider extends JavaPlugin {
     public void onEnable() {
 
         BukkitLoggerAdapter logInstance = new BukkitLoggerAdapter(getLogger());
-        dataProvider = new DataProvider(logInstance, getDataPath(), this.getClassLoader());
+        dataProvider = new DataProvider(
+                logInstance,
+                getDataPath(),
+                this.getClassLoader(),
+                new BukkitCallerContextResolver(this.getClassLoader())
+        );
 
         // Init Bukkit Command
         DataProviderCommand commandExecutor = new DataProviderCommand(dataProvider.getDataProviderHandler());

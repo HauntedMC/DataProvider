@@ -1,11 +1,13 @@
 package nl.hauntedmc.dataprovider.internal;
 
-import nl.hauntedmc.dataprovider.DataProvider;
+import nl.hauntedmc.dataprovider.config.ConfigHandler;
 import nl.hauntedmc.dataprovider.database.DatabaseConnectionKey;
 import nl.hauntedmc.dataprovider.database.DatabaseType;
 import nl.hauntedmc.dataprovider.database.DatabaseProvider;
+import nl.hauntedmc.dataprovider.platform.common.logger.ILoggerAdapter;
 
 import java.util.Map;
+import java.util.Objects;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 
@@ -13,9 +15,13 @@ class DataProviderRegistry {
 
     private final ConcurrentMap<DatabaseConnectionKey, DatabaseProvider> activeDatabases = new ConcurrentHashMap<>();
     private final DatabaseFactory factory;
+    private final ConfigHandler configHandler;
+    private final ILoggerAdapter logger;
 
-    public DataProviderRegistry(DatabaseFactory factory) {
+    public DataProviderRegistry(DatabaseFactory factory, ConfigHandler configHandler, ILoggerAdapter logger) {
         this.factory = factory;
+        this.configHandler = Objects.requireNonNull(configHandler, "Config handler cannot be null.");
+        this.logger = Objects.requireNonNull(logger, "Logger cannot be null.");
     }
 
     protected DatabaseProvider registerDatabase(String pluginName, DatabaseType databaseType, String connectionIdentifier) {
@@ -23,23 +29,29 @@ class DataProviderRegistry {
 
         DatabaseProvider existingProvider = activeDatabases.get(key);
         if (existingProvider != null) {
-            DataProvider.getLogger().info(pluginName + " already has a " + databaseType.name() + " connection with identifier: " + connectionIdentifier);
+            logger.info(pluginName + " already has a " + databaseType.name() + " connection with identifier: " + connectionIdentifier);
             return existingProvider;
         }
 
-        if (!DataProvider.getConfigHandler().isDatabaseTypeEnabled(databaseType)) {
-            DataProvider.getLogger().error("Failed to establish connection for " + pluginName + " with " + databaseType.name() + ": This database type is disabled in the main config.");
+        if (!configHandler.isDatabaseTypeEnabled(databaseType)) {
+            logger.error("Failed to establish connection for " + pluginName + " with " + databaseType.name() + ": This database type is disabled in the main config.");
             return null;
         }
 
+        DatabaseProvider databaseProvider = null;
         try {
-            DatabaseProvider databaseProvider = factory.createDatabaseProvider(databaseType, connectionIdentifier);
+            databaseProvider = factory.createDatabaseProvider(databaseType, connectionIdentifier);
             if (databaseProvider == null) {
                 return null;
             }
             databaseProvider.connect();
             if (!databaseProvider.isConnected()) {
-                DataProvider.getLogger().error("Failed to establish connection for " + pluginName + " with " + databaseType.name() + " (" + connectionIdentifier + ")");
+                try {
+                    databaseProvider.disconnect();
+                } catch (Exception e) {
+                    logger.error("Failed to clean up failed connection for " + key, e);
+                }
+                logger.error("Failed to establish connection for " + pluginName + " with " + databaseType.name() + " (" + connectionIdentifier + ")");
                 return null;
             }
             DatabaseProvider raceWinner = activeDatabases.putIfAbsent(key, databaseProvider);
@@ -47,15 +59,22 @@ class DataProviderRegistry {
                 try {
                     databaseProvider.disconnect();
                 } catch (Exception e) {
-                    DataProvider.getLogger().error("Failed to clean up duplicate connection for " + key, e);
+                    logger.error("Failed to clean up duplicate connection for " + key, e);
                 }
-                DataProvider.getLogger().info(pluginName + " already has a " + databaseType.name() + " connection with identifier: " + connectionIdentifier);
+                logger.info(pluginName + " already has a " + databaseType.name() + " connection with identifier: " + connectionIdentifier);
                 return raceWinner;
             }
-            DataProvider.getLogger().info(pluginName + " registered " + databaseType.name() + " connection (" + connectionIdentifier + ")");
+            logger.info(pluginName + " registered " + databaseType.name() + " connection (" + connectionIdentifier + ")");
             return databaseProvider;
         } catch (Exception e) {
-            DataProvider.getLogger().error("Failed to register database for " + pluginName, e);
+            if (databaseProvider != null) {
+                try {
+                    databaseProvider.disconnect();
+                } catch (Exception disconnectException) {
+                    logger.error("Failed to clean up errored connection for " + key, disconnectException);
+                }
+            }
+            logger.error("Failed to register database for " + pluginName, e);
             return null;
         }
     }
@@ -69,8 +88,12 @@ class DataProviderRegistry {
         DatabaseConnectionKey key = new DatabaseConnectionKey(pluginName, databaseType, connectionIdentifier);
         DatabaseProvider provider = activeDatabases.remove(key);
         if (provider != null) {
-            provider.disconnect();
-            DataProvider.getLogger().info(pluginName + " unregistered " + databaseType.name() + " connection (" + connectionIdentifier + ")");
+            try {
+                provider.disconnect();
+            } catch (Exception e) {
+                logger.error("Error disconnecting " + key, e);
+            }
+            logger.info(pluginName + " unregistered " + databaseType.name() + " connection (" + connectionIdentifier + ")");
         }
     }
 
@@ -80,7 +103,7 @@ class DataProviderRegistry {
                 try {
                     entry.getValue().disconnect();
                 } catch (Exception e) {
-                    DataProvider.getLogger().error("Error disconnecting " + entry.getKey(), e);
+                    logger.error("Error disconnecting " + entry.getKey(), e);
                 }
                 return true;
             }
@@ -93,11 +116,11 @@ class DataProviderRegistry {
             try {
                 entry.getValue().disconnect();
             } catch (Exception e) {
-                DataProvider.getLogger().error("Error disconnecting " + entry.getKey(), e);
+                logger.error("Error disconnecting " + entry.getKey(), e);
             }
         }
         activeDatabases.clear();
-        DataProvider.getLogger().info("All database connections have been closed.");
+        logger.info("All database connections have been closed.");
     }
 
     protected ConcurrentMap<DatabaseConnectionKey, DatabaseProvider> getActiveDatabases() {

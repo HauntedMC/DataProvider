@@ -1,6 +1,7 @@
 package nl.hauntedmc.dataprovider.api.orm;
 
-import nl.hauntedmc.dataprovider.DataProvider;
+import nl.hauntedmc.dataprovider.config.ConfigHandler;
+import nl.hauntedmc.dataprovider.platform.common.logger.ILoggerAdapter;
 import org.hibernate.Session;
 import org.hibernate.SessionFactory;
 import org.hibernate.Transaction;
@@ -10,7 +11,9 @@ import org.hibernate.boot.registry.StandardServiceRegistry;
 import org.hibernate.boot.registry.StandardServiceRegistryBuilder;
 
 import javax.sql.DataSource;
+import java.util.Locale;
 import java.util.Objects;
+import java.util.Set;
 
 /**
  * ORMContext is an instantiable class that encapsulates the Hibernate SessionFactory
@@ -19,8 +22,13 @@ import java.util.Objects;
  */
 public class ORMContext {
 
+    private static final String DEFAULT_SCHEMA_MODE = "validate";
+    private static final Set<String> SUPPORTED_SCHEMA_MODES = Set.of("validate", "none", "update", "create");
+
     private final DataSource dataSource;
     private final String plugin;
+    private final ILoggerAdapter logger;
+    private final String schemaMode;
     private SessionFactory sessionFactory;
     private StandardServiceRegistry registry;
 
@@ -29,12 +37,41 @@ public class ORMContext {
      *
      * @param plugin        The plugin for which this ORMContext is created.
      * @param dataSource    The DataSource to be used for database connections.
+     * @param configHandler Main config handler used to resolve orm schema mode.
+     * @param logger        Logger instance.
      * @param entityClasses One or more annotated entity classes to register.
      * @throws IllegalArgumentException if plugin, dataSource, or entityClasses are null/empty.
      */
-    public ORMContext(String plugin, DataSource dataSource, Class<?>... entityClasses) {
+    public ORMContext(
+            String plugin,
+            DataSource dataSource,
+            ConfigHandler configHandler,
+            ILoggerAdapter logger,
+            Class<?>... entityClasses
+    ) {
+        this(plugin, dataSource, logger, resolveSchemaMode(configHandler), entityClasses);
+    }
+
+    /**
+     * Constructs and initializes the ORMContext with an explicit schema mode.
+     *
+     * @param plugin        Plugin name for logging context.
+     * @param dataSource    The DataSource to be used for database connections.
+     * @param logger        Logger instance.
+     * @param schemaMode    Hibernate schema mode: validate, none, update, create.
+     * @param entityClasses One or more annotated entity classes to register.
+     */
+    public ORMContext(
+            String plugin,
+            DataSource dataSource,
+            ILoggerAdapter logger,
+            String schemaMode,
+            Class<?>... entityClasses
+    ) {
         this.plugin = plugin;
         this.dataSource = Objects.requireNonNull(dataSource, "DataSource cannot be null");
+        this.logger = Objects.requireNonNull(logger, "Logger cannot be null");
+        this.schemaMode = normalizeSchemaMode(schemaMode, this.logger);
         if (entityClasses == null || entityClasses.length == 0) {
             throw new IllegalArgumentException("At least one entity class must be provided");
         }
@@ -48,7 +85,6 @@ public class ORMContext {
      */
     private void initialize(Class<?>... entityClasses) {
         try {
-            String schemaMode = resolveSchemaMode();
             // Build the StandardServiceRegistry using hibernate.cfg.xml and override the connection settings with our DataSource.
             registry = new StandardServiceRegistryBuilder()
                     .applySetting("hibernate.connection.datasource", dataSource)
@@ -63,40 +99,45 @@ public class ORMContext {
 
             for (Class<?> entityClass : entityClasses) {
                 metadataSources.addAnnotatedClass(entityClass);
-                DataProvider.getLogger().info("Initializing Annotated Class: " + entityClass.getName());
+                logger.info("Initializing Annotated Class: " + entityClass.getName());
             }
 
             // Build the Metadata and SessionFactory.
             Metadata metadata = metadataSources.getMetadataBuilder().build();
 
             if (metadata.getEntityBindings().isEmpty()) {
-                DataProvider.getLogger().warn("No entity bindings were found in metadata");
+                logger.warn("No entity bindings were found in metadata");
             } else {
                 metadata.getEntityBindings().forEach(
-                        entityBinding -> DataProvider.getLogger().info("Entity binding: " + entityBinding.getEntityName())
+                        entityBinding -> logger.info("Entity binding: " + entityBinding.getEntityName())
                 );
             }
 
             sessionFactory = metadata.getSessionFactoryBuilder().build();
 
-            DataProvider.getLogger().info("Hibernate schema mode for plugin " + plugin + ": " + schemaMode);
-            DataProvider.getLogger().info("Hibernate ORMContext initialized successfully for plugin: " + plugin);
+            logger.info("Hibernate schema mode for plugin " + plugin + ": " + schemaMode);
+            logger.info("Hibernate ORMContext initialized successfully for plugin: " + plugin);
         } catch (Exception e) {
-            DataProvider.getLogger().error("Failed to initialize Hibernate ORMContext for plugin: " + plugin);
+            logger.error("Failed to initialize Hibernate ORMContext for plugin: " + plugin, e);
             throw new RuntimeException("ORMContext initialization failed", e);
         }
     }
 
-    private String resolveSchemaMode() {
-        try {
-            if (DataProvider.getConfigHandler() == null) {
-                return "update";
-            }
-            return DataProvider.getConfigHandler().getOrmSchemaMode();
-        } catch (Exception e) {
-            DataProvider.getLogger().warn("Failed to resolve orm.schema_mode. Falling back to 'update'.");
-            return "update";
+    private static String resolveSchemaMode(ConfigHandler configHandler) {
+        Objects.requireNonNull(configHandler, "ConfigHandler cannot be null.");
+        return configHandler.getOrmSchemaMode();
+    }
+
+    private static String normalizeSchemaMode(String schemaMode, ILoggerAdapter logger) {
+        if (schemaMode == null || schemaMode.isBlank()) {
+            return DEFAULT_SCHEMA_MODE;
         }
+        String normalized = schemaMode.trim().toLowerCase(Locale.ROOT);
+        if (SUPPORTED_SCHEMA_MODES.contains(normalized)) {
+            return normalized;
+        }
+        logger.warn("Invalid orm schema mode '" + schemaMode + "', falling back to '" + DEFAULT_SCHEMA_MODE + "'.");
+        return DEFAULT_SCHEMA_MODE;
     }
 
     /**
@@ -140,7 +181,7 @@ public class ORMContext {
             if (tx != null && tx.isActive()) {
                 tx.rollback();
             }
-            DataProvider.getLogger().error("Transaction failed in plugin: " + plugin + " - " + e.getMessage());
+            logger.error("Transaction failed in plugin: " + plugin + " - " + e.getMessage(), e);
             throw new RuntimeException("Transaction failed", e);
         }
     }
@@ -158,7 +199,7 @@ public class ORMContext {
             StandardServiceRegistryBuilder.destroy(registry);
             registry = null;
         }
-        DataProvider.getLogger().info("Hibernate ORMContext shut down for plugin: " + plugin);
+        logger.info("Hibernate ORMContext shut down for plugin: " + plugin);
     }
 
     /**

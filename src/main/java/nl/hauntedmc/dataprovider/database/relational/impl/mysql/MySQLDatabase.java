@@ -2,15 +2,17 @@ package nl.hauntedmc.dataprovider.database.relational.impl.mysql;
 
 import com.zaxxer.hikari.HikariConfig;
 import com.zaxxer.hikari.HikariDataSource;
-import nl.hauntedmc.dataprovider.DataProvider;
 import nl.hauntedmc.dataprovider.database.relational.RelationalDataAccess;
 import nl.hauntedmc.dataprovider.database.relational.RelationalDatabaseProvider;
 import nl.hauntedmc.dataprovider.database.relational.schema.SchemaManager;
+import nl.hauntedmc.dataprovider.platform.common.logger.ILoggerAdapter;
 import org.spongepowered.configurate.CommentedConfigurationNode;
 
 import javax.sql.DataSource;
+import java.util.Objects;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
 
 /**
  * MySQL implementation of RelationalDatabaseProvider.
@@ -18,22 +20,26 @@ import java.util.concurrent.Executors;
 public class MySQLDatabase implements RelationalDatabaseProvider {
 
     private final CommentedConfigurationNode config;
+    private final ILoggerAdapter logger;
     private HikariDataSource dataSource;
     private ExecutorService executor;
     private RelationalDataAccess dataAccess;
     private SchemaManager schemaManager;
 
-    public MySQLDatabase(CommentedConfigurationNode config) {
+    public MySQLDatabase(CommentedConfigurationNode config, ILoggerAdapter logger) {
         this.config = config;
+        this.logger = Objects.requireNonNull(logger, "Logger cannot be null.");
     }
 
     @Override
     public void connect() {
         if (dataSource != null && !dataSource.isClosed()) {
-            DataProvider.getLogger().info("[MySQLDatabase] Already connected, skipping re–initialization.");
+            logger.info("[MySQLDatabase] Already connected, skipping re–initialization.");
             return;
         }
 
+        HikariDataSource createdDataSource = null;
+        ExecutorService createdExecutor = null;
         try {
             HikariConfig hikariConfig = new HikariConfig();
 
@@ -64,12 +70,21 @@ public class MySQLDatabase implements RelationalDatabaseProvider {
             hikariConfig.setMaxLifetime(1800000);
             hikariConfig.setLeakDetectionThreshold(2000);
 
-            dataSource = new HikariDataSource(hikariConfig);
-            executor = Executors.newFixedThreadPool(poolSize);
+            createdDataSource = new HikariDataSource(hikariConfig);
+            createdExecutor = Executors.newFixedThreadPool(poolSize);
+
+            try (var connection = createdDataSource.getConnection()) {
+                if (!connection.isValid(2)) {
+                    throw new IllegalStateException("MySQL connection validation failed.");
+                }
+            }
+
+            dataSource = createdDataSource;
+            executor = createdExecutor;
             this.dataAccess = new MySQLDataAccess(dataSource, executor);
             this.schemaManager = new MySQLSchemaManager(dataSource, executor);
 
-            DataProvider.getLogger().info(String.format(
+            logger.info(String.format(
                     "[MySQLDatabase] Connected successfully to MySQL at %s:%d (database=%s, sslMode=%s)",
                     host,
                     port,
@@ -77,20 +92,40 @@ public class MySQLDatabase implements RelationalDatabaseProvider {
                     sslMode
             ));
         } catch (Exception e) {
-            DataProvider.getLogger().error("[MySQLDatabase] Connection failed!", e);
+            if (createdExecutor != null) {
+                createdExecutor.shutdownNow();
+            }
+            if (createdDataSource != null && !createdDataSource.isClosed()) {
+                createdDataSource.close();
+            }
+            this.dataAccess = null;
+            this.schemaManager = null;
+            logger.error("[MySQLDatabase] Connection failed!", e);
         }
     }
 
     @Override
     public void disconnect() {
-        if (dataSource != null && !dataSource.isClosed()) {
-            dataSource.close();
-            DataProvider.getLogger().info("[MySQLDatabase] DataSource closed.");
-        }
         if (executor != null && !executor.isShutdown()) {
             executor.shutdown();
-            DataProvider.getLogger().info("[MySQLDatabase] ExecutorService shut down.");
+            try {
+                if (!executor.awaitTermination(2, TimeUnit.SECONDS)) {
+                    executor.shutdownNow();
+                }
+            } catch (InterruptedException e) {
+                executor.shutdownNow();
+                Thread.currentThread().interrupt();
+            }
+            logger.info("[MySQLDatabase] ExecutorService shut down.");
         }
+        if (dataSource != null && !dataSource.isClosed()) {
+            dataSource.close();
+            logger.info("[MySQLDatabase] DataSource closed.");
+        }
+        executor = null;
+        dataSource = null;
+        dataAccess = null;
+        schemaManager = null;
     }
 
     @Override
@@ -101,7 +136,7 @@ public class MySQLDatabase implements RelationalDatabaseProvider {
         try (var conn = dataSource.getConnection()) {
             return conn.isValid(2);
         } catch (Exception e) {
-            DataProvider.getLogger().error("[MySQLDatabase] Connection validation failed.", e);
+            logger.error("[MySQLDatabase] Connection validation failed.", e);
             return false;
         }
     }

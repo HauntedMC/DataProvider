@@ -1,10 +1,10 @@
 package nl.hauntedmc.dataprovider.database.messaging.impl.redis;
 
-import nl.hauntedmc.dataprovider.DataProvider;
 import nl.hauntedmc.dataprovider.database.messaging.MessagingDataAccess;
 import nl.hauntedmc.dataprovider.database.messaging.api.EventMessage;
 import nl.hauntedmc.dataprovider.database.messaging.api.MessageRegistry;
 import nl.hauntedmc.dataprovider.database.messaging.api.Subscription;
+import nl.hauntedmc.dataprovider.platform.common.logger.ILoggerAdapter;
 import redis.clients.jedis.*;
 
 import java.util.Objects;
@@ -17,12 +17,21 @@ final class RedisMessagingDataAccess implements MessagingDataAccess {
 
     private final JedisPool pool;
     private final ExecutorService workers;
+    private final ILoggerAdapter logger;
+    private final MessageRegistry messageRegistry;
     private final Map<String, SubscriptionImpl> subs = new ConcurrentHashMap<>();
     private final AtomicBoolean shuttingDown = new AtomicBoolean(false);
 
-    RedisMessagingDataAccess(JedisPool pool, ExecutorService workers) {
+    RedisMessagingDataAccess(
+            JedisPool pool,
+            ExecutorService workers,
+            ILoggerAdapter logger,
+            MessageRegistry messageRegistry
+    ) {
         this.pool = pool;
         this.workers = workers;
+        this.logger = Objects.requireNonNull(logger, "Logger cannot be null");
+        this.messageRegistry = Objects.requireNonNull(messageRegistry, "Message registry cannot be null");
     }
 
     @Override
@@ -34,7 +43,7 @@ final class RedisMessagingDataAccess implements MessagingDataAccess {
             return CompletableFuture.failedFuture(new IllegalStateException("Messaging provider is shutting down"));
         }
 
-        String json = MessageRegistry.toJson(msg);
+        String json = messageRegistry.toJson(msg);
         return CompletableFuture.runAsync(() -> {
             try (Jedis j = pool.getResource()) {
                 j.publish(dest, json);
@@ -92,14 +101,14 @@ final class RedisMessagingDataAccess implements MessagingDataAccess {
                 @Override
                 public void onMessage(String channel, String raw) {
                     try {
-                        T msg = MessageRegistry.fromJson(raw, type);
+                        T msg = messageRegistry.fromJson(raw, type);
                         if (msg == null) {
-                            DataProvider.getLogger().warn("Received null message while subscribing to channel " + channel);
+                            logger.warn("Received null message while subscribing to channel " + channel);
                             return;
                         }
                         handler.accept(msg);
                     } catch (Exception ex) {
-                        DataProvider.getLogger().error("Error while handling message from channel " + channel, ex);
+                        logger.error("Error while handling message from channel " + channel, ex);
                     }
                 }
             };
@@ -108,7 +117,7 @@ final class RedisMessagingDataAccess implements MessagingDataAccess {
                     j.subscribe(pubSub, destination);
                 } catch (Exception ex) {
                     if (!closed.get()) {
-                        DataProvider.getLogger().error("Error while subscribing to " + destination, ex);
+                        logger.error("Error while subscribing to " + destination, ex);
                     }
                 } finally {
                     subs.remove(destination, this);
