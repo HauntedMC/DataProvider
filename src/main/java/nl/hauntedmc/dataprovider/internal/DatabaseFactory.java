@@ -5,9 +5,8 @@ import nl.hauntedmc.dataprovider.database.DatabaseType;
 import nl.hauntedmc.dataprovider.database.DatabaseProvider;
 import nl.hauntedmc.dataprovider.database.document.impl.mongodb.MongoDBDatabase;
 import nl.hauntedmc.dataprovider.database.keyvalue.impl.redis.RedisDatabase;
-import nl.hauntedmc.dataprovider.database.relational.impl.mysql.MySQLDatabase;
-import nl.hauntedmc.dataprovider.database.messaging.impl.rabbitmq.RabbitMQMessagingDatabase;
 import nl.hauntedmc.dataprovider.database.messaging.impl.redis.RedisMessagingDatabase;
+import nl.hauntedmc.dataprovider.database.relational.impl.mysql.MySQLDatabase;
 import org.spongepowered.configurate.CommentedConfigurationNode;
 
 class DatabaseFactory {
@@ -28,7 +27,6 @@ class DatabaseFactory {
             case MYSQL -> new MySQLDatabase(connectionConfig);
             case MONGODB -> new MongoDBDatabase(connectionConfig);
             case REDIS -> new RedisDatabase(connectionConfig);
-            case RABBITMQ -> new RabbitMQMessagingDatabase(connectionConfig);
             case REDIS_MESSAGING -> new RedisMessagingDatabase(connectionConfig);
         };
     }

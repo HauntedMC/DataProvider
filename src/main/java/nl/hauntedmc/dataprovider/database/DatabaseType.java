@@ -7,7 +7,6 @@ public enum DatabaseType {
     MYSQL("mysql.yml"),
     MONGODB("mongodb.yml"),
     REDIS("redis.yml"),
-    RABBITMQ("rabbitmq.yml"),
     REDIS_MESSAGING("redis_messaging.yml");
 
     private final String configFileName;

@@ -1,0 +1,12 @@
+orm:
+  schema_mode: update
+
+databases:
+  mysql:
+    enabled: true
+  mongodb:
+    enabled: true
+  redis:
+    enabled: true
+  redis_messaging:
+    enabled: true

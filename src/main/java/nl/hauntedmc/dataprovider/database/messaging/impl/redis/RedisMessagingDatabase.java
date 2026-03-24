@@ -1,5 +1,6 @@
 package nl.hauntedmc.dataprovider.database.messaging.impl.redis;
 
+import nl.hauntedmc.dataprovider.DataProvider;
 import nl.hauntedmc.dataprovider.database.messaging.MessagingDataAccess;
 import nl.hauntedmc.dataprovider.database.messaging.MessagingDatabaseProvider;
 import org.spongepowered.configurate.CommentedConfigurationNode;
@@ -7,6 +8,7 @@ import redis.clients.jedis.*;
 
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
 
 /**
  * Production‑ready Redis back‑end using ACL user/password and Pub/Sub.
@@ -35,40 +37,91 @@ public final class RedisMessagingDatabase implements MessagingDatabaseProvider {
         int connectionPoolSize = Math.max(1, cfg.node("pool", "connections").getInt(4));
         int workerPoolSize = Math.max(1, cfg.node("pool", "threads").getInt(8));
 
-        JedisPoolConfig poolConfig = new JedisPoolConfig();
-        poolConfig.setMaxTotal(connectionPoolSize);
+        try {
+            JedisPoolConfig poolConfig = new JedisPoolConfig();
+            poolConfig.setMaxTotal(connectionPoolSize);
 
-        DefaultJedisClientConfig clientConfig = DefaultJedisClientConfig.builder()
-                .user(user)
-                .password(pass.isEmpty() ? null : pass)
-                .database(db)
-                .build();
+            DefaultJedisClientConfig clientConfig = DefaultJedisClientConfig.builder()
+                    .user(user)
+                    .password(pass.isEmpty() ? null : pass)
+                    .database(db)
+                    .build();
 
-        HostAndPort nodeHp = new HostAndPort(host, port);
-        pool = new JedisPool(poolConfig, nodeHp, clientConfig);
+            HostAndPort nodeHp = new HostAndPort(host, port);
+            pool = new JedisPool(poolConfig, nodeHp, clientConfig);
 
-        workers = Executors.newFixedThreadPool(workerPoolSize);
-        bus = new RedisMessagingDataAccess(pool, workers);
+            try (Jedis jedis = pool.getResource()) {
+                jedis.ping();
+            }
 
-        connected = true;
+            workers = Executors.newFixedThreadPool(workerPoolSize);
+            bus = new RedisMessagingDataAccess(pool, workers);
+            connected = true;
+
+            DataProvider.getLogger().info(String.format(
+                    "[RedisMessagingDatabase] Connected to Redis messaging at %s:%d (db=%d, auth=%s)",
+                    host,
+                    port,
+                    db,
+                    pass.isEmpty() ? "disabled" : "enabled"
+            ));
+        } catch (Exception e) {
+            connected = false;
+            cleanupResources();
+            DataProvider.getLogger().error("[RedisMessagingDatabase] Connection failed.", e);
+        }
     }
 
     @Override
     public synchronized void disconnect() {
         if (!connected) return;
-        bus.shutdown();
-        workers.shutdownNow();
-        pool.close();
+        try {
+            if (bus != null) {
+                bus.shutdown().get(3, TimeUnit.SECONDS);
+            }
+        } catch (Exception e) {
+            DataProvider.getLogger().warn("[RedisMessagingDatabase] Timed out while shutting down subscriptions.");
+        } finally {
+            cleanupResources();
+        }
         connected = false;
     }
 
     @Override
     public boolean isConnected() {
-        return connected;
+        if (!connected || pool == null || pool.isClosed()) {
+            return false;
+        }
+        try (Jedis jedis = pool.getResource()) {
+            return "PONG".equalsIgnoreCase(jedis.ping());
+        } catch (Exception e) {
+            return false;
+        }
     }
 
     @Override
     public MessagingDataAccess getDataAccess() {
         return bus;
+    }
+
+    private void cleanupResources() {
+        if (workers != null) {
+            workers.shutdown();
+            try {
+                if (!workers.awaitTermination(2, TimeUnit.SECONDS)) {
+                    workers.shutdownNow();
+                }
+            } catch (InterruptedException ignored) {
+                workers.shutdownNow();
+                Thread.currentThread().interrupt();
+            }
+            workers = null;
+        }
+
+        if (pool != null && !pool.isClosed()) {
+            pool.close();
+        }
+        pool = null;
+        bus = null;
     }
 }

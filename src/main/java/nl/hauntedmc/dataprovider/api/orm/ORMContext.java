@@ -48,10 +48,11 @@ public class ORMContext {
      */
     private void initialize(Class<?>... entityClasses) {
         try {
+            String schemaMode = resolveSchemaMode();
             // Build the StandardServiceRegistry using hibernate.cfg.xml and override the connection settings with our DataSource.
             registry = new StandardServiceRegistryBuilder()
                     .applySetting("hibernate.connection.datasource", dataSource)
-                    .applySetting("hibernate.hbm2ddl.auto", "update")
+                    .applySetting("hibernate.hbm2ddl.auto", schemaMode)
                     .applySetting("hibernate.show_sql", "false")
                     .applySetting("hibernate.format_sql", "false")
                     .applySetting("hibernate.use_sql_comments", "false")
@@ -78,10 +79,23 @@ public class ORMContext {
 
             sessionFactory = metadata.getSessionFactoryBuilder().build();
 
+            DataProvider.getLogger().info("Hibernate schema mode for plugin " + plugin + ": " + schemaMode);
             DataProvider.getLogger().info("Hibernate ORMContext initialized successfully for plugin: " + plugin);
         } catch (Exception e) {
             DataProvider.getLogger().error("Failed to initialize Hibernate ORMContext for plugin: " + plugin);
             throw new RuntimeException("ORMContext initialization failed", e);
+        }
+    }
+
+    private String resolveSchemaMode() {
+        try {
+            if (DataProvider.getConfigHandler() == null) {
+                return "update";
+            }
+            return DataProvider.getConfigHandler().getOrmSchemaMode();
+        } catch (Exception e) {
+            DataProvider.getLogger().warn("Failed to resolve orm.schema_mode. Falling back to 'update'.");
+            return "update";
         }
     }
 

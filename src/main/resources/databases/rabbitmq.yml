@@ -1,6 +1,0 @@
-default_credentials:
-  host: localhost
-  port: 5672
-  username: guest
-  password: guest
-  pool_size: 4
