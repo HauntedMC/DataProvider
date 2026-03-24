@@ -66,7 +66,7 @@ Coordinates:
 
 - `groupId`: `nl.hauntedmc.dataprovider`
 - `artifactId`: `dataprovider`
-- `version`: current release (example: `1.20.4`)
+- `version`: current release (example: `1.21.0`)
 
 Repository:
 
@@ -85,7 +85,7 @@ Maven:
 <dependency>
   <groupId>nl.hauntedmc.dataprovider</groupId>
   <artifactId>dataprovider</artifactId>
-  <version>1.20.4</version>
+  <version>1.21.0</version>
   <scope>provided</scope>
 </dependency>
 ```
@@ -93,7 +93,7 @@ Maven:
 Gradle (Groovy):
 
 ```groovy
-compileOnly "nl.hauntedmc.dataprovider:dataprovider:1.20.4"
+compileOnly "nl.hauntedmc.dataprovider:dataprovider:1.21.0"
 ```
 
 GitHub Packages authentication details are in the docs.
