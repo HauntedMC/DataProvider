@@ -59,6 +59,7 @@
         <jakarta.persistence.version>3.1.0</jakarta.persistence.version>
         <jakarta.xml.bind.version>3.0.1</jakarta.xml.bind.version>
         <jaxb.runtime.version>3.0.2</jaxb.runtime.version>
+        <commons.lang3.version>3.18.0</commons.lang3.version>
 
         <junit.jupiter.version>5.10.2</junit.jupiter.version>
         <mockito.version>5.14.1</mockito.version>
@@ -302,6 +303,12 @@
             <groupId>io.papermc.paper</groupId>
             <artifactId>paper-api</artifactId>
             <version>${paper.version}</version>
+            <scope>provided</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.apache.commons</groupId>
+            <artifactId>commons-lang3</artifactId>
+            <version>${commons.lang3.version}</version>
             <scope>provided</scope>
         </dependency>
 
