@@ -3,7 +3,7 @@
 [![CI Tests and Coverage](https://github.com/HauntedMC/DataProvider/actions/workflows/ci-tests-and-coverage.yml/badge.svg?branch=main)](https://github.com/HauntedMC/DataProvider/actions/workflows/ci-tests-and-coverage.yml)
 [![CI Lint](https://github.com/HauntedMC/DataProvider/actions/workflows/ci-lint.yml/badge.svg?branch=main)](https://github.com/HauntedMC/DataProvider/actions/workflows/ci-lint.yml)
 [![Release](https://img.shields.io/github/v/release/HauntedMC/DataProvider)](https://github.com/HauntedMC/DataProvider/releases)
-[![License](https://img.shields.io/github/license/HauntedMC/DataProvider)](LICENSE)
+[![License](https://img.shields.io/github/license/HauntedMC/dataprovider)](LICENSE)
 [![Java 21](https://img.shields.io/badge/Java-21-007396)](https://adoptium.net/)
 
 Build plugin features, not database plumbing.
