@@ -11,24 +11,10 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 class TlsSupportTest {
 
     @Test
-    void createsDefaultSslContextThroughLegacyMethod() {
-        SSLContext context = TlsSupport.createTrustAllSslContext();
-        assertNotNull(context);
-        assertNotNull(context.getSocketFactory());
-    }
-
-    @Test
     void createsDefaultSslContextWhenTrustStoreIsNotConfigured() {
         SSLContext context = TlsSupport.createSslContext(null, null, null);
         assertNotNull(context);
         assertNotNull(context.getSocketFactory());
-    }
-
-    @Test
-    void trustAllHostnameVerifierReturnsStrictVerifier() {
-        HostnameVerifier verifier = TlsSupport.trustAllHostnameVerifier();
-        assertNotNull(verifier);
-        assertEquals(HttpsURLConnection.getDefaultHostnameVerifier().getClass(), verifier.getClass());
     }
 
     @Test

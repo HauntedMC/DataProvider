@@ -24,15 +24,6 @@ public final class TlsSupport {
     }
 
     /**
-     * Legacy method name kept for API compatibility.
-     * Uses platform trust by default and never disables certificate validation.
-     */
-    @Deprecated(since = "1.21.0", forRemoval = false)
-    public static SSLContext createTrustAllSslContext() {
-        return createSslContext(null, null, null);
-    }
-
-    /**
      * Creates an SSL context that either:
      * - uses platform default trust managers when no trust store path is provided; or
      * - uses trust managers from the configured trust store.
@@ -75,14 +66,5 @@ public final class TlsSupport {
      */
     public static HostnameVerifier strictHostnameVerifier() {
         return STRICT_HOSTNAME_VERIFIER;
-    }
-
-    /**
-     * Legacy method name kept for API compatibility.
-     * Always returns a strict verifier.
-     */
-    @Deprecated(since = "1.21.0", forRemoval = false)
-    public static HostnameVerifier trustAllHostnameVerifier() {
-        return strictHostnameVerifier();
     }
 }
