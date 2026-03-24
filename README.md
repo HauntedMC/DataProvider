@@ -48,3 +48,4 @@ bus.ifPresent(redisBus -> {
 
 - Caller identity is resolved at runtime from the platform plugin context.
 - `registerDatabase(...)` is reference-counted internally; repeated registrations reuse the same connection.
+- 

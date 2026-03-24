@@ -53,6 +53,10 @@ Optional<MessagingDataAccess> redisBus = api.registerDataAccess(
 );
 ```
 
+Identifier guidance:
+
+- Prefer `default` for single-connection setups.
+
 ## 3. Use the provider safely
 
 `DatabaseProvider` has helper methods to avoid raw casts:

@@ -131,7 +131,18 @@ class DataProviderRegistry {
         if (registration == null) {
             return null;
         }
-        return registration.provider();
+
+        DatabaseProvider provider = registration.provider();
+        if (isProviderHealthy(provider, key)) {
+            return provider;
+        }
+
+        if (activeDatabases.remove(key, registration)) {
+            disconnectQuietly(provider, key, "stale connection during lookup");
+            logger.warn("Removed stale " + databaseType.name() + " connection for " + pluginName
+                    + " (" + connectionIdentifier + ") while retrieving the provider.");
+        }
+        return null;
     }
 
     protected void unregisterDatabase(String pluginName, DatabaseType databaseType, String connectionIdentifier) {

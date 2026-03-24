@@ -3,6 +3,7 @@ package nl.hauntedmc.dataprovider.database.document.model;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.Objects;
 
 /**
  * Represents an update operation.
@@ -20,10 +21,11 @@ public class DocumentUpdate {
      * @return this update instance for chaining
      */
     public DocumentUpdate set(String field, Object value) {
+        String validatedField = requireFieldName(field);
         operations.computeIfAbsent("$set", k -> new HashMap<String, Object>());
         @SuppressWarnings("unchecked")
         Map<String, Object> setMap = (Map<String, Object>) operations.get("$set");
-        setMap.put(field, value);
+        setMap.put(validatedField, value);
         return this;
     }
 
@@ -35,10 +37,12 @@ public class DocumentUpdate {
      * @return this update instance for chaining
      */
     public DocumentUpdate inc(String field, Number amount) {
+        String validatedField = requireFieldName(field);
+        Objects.requireNonNull(amount, "Increment amount cannot be null.");
         operations.computeIfAbsent("$inc", k -> new HashMap<String, Object>());
         @SuppressWarnings("unchecked")
         Map<String, Object> incMap = (Map<String, Object>) operations.get("$inc");
-        incMap.put(field, amount);
+        incMap.put(validatedField, amount);
         return this;
     }
 
@@ -49,5 +53,12 @@ public class DocumentUpdate {
      */
     public Map<String, Object> toMap() {
         return Collections.unmodifiableMap(operations);
+    }
+
+    private static String requireFieldName(String field) {
+        if (field == null || field.isBlank()) {
+            throw new IllegalArgumentException("Update field name cannot be null or blank.");
+        }
+        return field;
     }
 }

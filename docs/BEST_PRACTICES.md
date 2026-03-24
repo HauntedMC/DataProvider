@@ -27,7 +27,8 @@
 
 ## Configuration
 
-- Keep one connection identifier per concrete config section (for example: `default`, `player_data_rw`).
+- Keep one connection identifier per concrete config section (for example: `default`).
+- Keep identifier names consistent across code and YAML sections.
 - Use separate identifiers for different operational requirements (read-only, read-write, analytics).
 
 ## Concurrency

@@ -3,6 +3,7 @@ package nl.hauntedmc.dataprovider.database.document.model;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.Objects;
 
 /**
  * A minimal DSL for building a "query" filter.
@@ -21,7 +22,8 @@ public class DocumentQuery {
      * @return this query instance for chaining
      */
     public DocumentQuery eq(String field, Object value) {
-        criteria.put(field, value);
+        String validatedField = requireFieldName(field);
+        criteria.put(validatedField, value);
         return this;
     }
 
@@ -33,9 +35,11 @@ public class DocumentQuery {
      * @return this query instance for chaining
      */
     public DocumentQuery gte(String field, Object value) {
+        String validatedField = requireFieldName(field);
+        Objects.requireNonNull(value, "Greater-than-or-equal value cannot be null.");
         Map<String, Object> op = new HashMap<>();
         op.put("$gte", value);
-        criteria.put(field, op);
+        criteria.put(validatedField, op);
         return this;
     }
 
@@ -47,7 +51,9 @@ public class DocumentQuery {
      * @return this query instance for chaining
      */
     public DocumentQuery raw(String field, Object expression) {
-        criteria.put(field, expression);
+        String validatedField = requireFieldName(field);
+        Objects.requireNonNull(expression, "Raw expression cannot be null.");
+        criteria.put(validatedField, expression);
         return this;
     }
 
@@ -58,5 +64,12 @@ public class DocumentQuery {
      */
     public Map<String, Object> toMap() {
         return Collections.unmodifiableMap(criteria);
+    }
+
+    private static String requireFieldName(String field) {
+        if (field == null || field.isBlank()) {
+            throw new IllegalArgumentException("Query field name cannot be null or blank.");
+        }
+        return field;
     }
 }

@@ -63,6 +63,7 @@ public class DataProviderAPI {
             String connectionIdentifier,
             Class<T> expectedDataAccessType
     ) {
+        Objects.requireNonNull(expectedDataAccessType, "Expected data access type cannot be null.");
         return registerDatabaseOptional(databaseType, connectionIdentifier)
                 .flatMap(provider -> provider.getDataAccessOptional(expectedDataAccessType));
     }
@@ -121,6 +122,7 @@ public class DataProviderAPI {
             String connectionIdentifier,
             Class<T> expectedDataAccessType
     ) {
+        Objects.requireNonNull(expectedDataAccessType, "Expected data access type cannot be null.");
         return getRegisteredDatabaseOptional(databaseType, connectionIdentifier)
                 .flatMap(provider -> provider.getDataAccessOptional(expectedDataAccessType));
     }

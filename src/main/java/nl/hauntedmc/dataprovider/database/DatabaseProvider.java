@@ -50,7 +50,15 @@ public interface DatabaseProvider {
      */
     default <T extends DataAccess> Optional<T> getDataAccessOptional(Class<T> expectedType) {
         Objects.requireNonNull(expectedType, "Expected data access type cannot be null.");
-        DataAccess dataAccess = getDataAccess();
+        DataAccess dataAccess;
+        try {
+            dataAccess = getDataAccess();
+        } catch (IllegalStateException | UnsupportedOperationException ignored) {
+            return Optional.empty();
+        }
+        if (dataAccess == null) {
+            return Optional.empty();
+        }
         if (expectedType.isInstance(dataAccess)) {
             return Optional.of(expectedType.cast(dataAccess));
         }
@@ -67,6 +75,12 @@ public interface DatabaseProvider {
     default <T extends DataAccess> T requireDataAccess(Class<T> expectedType) {
         Objects.requireNonNull(expectedType, "Expected data access type cannot be null.");
         DataAccess dataAccess = getDataAccess();
+        if (dataAccess == null) {
+            throw new IllegalStateException(
+                    "Expected data access type " + expectedType.getName()
+                            + " but provider returned null."
+            );
+        }
         if (expectedType.isInstance(dataAccess)) {
             return expectedType.cast(dataAccess);
         }
@@ -84,7 +98,7 @@ public interface DatabaseProvider {
     default Optional<DataSource> getDataSourceOptional() {
         try {
             return Optional.ofNullable(getDataSource());
-        } catch (UnsupportedOperationException ignored) {
+        } catch (UnsupportedOperationException | IllegalStateException ignored) {
             return Optional.empty();
         }
     }
