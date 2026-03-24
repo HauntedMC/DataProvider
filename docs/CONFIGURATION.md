@@ -52,8 +52,11 @@ databases:
 - `authSource` (note exact casing)
 - `require_secure_transport`
 - `tls.enabled`
-- `tls.allow_invalid_hostnames`
-- `tls.trust_all_certificates`
+- `tls.allow_invalid_hostnames` (deprecated, ignored for security)
+- `tls.trust_all_certificates` (deprecated, ignored for security)
+- `tls.trust_store_path` (optional JKS/PKCS12 path for private CA/self-managed trust)
+- `tls.trust_store_password` (optional trust store password)
+- `tls.trust_store_type` (optional, defaults to JVM `KeyStore.getDefaultType()`)
 - `pool_size`
 - `queue_capacity`
 
@@ -62,8 +65,11 @@ databases:
 - `host`, `port`, `user`, `password`, `database`
 - `require_secure_transport`
 - `tls.enabled`
-- `tls.verify_hostname`
-- `tls.trust_all_certificates`
+- `tls.verify_hostname` (deprecated, ignored for security)
+- `tls.trust_all_certificates` (deprecated, ignored for security)
+- `tls.trust_store_path` (optional JKS/PKCS12 path for private CA/self-managed trust)
+- `tls.trust_store_password` (optional trust store password)
+- `tls.trust_store_type` (optional, defaults to JVM `KeyStore.getDefaultType()`)
 - `pool.connections`
 - `pool.threads`
 - `queue_capacity`
@@ -81,11 +87,12 @@ databases:
 
 - Identifier mismatch between code and config section names
 - Enabling TLS flags without server-side TLS support
+- Using deprecated insecure TLS flags instead of a trust store for private CA deployments
 - Assuming Redis and Redis Messaging use identical pool key paths (`queue_capacity` differs)
 
 ## Operational Notes
 
 - Use `default` for single-backend setups.
 - Use explicit identifiers (for example `rw`, `ro`, `analytics`) for multi-backend setups.
-- Validate TLS flags in staging before production rollout.
+- Validate trust store configuration in staging before production rollout.
 - Never commit production credentials.

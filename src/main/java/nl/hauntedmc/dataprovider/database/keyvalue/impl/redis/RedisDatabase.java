@@ -11,6 +11,7 @@ import redis.clients.jedis.HostAndPort;
 import redis.clients.jedis.JedisPool;
 import redis.clients.jedis.JedisPoolConfig;
 
+import javax.net.ssl.SSLContext;
 import java.util.Objects;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.TimeUnit;
@@ -52,6 +53,9 @@ public class RedisDatabase implements KeyValueDatabaseProvider {
             final boolean tlsEnabled = config.node("tls", "enabled").getBoolean(false);
             final boolean verifyHostname = config.node("tls", "verify_hostname").getBoolean(true);
             final boolean trustAllCertificates = config.node("tls", "trust_all_certificates").getBoolean(false);
+            final String trustStorePath = config.node("tls", "trust_store_path").getString("");
+            final String trustStorePassword = config.node("tls", "trust_store_password").getString("");
+            final String trustStoreType = config.node("tls", "trust_store_type").getString("");
             final boolean requireSecureTransport = config.node("require_secure_transport").getBoolean(false);
 
             if (requireSecureTransport && !tlsEnabled) {
@@ -60,7 +64,8 @@ public class RedisDatabase implements KeyValueDatabaseProvider {
             if (!tlsEnabled) {
                 logger.warn("[RedisDatabase] Redis connection is running without TLS.");
             } else if (!verifyHostname || trustAllCertificates) {
-                logger.warn("[RedisDatabase] Redis TLS is enabled with relaxed certificate/hostname verification.");
+                logger.warn("[RedisDatabase] Insecure TLS flags (verify_hostname=false or trust_all_certificates=true) "
+                        + "are ignored. Strict certificate and hostname verification is always enforced.");
             }
 
             JedisPoolConfig poolConfig = new JedisPoolConfig();
@@ -73,11 +78,10 @@ public class RedisDatabase implements KeyValueDatabaseProvider {
                     .connectionTimeoutMillis(2000)
                     .socketTimeoutMillis(2000)
                     .ssl(tlsEnabled);
-            if (tlsEnabled && trustAllCertificates) {
-                clientConfigBuilder.sslSocketFactory(TlsSupport.createTrustAllSslContext().getSocketFactory());
-            }
-            if (tlsEnabled && !verifyHostname) {
-                clientConfigBuilder.hostnameVerifier(TlsSupport.trustAllHostnameVerifier());
+            if (tlsEnabled) {
+                SSLContext sslContext = TlsSupport.createSslContext(trustStorePath, trustStorePassword, trustStoreType);
+                clientConfigBuilder.sslSocketFactory(sslContext.getSocketFactory());
+                clientConfigBuilder.hostnameVerifier(TlsSupport.strictHostnameVerifier());
             }
 
             DefaultJedisClientConfig clientConfig = clientConfigBuilder.build();

@@ -56,6 +56,9 @@ public class MongoDBDatabase implements DocumentDatabaseProvider {
             final boolean tlsEnabled = config.node("tls", "enabled").getBoolean(false);
             final boolean allowInvalidHostnames = config.node("tls", "allow_invalid_hostnames").getBoolean(false);
             final boolean trustAllCertificates = config.node("tls", "trust_all_certificates").getBoolean(false);
+            final String trustStorePath = config.node("tls", "trust_store_path").getString("");
+            final String trustStorePassword = config.node("tls", "trust_store_password").getString("");
+            final String trustStoreType = config.node("tls", "trust_store_type").getString("");
             final boolean requireSecureTransport = config.node("require_secure_transport").getBoolean(false);
 
             if (requireSecureTransport && !tlsEnabled) {
@@ -64,7 +67,9 @@ public class MongoDBDatabase implements DocumentDatabaseProvider {
             if (!tlsEnabled) {
                 logger.warn("[MongoDBDatabase] MongoDB connection is running without TLS.");
             } else if (trustAllCertificates || allowInvalidHostnames) {
-                logger.warn("[MongoDBDatabase] MongoDB TLS is enabled with relaxed certificate/hostname verification.");
+                logger.warn("[MongoDBDatabase] Insecure TLS flags (allow_invalid_hostnames=true or "
+                        + "trust_all_certificates=true) are ignored. Strict certificate and hostname "
+                        + "verification is always enforced.");
             }
 
             final String connectionString;
@@ -90,13 +95,11 @@ public class MongoDBDatabase implements DocumentDatabaseProvider {
                     .retryWrites(true)
                     ;
             if (tlsEnabled) {
-                SSLContext sslContext = trustAllCertificates ? TlsSupport.createTrustAllSslContext() : null;
+                SSLContext sslContext = TlsSupport.createSslContext(trustStorePath, trustStorePassword, trustStoreType);
                 settingsBuilder.applyToSslSettings(ssl -> {
                     ssl.enabled(true);
-                    ssl.invalidHostNameAllowed(allowInvalidHostnames);
-                    if (sslContext != null) {
-                        ssl.context(sslContext);
-                    }
+                    ssl.invalidHostNameAllowed(false);
+                    ssl.context(sslContext);
                 });
             }
 

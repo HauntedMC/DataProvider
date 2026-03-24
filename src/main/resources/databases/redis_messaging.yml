@@ -9,6 +9,9 @@ default:
     enabled: false
     verify_hostname: true
     trust_all_certificates: false
+    trust_store_path: ""
+    trust_store_password: ""
+    trust_store_type: ""
   pool:
     connections: 8
     threads:     8

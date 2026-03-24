@@ -10,5 +10,8 @@ default:
     enabled: false
     allow_invalid_hostnames: false
     trust_all_certificates: false
+    trust_store_path: ""
+    trust_store_password: ""
+    trust_store_type: ""
   pool_size: 8
   queue_capacity: 1600
