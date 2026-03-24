@@ -43,8 +43,16 @@ final class RedisMessagingDataAccess implements MessagingDataAccess {
         JedisPubSub ps = new JedisPubSub() {
             @Override
             public void onMessage(String channel, String raw) {
-                T msg = MessageRegistry.fromJson(raw, type);
-                handler.accept(msg);
+                try {
+                    T msg = MessageRegistry.fromJson(raw, type);
+                    if (msg == null) {
+                        DataProvider.getLogger().warn("Received null message while subscribing to channel " + channel);
+                        return;
+                    }
+                    handler.accept(msg);
+                } catch (Exception ex) {
+                    DataProvider.getLogger().error("Error while handling message from channel " + channel, ex);
+                }
             }
         };
 

@@ -4,9 +4,9 @@ import com.velocitypowered.api.command.CommandSource;
 import com.velocitypowered.api.command.SimpleCommand;
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.format.NamedTextColor;
-import nl.hauntedmc.dataprovider.platform.velocity.VelocityDataProvider;
 import nl.hauntedmc.dataprovider.database.DatabaseConnectionKey;
 import nl.hauntedmc.dataprovider.database.DatabaseProvider;
+import nl.hauntedmc.dataprovider.internal.DataProviderHandler;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -16,10 +16,10 @@ import java.util.concurrent.ConcurrentMap;
 
 public class DataProviderCommand implements SimpleCommand {
 
-    private final VelocityDataProvider plugin;
+    private final DataProviderHandler dataProviderHandler;
 
-    public DataProviderCommand(VelocityDataProvider plugin) {
-        this.plugin = plugin;
+    public DataProviderCommand(DataProviderHandler dataProviderHandler) {
+        this.dataProviderHandler = dataProviderHandler;
     }
 
     @Override
@@ -42,7 +42,7 @@ public class DataProviderCommand implements SimpleCommand {
             }
 
             ConcurrentMap<DatabaseConnectionKey, DatabaseProvider> activeDatabases =
-                    plugin.getDataProvider().getDataProviderHandler().getActiveDatabases();
+                    dataProviderHandler.getActiveDatabases();
 
             if (activeDatabases.isEmpty()) {
                 source.sendMessage(Component.text("No active database connections found.", NamedTextColor.YELLOW));

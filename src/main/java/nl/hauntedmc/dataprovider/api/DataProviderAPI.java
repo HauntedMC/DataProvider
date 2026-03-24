@@ -4,6 +4,8 @@ import nl.hauntedmc.dataprovider.database.DatabaseType;
 import nl.hauntedmc.dataprovider.database.DatabaseProvider;
 import nl.hauntedmc.dataprovider.internal.DataProviderHandler;
 
+import java.util.Objects;
+
 /**
  * DataProviderAPI is the public facade that exposes only the safe methods for
  * third-party plugins. Internally, it delegates to a DataProviderHandler, but it does not
@@ -19,7 +21,7 @@ public class DataProviderAPI {
      * @param handler the internal DataProviderHandler instance.
      */
     public DataProviderAPI(DataProviderHandler handler) {
-        this.handler = handler;
+        this.handler = Objects.requireNonNull(handler, "DataProviderHandler cannot be null");
     }
 
     /**

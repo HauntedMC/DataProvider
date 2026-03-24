@@ -20,7 +20,7 @@ public class BukkitDataProvider extends JavaPlugin {
         dataProvider = new DataProvider(logInstance, getDataPath(), this.getClassLoader());
 
         // Init Bukkit Command
-        DataProviderCommand commandExecutor = new DataProviderCommand(this);
+        DataProviderCommand commandExecutor = new DataProviderCommand(dataProvider.getDataProviderHandler());
         Objects.requireNonNull(getCommand("dataprovider")).setExecutor(commandExecutor);
         Objects.requireNonNull(getCommand("dataprovider")).setTabCompleter(commandExecutor);
 
@@ -29,16 +29,17 @@ public class BukkitDataProvider extends JavaPlugin {
 
     @Override
     public void onDisable() {
-        dataProvider.shutdownAllDatabases();
+        if (dataProvider != null) {
+            dataProvider.shutdownAllDatabases();
+        }
         getLogger().info("Disabled.");
-    }
-
-    public DataProvider getDataProvider() {
-        return dataProvider;
     }
 
     // START EXTERNALLY ACCESSIBLE
     public static DataProviderAPI getDataProviderAPI() {
+        if (dataProvider == null) {
+            throw new IllegalStateException("DataProvider is not initialized yet.");
+        }
         return new DataProviderAPI(dataProvider.getDataProviderHandler());
     }
     // END EXTERNALLY ACCESSIBLE

@@ -2,9 +2,9 @@ package nl.hauntedmc.dataprovider.platform.bukkit.command;
 
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.format.NamedTextColor;
-import nl.hauntedmc.dataprovider.platform.bukkit.BukkitDataProvider;
 import nl.hauntedmc.dataprovider.database.DatabaseConnectionKey;
 import nl.hauntedmc.dataprovider.database.DatabaseProvider;
+import nl.hauntedmc.dataprovider.internal.DataProviderHandler;
 import org.bukkit.command.Command;
 import org.bukkit.command.CommandExecutor;
 import org.bukkit.command.CommandSender;
@@ -18,10 +18,10 @@ import java.util.concurrent.ConcurrentMap;
 
 public class DataProviderCommand implements CommandExecutor, TabCompleter {
 
-    private final BukkitDataProvider plugin;
+    private final DataProviderHandler dataProviderHandler;
 
-    public DataProviderCommand(BukkitDataProvider plugin) {
-        this.plugin = plugin;
+    public DataProviderCommand(DataProviderHandler dataProviderHandler) {
+        this.dataProviderHandler = dataProviderHandler;
     }
 
     @Override
@@ -42,7 +42,7 @@ public class DataProviderCommand implements CommandExecutor, TabCompleter {
             }
 
             ConcurrentMap<DatabaseConnectionKey, DatabaseProvider> activeDatabases =
-                    plugin.getDataProvider().getDataProviderHandler().getActiveDatabases();
+                    dataProviderHandler.getActiveDatabases();
 
             if (activeDatabases.isEmpty()) {
                 sender.sendMessage(Component.text("No active database connections found.", NamedTextColor.YELLOW));

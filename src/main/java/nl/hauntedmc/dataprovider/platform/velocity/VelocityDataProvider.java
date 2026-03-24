@@ -1,7 +1,6 @@
 package nl.hauntedmc.dataprovider.platform.velocity;
 
 import com.google.inject.Inject;
-import com.google.inject.Injector;
 import com.velocitypowered.api.command.CommandManager;
 import com.velocitypowered.api.command.CommandMeta;
 import com.velocitypowered.api.event.proxy.ProxyInitializeEvent;
@@ -33,9 +32,6 @@ public class VelocityDataProvider {
     private static DataProvider dataProvider;
 
     @Inject
-    private Injector injector;
-
-    @Inject
     public VelocityDataProvider(ProxyServer proxyServer, Logger logger, @DataDirectory Path dataDirectory) {
         this.proxyServer = proxyServer;
         this.logger = logger;
@@ -57,25 +53,26 @@ public class VelocityDataProvider {
         dataProvider = new DataProvider(logInstance, dataDirectory, getClass().getClassLoader());
 
         CommandManager commandManager = proxyServer.getCommandManager();
-        CommandMeta meta = commandManager.metaBuilder("dataproviderproxy")
+        CommandMeta meta = commandManager.metaBuilder("dataprovider")
                 .build();
-        commandManager.register(meta, new DataProviderCommand(this));
+        commandManager.register(meta, new DataProviderCommand(dataProvider.getDataProviderHandler()));
 
         logger.info("DataProvider plugin enabled on Velocity (v1.0.0).");
     }
 
     @Subscribe
     public void onProxyShutdown(ProxyShutdownEvent event) {
-        dataProvider.shutdownAllDatabases();
+        if (dataProvider != null) {
+            dataProvider.shutdownAllDatabases();
+        }
         logger.info("DataProvider plugin disabled on Velocity.");
-    }
-
-    public DataProvider getDataProvider() {
-        return dataProvider;
     }
 
     // START EXTERNALLY ACCESSIBLE
     public static DataProviderAPI getDataProviderAPI() {
+        if (dataProvider == null) {
+            throw new IllegalStateException("DataProvider is not initialized yet.");
+        }
         return new DataProviderAPI(dataProvider.getDataProviderHandler());
     }
     // END EXTERNALLY ACCESSIBLE

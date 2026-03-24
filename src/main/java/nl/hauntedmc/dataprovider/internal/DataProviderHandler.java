@@ -7,6 +7,7 @@ import nl.hauntedmc.dataprovider.database.DatabaseProvider;
 
 import java.util.Objects;
 import java.util.concurrent.ConcurrentMap;
+import java.util.regex.Pattern;
 
 /**
  * DataProviderHandler is the single public entry point for database‐related operations.
@@ -14,6 +15,9 @@ import java.util.concurrent.ConcurrentMap;
  * (such as registering/unregistering connections) that perform runtime security checks.
  */
 public class DataProviderHandler {
+
+    private static final Pattern PLUGIN_NAME_PATTERN = Pattern.compile("[A-Za-z0-9_.-]{1,64}");
+    private static final Pattern CONNECTION_IDENTIFIER_PATTERN = Pattern.compile("[A-Za-z0-9_.:-]{1,128}");
 
     private final DataProviderRegistry registry;
     private final SecurityManager securityManager;
@@ -135,11 +139,17 @@ public class DataProviderHandler {
         if (pluginName == null || pluginName.isBlank()) {
             throw new IllegalArgumentException("Plugin name cannot be null or blank.");
         }
+        if (!PLUGIN_NAME_PATTERN.matcher(pluginName).matches()) {
+            throw new IllegalArgumentException("Plugin name contains unsupported characters.");
+        }
     }
 
     private static void requireConnectionIdentifier(String connectionIdentifier) {
         if (connectionIdentifier == null || connectionIdentifier.isBlank()) {
             throw new IllegalArgumentException("Connection identifier cannot be null or blank.");
+        }
+        if (!CONNECTION_IDENTIFIER_PATTERN.matcher(connectionIdentifier).matches()) {
+            throw new IllegalArgumentException("Connection identifier contains unsupported characters.");
         }
     }
 

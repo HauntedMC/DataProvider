@@ -27,6 +27,7 @@ public class SecurityManager {
 
     private String secret;
     private final Map<String, ClassLoader> authorizedPlugins = new ConcurrentHashMap<>();
+    private final Map<ClassLoader, String> authorizedCallers = new ConcurrentHashMap<>();
 
     private final Path secretFile;
     private final ConfigurationLoader<CommentedConfigurationNode> loader;
@@ -117,6 +118,14 @@ public class SecurityManager {
             return false;
         }
 
+        String existingPluginNameForCaller = authorizedCallers.get(callerClassLoader);
+        if (existingPluginNameForCaller != null && !existingPluginNameForCaller.equals(pluginName)) {
+            DataProvider.getLogger().error(
+                    "Failed to authorize plugin " + pluginName + ": caller already authorized as " + existingPluginNameForCaller + "."
+            );
+            return false;
+        }
+
         ClassLoader alreadyBound = authorizedPlugins.putIfAbsent(pluginName, callerClassLoader);
         if (alreadyBound != null && alreadyBound != callerClassLoader) {
             DataProvider.getLogger().error(
@@ -124,6 +133,7 @@ public class SecurityManager {
             );
             return false;
         }
+        authorizedCallers.putIfAbsent(callerClassLoader, pluginName);
 
         DataProvider.getLogger().info("Plugin " + pluginName + " authorized successfully.");
         return true;
@@ -153,7 +163,10 @@ public class SecurityManager {
         if (pluginName == null || pluginName.isBlank()) {
             return;
         }
-        authorizedPlugins.remove(pluginName);
+        ClassLoader removedClassLoader = authorizedPlugins.remove(pluginName);
+        if (removedClassLoader != null) {
+            authorizedCallers.remove(removedClassLoader, pluginName);
+        }
     }
 
     private static boolean secureEquals(String left, String right) {
