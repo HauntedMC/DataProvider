@@ -1,6 +1,8 @@
 package nl.hauntedmc.dataprovider.database;
 
 import javax.sql.DataSource;
+import java.util.Objects;
+import java.util.Optional;
 
 /**
  * The minimal shared parent for all database providers (relational or NoSQL).
@@ -38,4 +40,52 @@ public interface DatabaseProvider {
      * @return the data access object
      */
     DataSource getDataSource();
+
+    /**
+     * Returns the provider data access cast to the expected type.
+     *
+     * @param expectedType required data access subtype
+     * @param <T>          expected data access subtype
+     * @return optional containing the casted data access if compatible
+     */
+    default <T extends DataAccess> Optional<T> getDataAccessOptional(Class<T> expectedType) {
+        Objects.requireNonNull(expectedType, "Expected data access type cannot be null.");
+        DataAccess dataAccess = getDataAccess();
+        if (expectedType.isInstance(dataAccess)) {
+            return Optional.of(expectedType.cast(dataAccess));
+        }
+        return Optional.empty();
+    }
+
+    /**
+     * Returns the provider data access cast to the expected type or throws with a descriptive message.
+     *
+     * @param expectedType required data access subtype
+     * @param <T>          expected data access subtype
+     * @return casted data access
+     */
+    default <T extends DataAccess> T requireDataAccess(Class<T> expectedType) {
+        Objects.requireNonNull(expectedType, "Expected data access type cannot be null.");
+        DataAccess dataAccess = getDataAccess();
+        if (expectedType.isInstance(dataAccess)) {
+            return expectedType.cast(dataAccess);
+        }
+        throw new IllegalStateException(
+                "Expected data access type " + expectedType.getName()
+                        + " but got " + dataAccess.getClass().getName()
+        );
+    }
+
+    /**
+     * Returns a DataSource when supported by the provider.
+     *
+     * @return optional DataSource (empty for non-relational providers)
+     */
+    default Optional<DataSource> getDataSourceOptional() {
+        try {
+            return Optional.ofNullable(getDataSource());
+        } catch (UnsupportedOperationException ignored) {
+            return Optional.empty();
+        }
+    }
 }

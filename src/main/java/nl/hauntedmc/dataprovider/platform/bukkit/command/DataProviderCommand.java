@@ -43,6 +43,8 @@ public class DataProviderCommand implements CommandExecutor, TabCompleter {
 
             ConcurrentMap<DatabaseConnectionKey, DatabaseProvider> activeDatabases =
                     dataProviderHandler.getActiveDatabases();
+            Map<DatabaseConnectionKey, Integer> referenceCounts =
+                    dataProviderHandler.getActiveDatabaseReferenceCounts();
 
             if (activeDatabases.isEmpty()) {
                 sender.sendMessage(Component.text("No active database connections found.", NamedTextColor.YELLOW));
@@ -51,7 +53,8 @@ public class DataProviderCommand implements CommandExecutor, TabCompleter {
 
             sender.sendMessage(Component.text("Active Database Connections:", NamedTextColor.GREEN));
             for (Map.Entry<DatabaseConnectionKey, DatabaseProvider> entry : activeDatabases.entrySet()) {
-                Component connectionInfo = getConnectionComponent(entry);
+                int references = referenceCounts.getOrDefault(entry.getKey(), 1);
+                Component connectionInfo = getConnectionComponent(entry, references);
                 sender.sendMessage(connectionInfo);
             }
             return true;
@@ -61,10 +64,10 @@ public class DataProviderCommand implements CommandExecutor, TabCompleter {
         return true;
     }
 
-    private static @NotNull Component getConnectionComponent(Map.Entry<DatabaseConnectionKey, DatabaseProvider> entry) {
+    private static @NotNull Component getConnectionComponent(Map.Entry<DatabaseConnectionKey, DatabaseProvider> entry, int references) {
         DatabaseConnectionKey key = entry.getKey();
 
-        Component statusComponent = Component.text("Registered", NamedTextColor.GREEN);
+        Component statusComponent = Component.text("Registered (" + references + " refs)", NamedTextColor.GREEN);
 
         return Component.text("Plugin: ", NamedTextColor.YELLOW)
                 .append(Component.text(key.pluginName(), NamedTextColor.WHITE))

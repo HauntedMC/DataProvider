@@ -9,6 +9,10 @@ import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * Instance-scoped Gson + type registry for EventMessage classes.
+ * <p>
+ * Most integrations using typed publish/subscribe do not need explicit type registration,
+ * because message classes are provided directly at subscription time.
+ * Registration is only required when using {@link #parse(String)} for dynamic payload parsing.
  */
 public final class MessageRegistry {
     private final Gson gson = new Gson();

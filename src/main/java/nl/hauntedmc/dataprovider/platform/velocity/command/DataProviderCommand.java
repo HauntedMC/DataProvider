@@ -43,6 +43,8 @@ public class DataProviderCommand implements SimpleCommand {
 
             ConcurrentMap<DatabaseConnectionKey, DatabaseProvider> activeDatabases =
                     dataProviderHandler.getActiveDatabases();
+            Map<DatabaseConnectionKey, Integer> referenceCounts =
+                    dataProviderHandler.getActiveDatabaseReferenceCounts();
 
             if (activeDatabases.isEmpty()) {
                 source.sendMessage(Component.text("No active database connections found.", NamedTextColor.YELLOW));
@@ -51,7 +53,8 @@ public class DataProviderCommand implements SimpleCommand {
 
             source.sendMessage(Component.text("Active Database Connections:", NamedTextColor.GREEN));
             for (Map.Entry<DatabaseConnectionKey, DatabaseProvider> entry : activeDatabases.entrySet()) {
-                Component connectionInfo = getConnectionComponent(entry);
+                int references = referenceCounts.getOrDefault(entry.getKey(), 1);
+                Component connectionInfo = getConnectionComponent(entry, references);
                 source.sendMessage(connectionInfo);
             }
             return;
@@ -60,10 +63,10 @@ public class DataProviderCommand implements SimpleCommand {
         source.sendMessage(Component.text("Unknown subcommand. Use /dataprovider help for usage.", NamedTextColor.RED));
     }
 
-    private static Component getConnectionComponent(Map.Entry<DatabaseConnectionKey, DatabaseProvider> entry) {
+    private static Component getConnectionComponent(Map.Entry<DatabaseConnectionKey, DatabaseProvider> entry, int references) {
         DatabaseConnectionKey key = entry.getKey();
 
-        Component statusComponent = Component.text("Registered", NamedTextColor.GREEN);
+        Component statusComponent = Component.text("Registered (" + references + " refs)", NamedTextColor.GREEN);
 
         return Component.text("Plugin: ", NamedTextColor.YELLOW)
                 .append(Component.text(key.pluginName(), NamedTextColor.WHITE))

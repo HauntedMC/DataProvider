@@ -11,6 +11,7 @@ import nl.hauntedmc.dataprovider.platform.common.logger.ILoggerAdapter;
 
 import java.util.Objects;
 import java.nio.file.Path;
+import java.util.Map;
 import java.util.concurrent.ConcurrentMap;
 import java.util.regex.Pattern;
 
@@ -99,6 +100,14 @@ public class DataProviderHandler {
     public ConcurrentMap<DatabaseConnectionKey, DatabaseProvider> getActiveDatabases() {
         requireInternalCaller();
         return registry.getActiveDatabases();
+    }
+
+    /**
+     * Returns active connection reference counts per database key.
+     */
+    public Map<DatabaseConnectionKey, Integer> getActiveDatabaseReferenceCounts() {
+        requireInternalCaller();
+        return registry.getActiveDatabaseReferenceCounts();
     }
 
     private CallerContext resolveCallerContext() {
