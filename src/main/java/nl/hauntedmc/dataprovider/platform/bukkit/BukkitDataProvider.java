@@ -8,14 +8,25 @@ import nl.hauntedmc.dataprovider.platform.bukkit.logger.BukkitLoggerAdapter;
 import org.bukkit.plugin.java.JavaPlugin;
 
 import java.util.Objects;
+import java.util.logging.Level;
 
 public class BukkitDataProvider extends JavaPlugin {
 
-    private static DataProvider dataProvider;
+    private static volatile DataProvider dataProvider;
 
 
     @Override
     public void onEnable() {
+        DataProvider previousProvider = dataProvider;
+        if (previousProvider != null) {
+            getLogger().warning("Detected leftover DataProvider instance during enable; forcing cleanup first.");
+            dataProvider = null;
+            try {
+                previousProvider.shutdownAllDatabases();
+            } catch (Exception e) {
+                getLogger().log(Level.SEVERE, "Failed to shut down leftover DataProvider instance.", e);
+            }
+        }
 
         BukkitLoggerAdapter logInstance = new BukkitLoggerAdapter(getLogger());
         dataProvider = new DataProvider(
@@ -35,8 +46,14 @@ public class BukkitDataProvider extends JavaPlugin {
 
     @Override
     public void onDisable() {
-        if (dataProvider != null) {
-            dataProvider.shutdownAllDatabases();
+        DataProvider providerToShutdown = dataProvider;
+        dataProvider = null;
+        if (providerToShutdown != null) {
+            try {
+                providerToShutdown.shutdownAllDatabases();
+            } catch (Exception e) {
+                getLogger().log(Level.SEVERE, "Failed to shut down DataProvider cleanly.", e);
+            }
         }
         getLogger().info("Disabled.");
     }

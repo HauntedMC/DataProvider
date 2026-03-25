@@ -185,9 +185,46 @@ class DataProviderRegistryTest {
 
         assertEquals(1, a.disconnectCalls);
         assertEquals(1, b.disconnectCalls);
-        assertTrue(registry.getActiveDatabases().isEmpty());
-        assertTrue(registry.getActiveDatabaseReferenceCounts().isEmpty());
+        assertTrue(registry.isClosed());
+        assertThrows(IllegalStateException.class, registry::getActiveDatabases);
+        assertThrows(IllegalStateException.class, registry::getActiveDatabaseReferenceCounts);
         assertTrue(logger.infoMessages().stream().anyMatch(m -> m.contains("All database connections have been closed")));
+    }
+
+    @Test
+    void shutdownIsIdempotentAndBlocksFurtherOperations() {
+        DatabaseFactory factory = mock(DatabaseFactory.class);
+        ConfigHandler configHandler = mock(ConfigHandler.class);
+        when(configHandler.isDatabaseTypeEnabled(DatabaseType.MYSQL)).thenReturn(true);
+        RecordingLoggerAdapter logger = new RecordingLoggerAdapter();
+        DataProviderRegistry registry = new DataProviderRegistry(factory, configHandler, logger);
+
+        RecordingProvider provider = new RecordingProvider(true);
+        when(factory.createDatabaseProvider(DatabaseType.MYSQL, "default")).thenReturn(provider);
+        registry.registerDatabase("plugin", DatabaseType.MYSQL, "default");
+
+        registry.shutdownAllDatabases();
+        registry.shutdownAllDatabases();
+
+        assertEquals(1, provider.disconnectCalls);
+        assertTrue(registry.isClosed());
+
+        IllegalStateException registerFailure = assertThrows(
+                IllegalStateException.class,
+                () -> registry.registerDatabase("plugin", DatabaseType.MYSQL, "default")
+        );
+        assertTrue(registerFailure.getMessage().contains("shut down"));
+        assertThrows(
+                IllegalStateException.class,
+                () -> registry.getDatabase("plugin", DatabaseType.MYSQL, "default")
+        );
+        assertThrows(
+                IllegalStateException.class,
+                () -> registry.unregisterDatabase("plugin", DatabaseType.MYSQL, "default")
+        );
+        assertThrows(IllegalStateException.class, () -> registry.unregisterAllDatabases("plugin"));
+        assertThrows(IllegalStateException.class, registry::getActiveDatabases);
+        assertThrows(IllegalStateException.class, registry::getActiveDatabaseReferenceCounts);
     }
 
     @Test

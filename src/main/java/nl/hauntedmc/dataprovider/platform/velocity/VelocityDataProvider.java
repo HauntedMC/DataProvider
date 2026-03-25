@@ -30,7 +30,7 @@ public class VelocityDataProvider {
     private final ProxyServer proxyServer;
     private final Logger logger;
     private final Path dataDirectory;
-    private static DataProvider dataProvider;
+    private static volatile DataProvider dataProvider;
 
     @Inject
     public VelocityDataProvider(ProxyServer proxyServer, Logger logger, @DataDirectory Path dataDirectory) {
@@ -41,6 +41,17 @@ public class VelocityDataProvider {
 
     @Subscribe
     public void onProxyInitialize(ProxyInitializeEvent event) {
+        DataProvider previousProvider = dataProvider;
+        if (previousProvider != null) {
+            logger.warn("Detected leftover DataProvider instance during enable; forcing cleanup first.");
+            dataProvider = null;
+            try {
+                previousProvider.shutdownAllDatabases();
+            } catch (Exception e) {
+                logger.error("Failed to shut down leftover DataProvider instance cleanly.", e);
+            }
+        }
+
         SLF4JLoggerAdapter logInstance = new SLF4JLoggerAdapter(logger);
         dataProvider = new DataProvider(
                 logInstance,
@@ -60,8 +71,14 @@ public class VelocityDataProvider {
 
     @Subscribe
     public void onProxyShutdown(ProxyShutdownEvent event) {
-        if (dataProvider != null) {
-            dataProvider.shutdownAllDatabases();
+        DataProvider providerToShutdown = dataProvider;
+        dataProvider = null;
+        if (providerToShutdown != null) {
+            try {
+                providerToShutdown.shutdownAllDatabases();
+            } catch (Exception e) {
+                logger.error("Failed to shut down DataProvider cleanly.", e);
+            }
         }
         logger.info("DataProvider plugin disabled on Velocity.");
     }

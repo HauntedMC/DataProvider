@@ -16,6 +16,7 @@ import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -130,5 +131,31 @@ class DataProviderHandlerTest {
         handler.shutdownAllDatabases();
 
         verify(registry).shutdownAllDatabases();
+    }
+
+    @Test
+    void operationsFailFastWhenRegistryIsClosed() {
+        DataProviderRegistry registry = mock(DataProviderRegistry.class);
+        when(registry.isClosed()).thenReturn(true);
+
+        CallerContextResolver resolver = () -> new CallerContext("plugin", getClass().getClassLoader());
+        DataProviderHandler handler = new DataProviderHandler(
+                registry,
+                resolver,
+                new RecordingLoggerAdapter(),
+                getClass().getClassLoader()
+        );
+
+        assertThrows(IllegalStateException.class, () -> handler.registerDatabase(DatabaseType.MYSQL, "default"));
+        assertThrows(IllegalStateException.class, () -> handler.getRegisteredDatabase(DatabaseType.MYSQL, "default"));
+        assertThrows(IllegalStateException.class, () -> handler.unregisterDatabase(DatabaseType.MYSQL, "default"));
+        assertThrows(IllegalStateException.class, handler::unregisterAllDatabases);
+        assertThrows(IllegalStateException.class, handler::getActiveDatabases);
+        assertThrows(IllegalStateException.class, handler::getActiveDatabaseReferenceCounts);
+
+        verify(registry, never()).registerDatabase("plugin", DatabaseType.MYSQL, "default");
+        verify(registry, never()).getDatabase("plugin", DatabaseType.MYSQL, "default");
+        verify(registry, never()).unregisterDatabase("plugin", DatabaseType.MYSQL, "default");
+        verify(registry, never()).unregisterAllDatabases("plugin");
     }
 }

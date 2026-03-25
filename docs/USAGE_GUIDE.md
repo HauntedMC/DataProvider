@@ -16,6 +16,14 @@ DataProviderAPI api = BukkitDataProvider.getDataProviderAPI();
 
 Caller identity is resolved automatically from the plugin runtime context.
 
+## 1.1 API lifecycle across reloads
+
+Treat `DataProviderAPI` as runtime-scoped, not permanent.
+
+- Acquire the API during your plugin enable/start phase.
+- Do not keep API references across plugin reloads or disable/enable cycles.
+- After DataProvider shuts down, old API handles throw `IllegalStateException`; reacquire a fresh API after DataProvider is enabled again.
+
 ## 2. Register a connection
 
 Basic:

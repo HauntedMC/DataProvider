@@ -23,6 +23,8 @@ public class DataProviderHandler {
 
     private static final String INTERNAL_PACKAGE_PREFIX = "nl.hauntedmc.dataprovider.internal";
     private static final Pattern CONNECTION_IDENTIFIER_PATTERN = Pattern.compile("[A-Za-z0-9_.:-]{1,128}");
+    private static final String CLOSED_MESSAGE =
+            "DataProvider API is no longer available. Obtain a fresh API instance after plugin enable.";
 
     private final DataProviderRegistry registry;
     private final CallerContextResolver callerContextResolver;
@@ -64,6 +66,7 @@ public class DataProviderHandler {
      * Registers a database connection for the resolved caller plugin.
      */
     public DatabaseProvider registerDatabase(DatabaseType databaseType, String connectionIdentifier) {
+        requireOpen();
         Objects.requireNonNull(databaseType, "Database type cannot be null");
         requireConnectionIdentifier(connectionIdentifier);
         CallerContext caller = resolveCallerContext();
@@ -74,6 +77,7 @@ public class DataProviderHandler {
      * Unregisters a specific database connection for the resolved caller plugin.
      */
     public void unregisterDatabase(DatabaseType databaseType, String connectionIdentifier) {
+        requireOpen();
         Objects.requireNonNull(databaseType, "Database type cannot be null");
         requireConnectionIdentifier(connectionIdentifier);
         CallerContext caller = resolveCallerContext();
@@ -84,6 +88,7 @@ public class DataProviderHandler {
      * Unregisters all database connections for the resolved caller plugin.
      */
     public void unregisterAllDatabases() {
+        requireOpen();
         CallerContext caller = resolveCallerContext();
         registry.unregisterAllDatabases(caller.pluginId());
     }
@@ -100,6 +105,7 @@ public class DataProviderHandler {
      * Retrieves a registered database connection for the resolved caller plugin.
      */
     public DatabaseProvider getRegisteredDatabase(DatabaseType databaseType, String connectionIdentifier) {
+        requireOpen();
         Objects.requireNonNull(databaseType, "Database type cannot be null");
         requireConnectionIdentifier(connectionIdentifier);
         CallerContext caller = resolveCallerContext();
@@ -110,6 +116,7 @@ public class DataProviderHandler {
      * Returns a snapshot of active database connections.
      */
     public ConcurrentMap<DatabaseConnectionKey, DatabaseProvider> getActiveDatabases() {
+        requireOpen();
         requireInternalCaller();
         return registry.getActiveDatabases();
     }
@@ -118,6 +125,7 @@ public class DataProviderHandler {
      * Returns active connection reference counts per database key.
      */
     public Map<DatabaseConnectionKey, Integer> getActiveDatabaseReferenceCounts() {
+        requireOpen();
         requireInternalCaller();
         return registry.getActiveDatabaseReferenceCounts();
     }
@@ -145,6 +153,12 @@ public class DataProviderHandler {
         if (callerLoader == null || callerLoader != ownClassLoader) {
             logger.error("Rejected privileged operation from non-internal caller.");
             throw new SecurityException("Privileged DataProvider operation is restricted to internal callers.");
+        }
+    }
+
+    private void requireOpen() {
+        if (registry.isClosed()) {
+            throw new IllegalStateException(CLOSED_MESSAGE);
         }
     }
 }
