@@ -21,7 +21,7 @@ import java.nio.file.Path;
 @Plugin(
         id = "dataprovider",
         name = "DataProvider",
-        version = "1.21.0",
+        version = "2.0.0",
         description = "A cross-platform data provider plugin.",
         authors = {"HauntedMC"}
 )
@@ -54,10 +54,7 @@ public class VelocityDataProvider {
                 .build();
         commandManager.register(meta, new DataProviderCommand(dataProvider.getDataProviderHandler()));
 
-        String pluginVersion = proxyServer.getPluginManager()
-                .fromInstance(this)
-                .map(container -> container.getDescription().getVersion().toString())
-                .orElse("unknown");
+        String pluginVersion = resolvePluginVersion(proxyServer, this);
         logger.info("DataProvider plugin enabled on Velocity (v{}).", pluginVersion);
     }
 
@@ -77,4 +74,11 @@ public class VelocityDataProvider {
         return new DataProviderAPI(dataProvider.getDataProviderHandler());
     }
     // END EXTERNALLY ACCESSIBLE
+
+    static String resolvePluginVersion(ProxyServer proxyServer, Object pluginInstance) {
+        return proxyServer.getPluginManager()
+                .fromInstance(pluginInstance)
+                .flatMap(container -> container.getDescription().getVersion())
+                .orElse("unknown");
+    }
 }
