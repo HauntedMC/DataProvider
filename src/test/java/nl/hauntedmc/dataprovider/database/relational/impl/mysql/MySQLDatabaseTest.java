@@ -1,9 +1,14 @@
 package nl.hauntedmc.dataprovider.database.relational.impl.mysql;
 
+import com.zaxxer.hikari.HikariConfig;
+import com.zaxxer.hikari.HikariDataSource;
 import nl.hauntedmc.dataprovider.testutil.RecordingLoggerAdapter;
 import org.junit.jupiter.api.Test;
 import org.spongepowered.configurate.CommentedConfigurationNode;
 
+import java.util.concurrent.atomic.AtomicReference;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -40,5 +45,25 @@ class MySQLDatabaseTest {
         database.disconnect();
         assertFalse(database.isConnected());
         assertNull(database.getDataSource());
+    }
+
+    @Test
+    void connectConfiguresExplicitMySqlDriverClass() {
+        CommentedConfigurationNode config = CommentedConfigurationNode.root();
+        RecordingLoggerAdapter logger = new RecordingLoggerAdapter();
+        AtomicReference<HikariConfig> capturedConfig = new AtomicReference<>();
+        MySQLDatabase database = new MySQLDatabase(config, logger) {
+            @Override
+            HikariDataSource createDataSource(HikariConfig hikariConfig) {
+                capturedConfig.set(hikariConfig);
+                throw new RuntimeException("stop after hikari config capture");
+            }
+        };
+
+        database.connect();
+
+        assertEquals(MySQLDatabase.MYSQL_DRIVER_CLASS_NAME, capturedConfig.get().getDriverClassName());
+        assertTrue(logger.errorMessages().stream().anyMatch(message ->
+                message.contains("[MySQLDatabase] Connection failed!")));
     }
 }

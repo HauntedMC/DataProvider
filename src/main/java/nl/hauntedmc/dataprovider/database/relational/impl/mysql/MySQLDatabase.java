@@ -22,6 +22,7 @@ import java.util.concurrent.TimeUnit;
  */
 public class MySQLDatabase implements RelationalDatabaseProvider, ManagedDatabaseProvider {
 
+    static final String MYSQL_DRIVER_CLASS_NAME = "com.mysql.cj.jdbc.Driver";
     private static final Set<String> SECURE_SSL_MODES = Set.of("REQUIRED", "VERIFY_CA", "VERIFY_IDENTITY");
 
     private final CommentedConfigurationNode config;
@@ -76,6 +77,7 @@ public class MySQLDatabase implements RelationalDatabaseProvider, ManagedDatabas
                     allowPublicKeyRetrieval
             );
             hikariConfig.setJdbcUrl(jdbcUrl);
+            hikariConfig.setDriverClassName(MYSQL_DRIVER_CLASS_NAME);
             hikariConfig.setUsername(user);
             hikariConfig.setPassword(password);
 
@@ -87,7 +89,7 @@ public class MySQLDatabase implements RelationalDatabaseProvider, ManagedDatabas
             hikariConfig.setMaxLifetime(1800000);
             hikariConfig.setLeakDetectionThreshold(2000);
 
-            createdDataSource = new HikariDataSource(hikariConfig);
+            createdDataSource = createDataSource(hikariConfig);
             createdExecutor = BoundedExecutorFactory.create("dataprovider-mysql", poolSize, queueCapacity);
 
             try (var connection = createdDataSource.getConnection()) {
@@ -178,5 +180,9 @@ public class MySQLDatabase implements RelationalDatabaseProvider, ManagedDatabas
     @Override
     public DataSource getDataSource() {
         return dataSource;
+    }
+
+    HikariDataSource createDataSource(HikariConfig hikariConfig) {
+        return new HikariDataSource(hikariConfig);
     }
 }
