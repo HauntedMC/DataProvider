@@ -32,7 +32,7 @@ class DataProviderRegistry {
         while (true) {
             ActiveDatabaseRegistration existingRegistration = activeDatabases.get(key);
             if (existingRegistration != null) {
-                DatabaseProvider existingProvider = existingRegistration.provider();
+                ManagedDatabaseProvider existingProvider = existingRegistration.provider();
                 if (isProviderHealthy(existingProvider, key) && existingRegistration.tryAcquireReference()) {
                     int references = existingRegistration.referenceCount();
                     logger.info(pluginName + " reused " + databaseType.name() + " connection (" + connectionIdentifier
@@ -52,7 +52,7 @@ class DataProviderRegistry {
                 return null;
             }
 
-            DatabaseProvider createdProvider = null;
+            ManagedDatabaseProvider createdProvider = null;
             try {
                 createdProvider = factory.createDatabaseProvider(databaseType, connectionIdentifier);
                 if (createdProvider == null) {
@@ -83,7 +83,7 @@ class DataProviderRegistry {
                     logger.error("Failed to clean up duplicate connection for " + key, e);
                 }
 
-                DatabaseProvider raceWinnerProvider = raceWinner.provider();
+                ManagedDatabaseProvider raceWinnerProvider = raceWinner.provider();
                 if (isProviderHealthy(raceWinnerProvider, key) && raceWinner.tryAcquireReference()) {
                     int references = raceWinner.referenceCount();
                     logger.info(pluginName + " already has " + databaseType.name() + " connection (" + connectionIdentifier
@@ -117,7 +117,7 @@ class DataProviderRegistry {
         }
     }
 
-    private void disconnectQuietly(DatabaseProvider provider, DatabaseConnectionKey key, String reason) {
+    private void disconnectQuietly(ManagedDatabaseProvider provider, DatabaseConnectionKey key, String reason) {
         try {
             provider.disconnect();
         } catch (Exception e) {
@@ -132,7 +132,7 @@ class DataProviderRegistry {
             return null;
         }
 
-        DatabaseProvider provider = registration.provider();
+        ManagedDatabaseProvider provider = registration.provider();
         if (isProviderHealthy(provider, key)) {
             return provider;
         }
@@ -221,15 +221,15 @@ class DataProviderRegistry {
     }
 
     private static final class ActiveDatabaseRegistration {
-        private final DatabaseProvider provider;
+        private final ManagedDatabaseProvider provider;
         private final AtomicInteger referenceCount;
 
-        private ActiveDatabaseRegistration(DatabaseProvider provider) {
+        private ActiveDatabaseRegistration(ManagedDatabaseProvider provider) {
             this.provider = Objects.requireNonNull(provider, "Database provider cannot be null.");
             this.referenceCount = new AtomicInteger(1);
         }
 
-        private DatabaseProvider provider() {
+        private ManagedDatabaseProvider provider() {
             return provider;
         }
 

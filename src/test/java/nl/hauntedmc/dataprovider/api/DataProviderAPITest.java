@@ -3,15 +3,23 @@ package nl.hauntedmc.dataprovider.api;
 import nl.hauntedmc.dataprovider.database.DataAccess;
 import nl.hauntedmc.dataprovider.database.DatabaseProvider;
 import nl.hauntedmc.dataprovider.database.DatabaseType;
+import nl.hauntedmc.dataprovider.database.messaging.MessagingDataAccess;
+import nl.hauntedmc.dataprovider.database.messaging.MessagingDatabaseProvider;
+import nl.hauntedmc.dataprovider.database.messaging.api.EventMessage;
+import nl.hauntedmc.dataprovider.database.messaging.api.Subscription;
+import nl.hauntedmc.dataprovider.internal.ManagedDatabaseProvider;
 import nl.hauntedmc.dataprovider.internal.DataProviderHandler;
 import org.junit.jupiter.api.Test;
 
 import javax.sql.DataSource;
 import java.util.Optional;
+import java.util.concurrent.CompletableFuture;
+import java.util.function.Consumer;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNotSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.mock;
@@ -40,43 +48,45 @@ class DataProviderAPITest {
     @Test
     void providerCastingAndDataAccessViewsReturnExpectedOptionalResults() {
         DataProviderHandler handler = mock(DataProviderHandler.class);
-        StubDatabaseProvider provider = new StubDatabaseProvider(new StubDataAccess());
+        StubMessagingDatabaseProvider provider = new StubMessagingDatabaseProvider(new StubMessagingDataAccess());
         when(handler.registerDatabase(DatabaseType.REDIS, "cache")).thenReturn(provider);
         when(handler.getRegisteredDatabase(DatabaseType.REDIS, "cache")).thenReturn(provider);
 
         DataProviderAPI api = new DataProviderAPI(handler);
 
-        Optional<StubDatabaseProvider> registerAs = api.registerDatabaseAs(
+        Optional<MessagingDatabaseProvider> registerAs = api.registerDatabaseAs(
                 DatabaseType.REDIS,
                 "cache",
-                StubDatabaseProvider.class
+                MessagingDatabaseProvider.class
         );
-        Optional<StubDatabaseProvider> lookupAs = api.getRegisteredDatabaseAs(
+        Optional<MessagingDatabaseProvider> lookupAs = api.getRegisteredDatabaseAs(
                 DatabaseType.REDIS,
                 "cache",
-                StubDatabaseProvider.class
+                MessagingDatabaseProvider.class
         );
-        Optional<StubDataAccess> registerAccess = api.registerDataAccess(
+        Optional<StubMessagingDataAccess> registerAccess = api.registerDataAccess(
                 DatabaseType.REDIS,
                 "cache",
-                StubDataAccess.class
+                StubMessagingDataAccess.class
         );
-        Optional<StubDataAccess> lookupAccess = api.getRegisteredDataAccess(
+        Optional<StubMessagingDataAccess> lookupAccess = api.getRegisteredDataAccess(
                 DatabaseType.REDIS,
                 "cache",
-                StubDataAccess.class
+                StubMessagingDataAccess.class
         );
 
         assertTrue(registerAs.isPresent());
         assertTrue(lookupAs.isPresent());
         assertTrue(registerAccess.isPresent());
         assertTrue(lookupAccess.isPresent());
+        assertNotSame(provider, registerAs.get());
+        assertNotSame(provider, lookupAs.get());
     }
 
     @Test
     void providerCastingAndDataAccessViewsReturnEmptyWhenTypeMismatches() {
         DataProviderHandler handler = mock(DataProviderHandler.class);
-        StubDatabaseProvider provider = new StubDatabaseProvider(new StubDataAccess());
+        StubMessagingDatabaseProvider provider = new StubMessagingDatabaseProvider(new StubMessagingDataAccess());
         when(handler.registerDatabase(DatabaseType.REDIS, "cache")).thenReturn(provider);
         when(handler.getRegisteredDatabase(DatabaseType.REDIS, "cache")).thenReturn(provider);
 
@@ -87,6 +97,11 @@ class DataProviderAPITest {
                 "cache",
                 OtherDatabaseProvider.class
         );
+        Optional<StubDatabaseProvider> managedView = api.registerDatabaseAs(
+                DatabaseType.REDIS,
+                "cache",
+                StubDatabaseProvider.class
+        );
         Optional<OtherDataAccess> dataAccessView = api.getRegisteredDataAccess(
                 DatabaseType.REDIS,
                 "cache",
@@ -94,6 +109,7 @@ class DataProviderAPITest {
         );
 
         assertFalse(providerView.isPresent());
+        assertFalse(managedView.isPresent());
         assertFalse(dataAccessView.isPresent());
     }
 
@@ -124,13 +140,30 @@ class DataProviderAPITest {
                 api.getRegisteredDataAccess(DatabaseType.MYSQL, "default", null));
     }
 
-    private static final class StubDataAccess implements DataAccess {
+    private static class StubDataAccess implements DataAccess {
+    }
+
+    private static final class StubMessagingDataAccess extends StubDataAccess implements MessagingDataAccess {
+        @Override
+        public <T extends EventMessage> CompletableFuture<Void> publish(String destination, T message) {
+            return CompletableFuture.completedFuture(null);
+        }
+
+        @Override
+        public <T extends EventMessage> Subscription subscribe(String destination, Class<T> type, Consumer<T> handler) {
+            return () -> CompletableFuture.completedFuture(null);
+        }
+
+        @Override
+        public CompletableFuture<Void> shutdown() {
+            return CompletableFuture.completedFuture(null);
+        }
     }
 
     private static final class OtherDataAccess implements DataAccess {
     }
 
-    private static class StubDatabaseProvider implements DatabaseProvider {
+    private static class StubDatabaseProvider implements DatabaseProvider, ManagedDatabaseProvider {
         private final DataAccess dataAccess;
 
         private StubDatabaseProvider(DataAccess dataAccess) {
@@ -164,6 +197,18 @@ class DataProviderAPITest {
     private static final class OtherDatabaseProvider extends StubDatabaseProvider {
         private OtherDatabaseProvider() {
             super(new OtherDataAccess());
+        }
+    }
+
+    private static final class StubMessagingDatabaseProvider extends StubDatabaseProvider
+            implements MessagingDatabaseProvider {
+        private StubMessagingDatabaseProvider(StubMessagingDataAccess dataAccess) {
+            super(dataAccess);
+        }
+
+        @Override
+        public MessagingDataAccess getDataAccess() {
+            return (MessagingDataAccess) super.getDataAccess();
         }
     }
 }

@@ -1,6 +1,7 @@
 package nl.hauntedmc.dataprovider.database.messaging.impl.redis;
 
 import nl.hauntedmc.dataprovider.internal.concurrent.BoundedExecutorFactory;
+import nl.hauntedmc.dataprovider.internal.ManagedDatabaseProvider;
 import nl.hauntedmc.dataprovider.database.messaging.MessagingDataAccess;
 import nl.hauntedmc.dataprovider.database.messaging.MessagingDatabaseProvider;
 import nl.hauntedmc.dataprovider.database.messaging.api.MessageRegistry;
@@ -17,7 +18,7 @@ import java.util.concurrent.TimeUnit;
 /**
  * Production‑ready Redis back‑end using ACL user/password and Pub/Sub.
  */
-public final class RedisMessagingDatabase implements MessagingDatabaseProvider {
+public final class RedisMessagingDatabase implements MessagingDatabaseProvider, ManagedDatabaseProvider {
 
     private final CommentedConfigurationNode cfg;
     private final ILoggerAdapter logger;

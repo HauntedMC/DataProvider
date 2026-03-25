@@ -16,14 +16,6 @@ class DatabaseProviderInterfaceContractTest {
     void documentProviderDoesNotExposeDataSource() {
         DocumentDatabaseProvider provider = new DocumentDatabaseProvider() {
             @Override
-            public void connect() {
-            }
-
-            @Override
-            public void disconnect() {
-            }
-
-            @Override
             public boolean isConnected() {
                 return true;
             }
@@ -41,14 +33,6 @@ class DatabaseProviderInterfaceContractTest {
     void keyValueProviderDoesNotExposeDataSource() {
         KeyValueDatabaseProvider provider = new KeyValueDatabaseProvider() {
             @Override
-            public void connect() {
-            }
-
-            @Override
-            public void disconnect() {
-            }
-
-            @Override
             public boolean isConnected() {
                 return true;
             }
@@ -65,14 +49,6 @@ class DatabaseProviderInterfaceContractTest {
     @Test
     void messagingProviderDoesNotExposeDataSource() {
         MessagingDatabaseProvider provider = new MessagingDatabaseProvider() {
-            @Override
-            public void connect() {
-            }
-
-            @Override
-            public void disconnect() {
-            }
-
             @Override
             public boolean isConnected() {
                 return true;

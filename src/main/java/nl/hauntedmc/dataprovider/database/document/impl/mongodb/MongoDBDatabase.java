@@ -5,6 +5,7 @@ import com.mongodb.MongoClientSettings;
 import com.mongodb.client.MongoClient;
 import com.mongodb.client.MongoClients;
 import nl.hauntedmc.dataprovider.internal.concurrent.BoundedExecutorFactory;
+import nl.hauntedmc.dataprovider.internal.ManagedDatabaseProvider;
 import nl.hauntedmc.dataprovider.database.document.DocumentDataAccess;
 import nl.hauntedmc.dataprovider.database.document.DocumentDatabaseProvider;
 import nl.hauntedmc.dataprovider.database.security.TlsSupport;
@@ -23,7 +24,7 @@ import java.util.concurrent.TimeUnit;
  * MongoDBDatabase implements DocumentDatabaseProvider for MongoDB.
  * This version uses Configurate to load configuration values from a YAML file.
  */
-public class MongoDBDatabase implements DocumentDatabaseProvider {
+public class MongoDBDatabase implements DocumentDatabaseProvider, ManagedDatabaseProvider {
 
     private final CommentedConfigurationNode config;
     private final ILoggerAdapter logger;

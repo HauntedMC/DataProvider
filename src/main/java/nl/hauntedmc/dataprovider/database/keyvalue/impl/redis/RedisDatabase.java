@@ -1,6 +1,7 @@
 package nl.hauntedmc.dataprovider.database.keyvalue.impl.redis;
 
 import nl.hauntedmc.dataprovider.internal.concurrent.BoundedExecutorFactory;
+import nl.hauntedmc.dataprovider.internal.ManagedDatabaseProvider;
 import nl.hauntedmc.dataprovider.database.keyvalue.KeyValueDataAccess;
 import nl.hauntedmc.dataprovider.database.keyvalue.KeyValueDatabaseProvider;
 import nl.hauntedmc.dataprovider.database.security.TlsSupport;
@@ -19,7 +20,7 @@ import java.util.concurrent.TimeUnit;
 /**
  * RedisDatabase implements KeyValueDatabaseProvider, managing a JedisPool and an ExecutorService.
  */
-public class RedisDatabase implements KeyValueDatabaseProvider {
+public class RedisDatabase implements KeyValueDatabaseProvider, ManagedDatabaseProvider {
 
     private final CommentedConfigurationNode config;
     private final ILoggerAdapter logger;

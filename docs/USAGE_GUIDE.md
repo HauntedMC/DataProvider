@@ -60,6 +60,9 @@ Identifier guidance:
 
 ## 3. Use the provider safely
 
+`DatabaseProvider` is a read-only handle. Connection lifecycle stays owned by `DataProviderAPI`,
+so acquire and release connections through `registerDatabase*` / `unregisterDatabase*`.
+
 `DatabaseProvider` has helper methods to avoid raw casts:
 
 ```java

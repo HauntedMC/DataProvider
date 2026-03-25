@@ -5,6 +5,7 @@ import nl.hauntedmc.dataprovider.database.DataAccess;
 import nl.hauntedmc.dataprovider.database.DatabaseConnectionKey;
 import nl.hauntedmc.dataprovider.database.DatabaseProvider;
 import nl.hauntedmc.dataprovider.database.DatabaseType;
+import nl.hauntedmc.dataprovider.internal.ManagedDatabaseProvider;
 import nl.hauntedmc.dataprovider.testutil.RecordingLoggerAdapter;
 import org.junit.jupiter.api.Test;
 
@@ -243,7 +244,7 @@ class DataProviderRegistryTest {
         assertEquals(1, refs.get(key));
     }
 
-    private static final class RecordingProvider implements DatabaseProvider {
+    private static final class RecordingProvider implements ManagedDatabaseProvider {
         private boolean connected;
         private int connectCalls;
         private int disconnectCalls;

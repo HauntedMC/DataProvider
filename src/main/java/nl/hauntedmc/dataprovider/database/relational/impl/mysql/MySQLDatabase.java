@@ -3,6 +3,7 @@ package nl.hauntedmc.dataprovider.database.relational.impl.mysql;
 import com.zaxxer.hikari.HikariConfig;
 import com.zaxxer.hikari.HikariDataSource;
 import nl.hauntedmc.dataprovider.internal.concurrent.BoundedExecutorFactory;
+import nl.hauntedmc.dataprovider.internal.ManagedDatabaseProvider;
 import nl.hauntedmc.dataprovider.database.relational.RelationalDataAccess;
 import nl.hauntedmc.dataprovider.database.relational.RelationalDatabaseProvider;
 import nl.hauntedmc.dataprovider.database.relational.schema.SchemaManager;
@@ -19,7 +20,7 @@ import java.util.concurrent.TimeUnit;
 /**
  * MySQL implementation of RelationalDatabaseProvider.
  */
-public class MySQLDatabase implements RelationalDatabaseProvider {
+public class MySQLDatabase implements RelationalDatabaseProvider, ManagedDatabaseProvider {
 
     private static final Set<String> SECURE_SSL_MODES = Set.of("REQUIRED", "VERIFY_CA", "VERIFY_IDENTITY");
 

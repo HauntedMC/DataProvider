@@ -3,6 +3,7 @@
 ## API usage
 
 - Prefer `registerDatabaseOptional`, `registerDatabaseAs`, and `registerDataAccess` over raw nullable APIs.
+- Treat returned `DatabaseProvider` instances as read-only handles; lifecycle is managed through the API.
 - Prefer `getDataAccessOptional(...)` instead of manual casts.
 - Treat database registration as startup wiring, not ad-hoc runtime behavior in hot paths.
 
