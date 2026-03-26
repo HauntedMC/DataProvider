@@ -82,8 +82,8 @@ public class DataProviderHandler {
     }
 
     /**
-     * Registers a database connection for the resolved caller plugin under an explicit owner scope.
-     * Use explicit scopes when multiple components share the same wrapper class.
+     * Registers a database connection under an explicit owner scope.
+     * Used by the optional scoped API facade.
      */
     public DatabaseProvider registerDatabaseForScope(
             String ownerScope,
@@ -121,7 +121,8 @@ public class DataProviderHandler {
     }
 
     /**
-     * Unregisters a specific database connection for the resolved caller plugin under an explicit owner scope.
+     * Unregisters a specific database connection under an explicit owner scope.
+     * Used by the optional scoped API facade.
      */
     public void unregisterDatabaseForScope(
             String ownerScope,
@@ -151,7 +152,8 @@ public class DataProviderHandler {
     }
 
     /**
-     * Unregisters all database connections for the resolved caller plugin under an explicit owner scope.
+     * Unregisters all database connections under an explicit owner scope.
+     * Used by the optional scoped API facade.
      */
     public void unregisterAllDatabasesForScope(String ownerScope) {
         requireOpen();

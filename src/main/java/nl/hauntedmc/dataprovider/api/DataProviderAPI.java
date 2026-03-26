@@ -25,8 +25,9 @@ import java.util.Optional;
  *
  * For most integrations, the primary lifecycle is:
  * register -> use provider/data access -> unregister.
- * Scoped APIs are available for advanced cases where one plugin/software process
- * needs isolated ownership domains for independently managed components.
+ * Optional scoped ownership is available through {@link #scope(String)} for advanced cases
+ * where one plugin/software process needs isolated ownership domains for independently
+ * managed components.
  */
 public class DataProviderAPI {
 
@@ -54,15 +55,11 @@ public class DataProviderAPI {
     }
 
     /**
-     * Registers a database connection under an explicit owner scope.
-     * Use explicit scopes when multiple components share the same wrapper class.
+     * Creates an optional scoped lifecycle facade.
+     * Default integrations usually do not need this.
      */
-    public DatabaseProvider registerDatabaseForScope(
-            String ownerScope,
-            DatabaseType databaseType,
-            String connectionIdentifier
-    ) {
-        return wrapProvider(handler.registerDatabaseForScope(ownerScope, databaseType, connectionIdentifier));
+    public DataProviderScope scope(String ownerScope) {
+        return new DataProviderScope(handler, ownerScope);
     }
 
     /**
@@ -108,25 +105,10 @@ public class DataProviderAPI {
     }
 
     /**
-     * Unregisters a scoped database connection for the resolved caller plugin.
-     */
-    public void unregisterDatabaseForScope(String ownerScope, DatabaseType databaseType, String connectionIdentifier) {
-        handler.unregisterDatabaseForScope(ownerScope, databaseType, connectionIdentifier);
-    }
-
-    /**
      * Unregisters all database connections for the resolved caller plugin default owner scope.
      */
     public void unregisterAllDatabases() {
         handler.unregisterAllDatabases();
-    }
-
-    /**
-     * Unregisters all scoped database connections for the resolved caller plugin.
-     * Prefer this only when you intentionally manage isolated ownership scopes.
-     */
-    public void unregisterAllDatabasesForScope(String ownerScope) {
-        handler.unregisterAllDatabasesForScope(ownerScope);
     }
 
     /**
@@ -179,7 +161,7 @@ public class DataProviderAPI {
                 .flatMap(provider -> provider.getDataAccessOptional(expectedDataAccessType));
     }
 
-    private static <T extends DatabaseProvider> Optional<T> castProvider(
+    static <T extends DatabaseProvider> Optional<T> castProvider(
             DatabaseProvider provider,
             Class<T> expectedProviderType
     ) {
@@ -190,7 +172,7 @@ public class DataProviderAPI {
         return Optional.of(expectedProviderType.cast(provider));
     }
 
-    private static DatabaseProvider wrapProvider(DatabaseProvider provider) {
+    static DatabaseProvider wrapProvider(DatabaseProvider provider) {
         if (provider == null || provider instanceof WrappedDatabaseProvider) {
             return provider;
         }

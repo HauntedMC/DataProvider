@@ -32,7 +32,7 @@ Main modules:
 - Per-caller ownership checks gate unregister operations.
 - Reference ownership is tracked by owner scope.
 - Default API methods use plugin-level owner scope for predictable lifecycle behavior.
-- If one plugin/software process multiplexes multiple components through one wrapper class, use explicit scopes (`*ForScope` API methods) to preserve component isolation.
+- If one plugin/software process multiplexes multiple components through one wrapper class, use optional scoped lifecycle facades (`DataProviderAPI.scope(...)`) to preserve component isolation.
 - Explicit plugin-wide cleanup is available for shutdown flows that span multiple caller scopes.
 - Stale/disconnected providers are evicted from registry lookup paths.
 - Shutdown hooks unregister or stop backend resources cleanly.

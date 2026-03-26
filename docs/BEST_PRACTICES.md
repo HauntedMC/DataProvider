@@ -11,12 +11,15 @@
 
 - Register once during plugin/software startup.
 - Unregister on disable.
-- If you run multiple independent components in one plugin/software process, prefer releasing only the connections each component acquired.
-- Use separate connection identifiers when component lifecycle differs.
-- If multiple components share one wrapper class, use explicit scopes (`registerDatabaseForScope`, `unregisterAllDatabasesForScope`) keyed by component name.
-- `registerDatabase(...)` / `unregisterAllDatabases()` use a default plugin-level owner scope.
-- Use `*ForScope` methods only when you intentionally need isolated ownership domains inside one plugin/software process.
+- `registerDatabase(...)` / `unregisterAllDatabases()` use the default plugin-level owner scope.
 - For full plugin/software shutdown across multiple scopes/classes, use `unregisterAllDatabasesForPlugin()`.
+
+## Optional Scoped Ownership
+
+- Use scoped ownership only when one plugin/software process has independently managed components.
+- Create a scope facade from `DataProviderAPI.scope("component.name")`.
+- Register and release through that scope object so ownership remains isolated.
+- Keep scope naming stable and deterministic.
 
 ## Messaging
 
