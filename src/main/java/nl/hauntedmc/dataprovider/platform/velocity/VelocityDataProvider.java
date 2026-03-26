@@ -27,6 +27,9 @@ import java.nio.file.Path;
 )
 public class VelocityDataProvider {
 
+    private static final short INITIALIZE_EVENT_PRIORITY = Short.MAX_VALUE;
+    private static final short SHUTDOWN_EVENT_PRIORITY = Short.MIN_VALUE;
+
     private final ProxyServer proxyServer;
     private final Logger logger;
     private final Path dataDirectory;
@@ -39,7 +42,7 @@ public class VelocityDataProvider {
         this.dataDirectory = dataDirectory;
     }
 
-    @Subscribe
+    @Subscribe(priority = INITIALIZE_EVENT_PRIORITY)
     public void onProxyInitialize(ProxyInitializeEvent event) {
         DataProvider previousProvider = dataProvider;
         if (previousProvider != null) {
@@ -69,7 +72,7 @@ public class VelocityDataProvider {
         logger.info("DataProvider plugin enabled on Velocity (v{}).", pluginVersion);
     }
 
-    @Subscribe
+    @Subscribe(priority = SHUTDOWN_EVENT_PRIORITY)
     public void onProxyShutdown(ProxyShutdownEvent event) {
         DataProvider providerToShutdown = dataProvider;
         dataProvider = null;

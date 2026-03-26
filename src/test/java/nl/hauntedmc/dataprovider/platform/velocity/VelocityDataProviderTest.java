@@ -1,5 +1,8 @@
 package nl.hauntedmc.dataprovider.platform.velocity;
 
+import com.velocitypowered.api.event.Subscribe;
+import com.velocitypowered.api.event.proxy.ProxyInitializeEvent;
+import com.velocitypowered.api.event.proxy.ProxyShutdownEvent;
 import com.velocitypowered.api.plugin.PluginContainer;
 import com.velocitypowered.api.plugin.PluginDescription;
 import com.velocitypowered.api.plugin.PluginManager;
@@ -10,6 +13,7 @@ import nl.hauntedmc.dataprovider.internal.DataProviderHandler;
 import org.junit.jupiter.api.Test;
 
 import java.lang.reflect.Field;
+import java.lang.reflect.Method;
 import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -20,6 +24,25 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 class VelocityDataProviderTest {
+
+    @Test
+    void lifecycleHandlersUseDeterministicVelocityEventOrder() throws ReflectiveOperationException {
+        Method initializeHandler = VelocityDataProvider.class.getDeclaredMethod(
+                "onProxyInitialize",
+                ProxyInitializeEvent.class
+        );
+        Subscribe initializeSubscribe = initializeHandler.getAnnotation(Subscribe.class);
+        assertNotNull(initializeSubscribe);
+        assertEquals(Short.MAX_VALUE, initializeSubscribe.priority());
+
+        Method shutdownHandler = VelocityDataProvider.class.getDeclaredMethod(
+                "onProxyShutdown",
+                ProxyShutdownEvent.class
+        );
+        Subscribe shutdownSubscribe = shutdownHandler.getAnnotation(Subscribe.class);
+        assertNotNull(shutdownSubscribe);
+        assertEquals(Short.MIN_VALUE, shutdownSubscribe.priority());
+    }
 
     @Test
     void resolvePluginVersionReturnsDescriptionVersionValue() {
