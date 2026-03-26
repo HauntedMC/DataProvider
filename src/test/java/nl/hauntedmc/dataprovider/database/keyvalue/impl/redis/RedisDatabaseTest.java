@@ -39,4 +39,20 @@ class RedisDatabaseTest {
         assertFalse(database.isConnected());
         assertNull(database.getDataAccess());
     }
+
+    @Test
+    void connectFailsWhenInsecureTlsFlagsAreEnabled() throws Exception {
+        CommentedConfigurationNode config = CommentedConfigurationNode.root();
+        config.node("tls", "enabled").set(true);
+        config.node("tls", "verify_hostname").set(false);
+
+        RecordingLoggerAdapter logger = new RecordingLoggerAdapter();
+        RedisDatabase database = new RedisDatabase(config, logger);
+        database.connect();
+
+        assertFalse(database.isConnected());
+        assertNull(database.getDataAccess());
+        assertTrue(logger.errorMessages().stream().anyMatch(message ->
+                message.contains("[RedisDatabase] Connection failed.")));
+    }
 }

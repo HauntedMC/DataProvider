@@ -38,7 +38,7 @@ public final class BoundedExecutorFactory {
                 TimeUnit.SECONDS,
                 queue,
                 threadFactory,
-                (task, executor) -> {
+                (task, rejectedFromExecutor) -> {
                     throw new RejectedExecutionException("Task queue is full for executor '" + threadPrefix + "'.");
                 }
         );

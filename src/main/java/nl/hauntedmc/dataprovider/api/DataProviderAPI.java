@@ -22,6 +22,11 @@ import java.util.Optional;
  * DataProviderAPI is the public facade that exposes safe, read-only database handles
  * for third-party plugins. Internally, it delegates to a DataProviderHandler, but it does not
  * expose lifecycle-sensitive methods (like shutdownAllDatabases or getActiveDatabases).
+ *
+ * For most integrations, the primary lifecycle is:
+ * register -> use provider/data access -> unregister.
+ * Scoped APIs are available for advanced cases where one plugin/software process
+ * needs isolated ownership domains for independently managed components.
  */
 public class DataProviderAPI {
 
@@ -38,6 +43,7 @@ public class DataProviderAPI {
 
     /**
      * Registers a database connection for the resolved caller plugin.
+     * This is the default path for most integrations.
      *
      * @param databaseType         the type of database (e.g. MYSQL, MONGODB, etc.)
      * @param connectionIdentifier a unique identifier for the connection
@@ -45,6 +51,18 @@ public class DataProviderAPI {
      */
     public DatabaseProvider registerDatabase(DatabaseType databaseType, String connectionIdentifier) {
         return wrapProvider(handler.registerDatabase(databaseType, connectionIdentifier));
+    }
+
+    /**
+     * Registers a database connection under an explicit owner scope.
+     * Use explicit scopes when multiple components share the same wrapper class.
+     */
+    public DatabaseProvider registerDatabaseForScope(
+            String ownerScope,
+            DatabaseType databaseType,
+            String connectionIdentifier
+    ) {
+        return wrapProvider(handler.registerDatabaseForScope(ownerScope, databaseType, connectionIdentifier));
     }
 
     /**
@@ -80,6 +98,7 @@ public class DataProviderAPI {
 
     /**
      * Unregisters a specific database connection for the resolved caller plugin.
+     * This is the default path for most integrations.
      *
      * @param databaseType         the type of database.
      * @param connectionIdentifier the connection identifier.
@@ -89,10 +108,33 @@ public class DataProviderAPI {
     }
 
     /**
-     * Unregisters all database connections for the resolved caller plugin.
+     * Unregisters a scoped database connection for the resolved caller plugin.
+     */
+    public void unregisterDatabaseForScope(String ownerScope, DatabaseType databaseType, String connectionIdentifier) {
+        handler.unregisterDatabaseForScope(ownerScope, databaseType, connectionIdentifier);
+    }
+
+    /**
+     * Unregisters all database connections for the resolved caller plugin default owner scope.
      */
     public void unregisterAllDatabases() {
         handler.unregisterAllDatabases();
+    }
+
+    /**
+     * Unregisters all scoped database connections for the resolved caller plugin.
+     * Prefer this only when you intentionally manage isolated ownership scopes.
+     */
+    public void unregisterAllDatabasesForScope(String ownerScope) {
+        handler.unregisterAllDatabasesForScope(ownerScope);
+    }
+
+    /**
+     * Unregisters all database connections for the caller plugin across all caller scopes.
+     * Use this for deterministic full-plugin shutdown cleanup.
+     */
+    public void unregisterAllDatabasesForPlugin() {
+        handler.unregisterAllDatabasesForPlugin();
     }
 
     /**

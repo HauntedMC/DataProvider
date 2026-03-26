@@ -1,6 +1,7 @@
 package nl.hauntedmc.dataprovider.internal;
 
 import nl.hauntedmc.dataprovider.database.DatabaseType;
+import nl.hauntedmc.dataprovider.internal.security.FilePermissionHardening;
 import nl.hauntedmc.dataprovider.platform.common.logger.ILoggerAdapter;
 import org.spongepowered.configurate.CommentedConfigurationNode;
 import org.spongepowered.configurate.loader.ConfigurationLoader;
@@ -34,12 +35,14 @@ class DatabaseConfigMap {
 
     private void initialize() {
         configMap.clear();
-        File databasesFolder = new File(String.valueOf(dataPath), "databases");
+        Path databasesPath = dataPath.resolve("databases");
+        File databasesFolder = databasesPath.toFile();
         if (!databasesFolder.exists() && !databasesFolder.mkdirs()) {
             logger.warn("Failed to create databases folder at: " + databasesFolder.getAbsolutePath());
         } else {
             logger.info("Databases folder located at: " + databasesFolder.getAbsolutePath());
         }
+        FilePermissionHardening.restrictDirectoryToOwner(databasesPath, logger, "database configuration directory");
 
         for (DatabaseType type : DatabaseType.values()) {
             File configFile = new File(databasesFolder, type.getConfigFileName());
@@ -51,6 +54,7 @@ class DatabaseConfigMap {
             }
             if (configFile.exists()) {
                 Path path = configFile.toPath();
+                FilePermissionHardening.restrictFileToOwner(path, logger, type.name() + " database config");
                 ConfigurationLoader<CommentedConfigurationNode> loader = YamlConfigurationLoader.builder()
                         .path(path)
                         .build();
@@ -71,6 +75,7 @@ class DatabaseConfigMap {
                 return false;
             }
             Files.copy(in, destinationFile.toPath());
+            FilePermissionHardening.restrictFileToOwner(destinationFile.toPath(), logger, resourcePath + " default config");
             logger.info("Copied default config: " + resourcePath);
             return true;
         } catch (IOException e) {

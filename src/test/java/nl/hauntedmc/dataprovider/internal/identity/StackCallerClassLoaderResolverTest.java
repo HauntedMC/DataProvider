@@ -35,4 +35,5 @@ class StackCallerClassLoaderResolverTest {
         ClassLoader nearest = StackCallerClassLoaderResolver.resolveNearestCallerOutsidePackage("no.matching.prefix");
         assertEquals(getClass().getClassLoader(), nearest);
     }
+
 }

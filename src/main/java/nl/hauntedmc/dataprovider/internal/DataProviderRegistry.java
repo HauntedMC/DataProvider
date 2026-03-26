@@ -11,7 +11,6 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
-import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReadWriteLock;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
@@ -34,7 +33,16 @@ class DataProviderRegistry {
         this.logger = Objects.requireNonNull(logger, "Logger cannot be null.");
     }
 
-    protected DatabaseProvider registerDatabase(String pluginName, DatabaseType databaseType, String connectionIdentifier) {
+    protected DatabaseProvider registerDatabase(
+            String pluginName,
+            String ownerScope,
+            DatabaseType databaseType,
+            String connectionIdentifier
+    ) {
+        Objects.requireNonNull(pluginName, "Plugin name cannot be null.");
+        Objects.requireNonNull(ownerScope, "Owner scope cannot be null.");
+        Objects.requireNonNull(databaseType, "Database type cannot be null.");
+        Objects.requireNonNull(connectionIdentifier, "Connection identifier cannot be null.");
         Lock readLock = lifecycleLock.readLock();
         readLock.lock();
         try {
@@ -45,7 +53,7 @@ class DataProviderRegistry {
                 ActiveDatabaseRegistration existingRegistration = activeDatabases.get(key);
                 if (existingRegistration != null) {
                     ManagedDatabaseProvider existingProvider = existingRegistration.provider();
-                    if (isProviderHealthy(existingProvider, key) && existingRegistration.tryAcquireReference()) {
+                    if (isProviderHealthy(existingProvider, key) && existingRegistration.tryAcquireReference(ownerScope)) {
                         int references = existingRegistration.referenceCount();
                         logger.info(pluginName + " reused " + databaseType.name() + " connection (" + connectionIdentifier
                                 + "), active references=" + references);
@@ -83,7 +91,10 @@ class DataProviderRegistry {
                         return null;
                     }
 
-                    ActiveDatabaseRegistration createdRegistration = new ActiveDatabaseRegistration(createdProvider);
+                    ActiveDatabaseRegistration createdRegistration = new ActiveDatabaseRegistration(
+                            createdProvider,
+                            ownerScope
+                    );
                     ActiveDatabaseRegistration raceWinner = activeDatabases.putIfAbsent(key, createdRegistration);
                     if (raceWinner == null) {
                         logger.info(pluginName + " registered " + databaseType.name() + " connection (" + connectionIdentifier
@@ -98,7 +109,7 @@ class DataProviderRegistry {
                     }
 
                     ManagedDatabaseProvider raceWinnerProvider = raceWinner.provider();
-                    if (isProviderHealthy(raceWinnerProvider, key) && raceWinner.tryAcquireReference()) {
+                    if (isProviderHealthy(raceWinnerProvider, key) && raceWinner.tryAcquireReference(ownerScope)) {
                         int references = raceWinner.referenceCount();
                         logger.info(pluginName + " already has " + databaseType.name() + " connection (" + connectionIdentifier
                                 + "), active references=" + references);
@@ -143,6 +154,9 @@ class DataProviderRegistry {
     }
 
     protected DatabaseProvider getDatabase(String pluginName, DatabaseType databaseType, String connectionIdentifier) {
+        Objects.requireNonNull(pluginName, "Plugin name cannot be null.");
+        Objects.requireNonNull(databaseType, "Database type cannot be null.");
+        Objects.requireNonNull(connectionIdentifier, "Connection identifier cannot be null.");
         Lock readLock = lifecycleLock.readLock();
         readLock.lock();
         try {
@@ -169,7 +183,16 @@ class DataProviderRegistry {
         }
     }
 
-    protected void unregisterDatabase(String pluginName, DatabaseType databaseType, String connectionIdentifier) {
+    protected void unregisterDatabase(
+            String pluginName,
+            String ownerScope,
+            DatabaseType databaseType,
+            String connectionIdentifier
+    ) {
+        Objects.requireNonNull(pluginName, "Plugin name cannot be null.");
+        Objects.requireNonNull(ownerScope, "Owner scope cannot be null.");
+        Objects.requireNonNull(databaseType, "Database type cannot be null.");
+        Objects.requireNonNull(connectionIdentifier, "Connection identifier cannot be null.");
         Lock readLock = lifecycleLock.readLock();
         readLock.lock();
         try {
@@ -180,7 +203,13 @@ class DataProviderRegistry {
                 return;
             }
 
-            int references = registration.releaseReference();
+            ReferenceReleaseResult releaseResult = registration.releaseReference(ownerScope);
+            if (!releaseResult.ownerHadReference()) {
+                logger.warn(pluginName + " attempted to release " + databaseType.name() + " connection ("
+                        + connectionIdentifier + ") from unregistered scope " + ownerScope);
+                return;
+            }
+            int references = releaseResult.totalReferences();
             if (references > 0) {
                 logger.info(pluginName + " released " + databaseType.name() + " connection (" + connectionIdentifier
                         + "), remaining references=" + references);
@@ -202,9 +231,50 @@ class DataProviderRegistry {
         }
     }
 
-    protected void unregisterAllDatabases(String pluginName) {
-        Lock readLock = lifecycleLock.readLock();
-        readLock.lock();
+    /**
+     * Releases registrations for a specific plugin + owner scope pair.
+     */
+    protected void unregisterAllDatabases(String pluginName, String ownerScope) {
+        Objects.requireNonNull(pluginName, "Plugin name cannot be null.");
+        Objects.requireNonNull(ownerScope, "Owner scope cannot be null.");
+        Lock writeLock = lifecycleLock.writeLock();
+        writeLock.lock();
+        try {
+            ensureOpen();
+            for (Map.Entry<DatabaseConnectionKey, ActiveDatabaseRegistration> entry : activeDatabases.entrySet()) {
+                DatabaseConnectionKey key = entry.getKey();
+                if (!key.pluginName().equals(pluginName)) {
+                    continue;
+                }
+
+                ActiveDatabaseRegistration registration = entry.getValue();
+                int referencesAfterRelease = registration.releaseAllForOwner(ownerScope);
+                if (referencesAfterRelease > 0) {
+                    continue;
+                }
+
+                if (!activeDatabases.remove(key, registration)) {
+                    continue;
+                }
+                try {
+                    registration.provider().disconnect();
+                } catch (Exception e) {
+                    logger.error("Error disconnecting " + key, e);
+                }
+            }
+        } finally {
+            writeLock.unlock();
+        }
+    }
+
+    /**
+     * Force-releases every registration for the plugin, regardless of owner scope.
+     * Intended for deterministic plugin/process shutdown cleanup.
+     */
+    protected void unregisterAllDatabasesForPlugin(String pluginName) {
+        Objects.requireNonNull(pluginName, "Plugin name cannot be null.");
+        Lock writeLock = lifecycleLock.writeLock();
+        writeLock.lock();
         try {
             ensureOpen();
             for (Map.Entry<DatabaseConnectionKey, ActiveDatabaseRegistration> entry : activeDatabases.entrySet()) {
@@ -226,7 +296,7 @@ class DataProviderRegistry {
                 }
             }
         } finally {
-            readLock.unlock();
+            writeLock.unlock();
         }
     }
 
@@ -294,48 +364,77 @@ class DataProviderRegistry {
 
     private static final class ActiveDatabaseRegistration {
         private final ManagedDatabaseProvider provider;
-        private final AtomicInteger referenceCount;
+        // Tracks ownership per logical scope (default plugin scope or explicit scope string).
+        private final Map<String, Integer> ownerReferenceCounts = new HashMap<>();
+        // Total references across all owner scopes for this (plugin, type, identifier) key.
+        private int referenceCount;
 
-        private ActiveDatabaseRegistration(ManagedDatabaseProvider provider) {
+        private ActiveDatabaseRegistration(ManagedDatabaseProvider provider, String initialOwnerScope) {
             this.provider = Objects.requireNonNull(provider, "Database provider cannot be null.");
-            this.referenceCount = new AtomicInteger(1);
+            if (initialOwnerScope == null || initialOwnerScope.isBlank()) {
+                throw new IllegalArgumentException("Initial owner scope cannot be null or blank.");
+            }
+            this.referenceCount = 1;
+            ownerReferenceCounts.put(initialOwnerScope, 1);
         }
 
         private ManagedDatabaseProvider provider() {
             return provider;
         }
 
-        private boolean tryAcquireReference() {
-            while (true) {
-                int current = referenceCount.get();
-                if (current <= 0) {
-                    return false;
-                }
-                if (referenceCount.compareAndSet(current, current + 1)) {
-                    return true;
-                }
+        private synchronized boolean tryAcquireReference(String ownerScope) {
+            if (ownerScope == null || ownerScope.isBlank()) {
+                return false;
             }
-        }
-
-        private int releaseReference() {
-            while (true) {
-                int current = referenceCount.get();
-                if (current <= 0) {
-                    return 0;
-                }
-                int next = current - 1;
-                if (referenceCount.compareAndSet(current, next)) {
-                    return next;
-                }
+            if (referenceCount <= 0) {
+                return false;
             }
+            referenceCount++;
+            ownerReferenceCounts.merge(ownerScope, 1, Integer::sum);
+            return true;
         }
 
-        private int referenceCount() {
-            return Math.max(referenceCount.get(), 0);
+        private synchronized ReferenceReleaseResult releaseReference(String ownerScope) {
+            if (ownerScope == null || ownerScope.isBlank() || referenceCount <= 0) {
+                return new ReferenceReleaseResult(false, Math.max(referenceCount, 0));
+            }
+            Integer ownerCount = ownerReferenceCounts.get(ownerScope);
+            if (ownerCount == null || ownerCount <= 0) {
+                return new ReferenceReleaseResult(false, Math.max(referenceCount, 0));
+            }
+
+            if (ownerCount == 1) {
+                ownerReferenceCounts.remove(ownerScope);
+            } else {
+                ownerReferenceCounts.put(ownerScope, ownerCount - 1);
+            }
+
+            referenceCount = Math.max(0, referenceCount - 1);
+            return new ReferenceReleaseResult(true, referenceCount);
         }
 
-        private void forceReleaseAll() {
-            referenceCount.set(0);
+        private synchronized int releaseAllForOwner(String ownerScope) {
+            if (ownerScope == null || ownerScope.isBlank() || referenceCount <= 0) {
+                return Math.max(referenceCount, 0);
+            }
+            Integer ownerCount = ownerReferenceCounts.remove(ownerScope);
+            if (ownerCount == null || ownerCount <= 0) {
+                return Math.max(referenceCount, 0);
+            }
+            referenceCount = Math.max(0, referenceCount - ownerCount);
+            return referenceCount;
         }
+
+        private synchronized int referenceCount() {
+            return Math.max(referenceCount, 0);
+        }
+
+        private synchronized void forceReleaseAll() {
+            referenceCount = 0;
+            ownerReferenceCounts.clear();
+        }
+    }
+
+    private record ReferenceReleaseResult(boolean ownerHadReference, int totalReferences) {
     }
 }

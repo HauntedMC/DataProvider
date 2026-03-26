@@ -25,7 +25,9 @@ class DataProviderHandlerTest {
     @Test
     void injectedConstructorValidatesArguments() {
         DataProviderRegistry registry = mock(DataProviderRegistry.class);
-        CallerContextResolver resolver = () -> new CallerContext("plugin", getClass().getClassLoader());
+        ClassLoader pluginLoader = new ClassLoader() {
+        };
+        CallerContextResolver resolver = () -> new CallerContext("plugin", pluginLoader);
         RecordingLoggerAdapter logger = new RecordingLoggerAdapter();
         ClassLoader ownClassLoader = getClass().getClassLoader();
 
@@ -38,34 +40,52 @@ class DataProviderHandlerTest {
     @Test
     void registerAndLookupDelegateUsingResolvedPluginContext() {
         DataProviderRegistry registry = mock(DataProviderRegistry.class);
-        CallerContextResolver resolver = () -> new CallerContext("feature-plugin", getClass().getClassLoader());
+        ClassLoader pluginLoader = new ClassLoader() {
+        };
+        CallerContextResolver resolver = () -> new CallerContext("feature-plugin", pluginLoader);
         RecordingLoggerAdapter logger = new RecordingLoggerAdapter();
         DataProviderHandler handler = new DataProviderHandler(registry, resolver, logger, getClass().getClassLoader());
         DatabaseProvider provider = mock(DatabaseProvider.class);
 
-        when(registry.registerDatabase("feature-plugin", DatabaseType.MYSQL, "default")).thenReturn(provider);
+        when(registry.registerDatabase("feature-plugin", "feature-plugin", DatabaseType.MYSQL, "default")).thenReturn(provider);
+        when(registry.registerDatabase("feature-plugin", "component.scope", DatabaseType.MYSQL, "default")).thenReturn(provider);
         when(registry.getDatabase("feature-plugin", DatabaseType.MYSQL, "default")).thenReturn(provider);
 
         assertSame(provider, handler.registerDatabase(DatabaseType.MYSQL, "default"));
+        assertSame(provider, handler.registerDatabaseForScope("component.scope", DatabaseType.MYSQL, "default"));
         assertSame(provider, handler.getRegisteredDatabase(DatabaseType.MYSQL, "default"));
         handler.unregisterDatabase(DatabaseType.MYSQL, "default");
+        handler.unregisterDatabaseForScope("component.scope", DatabaseType.MYSQL, "default");
         handler.unregisterAllDatabases();
+        handler.unregisterAllDatabasesForScope("component.scope");
+        handler.unregisterAllDatabasesForPlugin();
 
-        verify(registry).registerDatabase("feature-plugin", DatabaseType.MYSQL, "default");
+        verify(registry).registerDatabase("feature-plugin", "feature-plugin", DatabaseType.MYSQL, "default");
+        verify(registry).registerDatabase("feature-plugin", "component.scope", DatabaseType.MYSQL, "default");
         verify(registry).getDatabase("feature-plugin", DatabaseType.MYSQL, "default");
-        verify(registry).unregisterDatabase("feature-plugin", DatabaseType.MYSQL, "default");
-        verify(registry).unregisterAllDatabases("feature-plugin");
+        verify(registry).unregisterDatabase("feature-plugin", "feature-plugin", DatabaseType.MYSQL, "default");
+        verify(registry).unregisterDatabase("feature-plugin", "component.scope", DatabaseType.MYSQL, "default");
+        verify(registry).unregisterAllDatabases("feature-plugin", "feature-plugin");
+        verify(registry).unregisterAllDatabases("feature-plugin", "component.scope");
+        verify(registry).unregisterAllDatabasesForPlugin("feature-plugin");
     }
 
     @Test
     void validatesDatabaseTypeAndConnectionIdentifier() {
         DataProviderRegistry registry = mock(DataProviderRegistry.class);
-        CallerContextResolver resolver = () -> new CallerContext("plugin", getClass().getClassLoader());
+        ClassLoader pluginLoader = new ClassLoader() {
+        };
+        CallerContextResolver resolver = () -> new CallerContext("plugin", pluginLoader);
         DataProviderHandler handler = new DataProviderHandler(registry, resolver, new RecordingLoggerAdapter(), getClass().getClassLoader());
 
         assertThrows(NullPointerException.class, () -> handler.registerDatabase(null, "default"));
         assertThrows(IllegalArgumentException.class, () -> handler.registerDatabase(DatabaseType.MYSQL, " "));
         assertThrows(IllegalArgumentException.class, () -> handler.registerDatabase(DatabaseType.MYSQL, "bad/identifier"));
+        assertThrows(IllegalArgumentException.class, () -> handler.registerDatabaseForScope(" ", DatabaseType.MYSQL, "default"));
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> handler.registerDatabaseForScope("bad scope", DatabaseType.MYSQL, "default")
+        );
         assertThrows(NullPointerException.class, () -> handler.getRegisteredDatabase(null, "default"));
         assertThrows(IllegalArgumentException.class, () -> handler.getRegisteredDatabase(DatabaseType.MYSQL, " "));
     }
@@ -103,7 +123,9 @@ class DataProviderHandlerTest {
     @Test
     void privilegedOperationsRejectNonInternalCallerClassLoader() {
         DataProviderRegistry registry = mock(DataProviderRegistry.class);
-        CallerContextResolver resolver = () -> new CallerContext("plugin", getClass().getClassLoader());
+        ClassLoader pluginLoader = new ClassLoader() {
+        };
+        CallerContextResolver resolver = () -> new CallerContext("plugin", pluginLoader);
         RecordingLoggerAdapter logger = new RecordingLoggerAdapter();
         ClassLoader mismatchingLoader = new ClassLoader() {
         };
@@ -117,7 +139,9 @@ class DataProviderHandlerTest {
     @Test
     void privilegedOperationsReturnRegistrySnapshotsForInternalCaller() {
         DataProviderRegistry registry = mock(DataProviderRegistry.class);
-        CallerContextResolver resolver = () -> new CallerContext("plugin", getClass().getClassLoader());
+        ClassLoader pluginLoader = new ClassLoader() {
+        };
+        CallerContextResolver resolver = () -> new CallerContext("plugin", pluginLoader);
         RecordingLoggerAdapter logger = new RecordingLoggerAdapter();
         DataProviderHandler handler = new DataProviderHandler(registry, resolver, logger, getClass().getClassLoader());
 
@@ -138,7 +162,9 @@ class DataProviderHandlerTest {
         DataProviderRegistry registry = mock(DataProviderRegistry.class);
         when(registry.isClosed()).thenReturn(true);
 
-        CallerContextResolver resolver = () -> new CallerContext("plugin", getClass().getClassLoader());
+        ClassLoader pluginLoader = new ClassLoader() {
+        };
+        CallerContextResolver resolver = () -> new CallerContext("plugin", pluginLoader);
         DataProviderHandler handler = new DataProviderHandler(
                 registry,
                 resolver,
@@ -147,15 +173,25 @@ class DataProviderHandlerTest {
         );
 
         assertThrows(IllegalStateException.class, () -> handler.registerDatabase(DatabaseType.MYSQL, "default"));
+        assertThrows(IllegalStateException.class, () ->
+                handler.registerDatabaseForScope("component.scope", DatabaseType.MYSQL, "default"));
         assertThrows(IllegalStateException.class, () -> handler.getRegisteredDatabase(DatabaseType.MYSQL, "default"));
         assertThrows(IllegalStateException.class, () -> handler.unregisterDatabase(DatabaseType.MYSQL, "default"));
+        assertThrows(IllegalStateException.class, () ->
+                handler.unregisterDatabaseForScope("component.scope", DatabaseType.MYSQL, "default"));
         assertThrows(IllegalStateException.class, handler::unregisterAllDatabases);
+        assertThrows(IllegalStateException.class, () -> handler.unregisterAllDatabasesForScope("component.scope"));
+        assertThrows(IllegalStateException.class, handler::unregisterAllDatabasesForPlugin);
         assertThrows(IllegalStateException.class, handler::getActiveDatabases);
         assertThrows(IllegalStateException.class, handler::getActiveDatabaseReferenceCounts);
 
-        verify(registry, never()).registerDatabase("plugin", DatabaseType.MYSQL, "default");
+        verify(registry, never()).registerDatabase("plugin", "plugin", DatabaseType.MYSQL, "default");
+        verify(registry, never()).registerDatabase("plugin", "component.scope", DatabaseType.MYSQL, "default");
         verify(registry, never()).getDatabase("plugin", DatabaseType.MYSQL, "default");
-        verify(registry, never()).unregisterDatabase("plugin", DatabaseType.MYSQL, "default");
-        verify(registry, never()).unregisterAllDatabases("plugin");
+        verify(registry, never()).unregisterDatabase("plugin", "plugin", DatabaseType.MYSQL, "default");
+        verify(registry, never()).unregisterDatabase("plugin", "component.scope", DatabaseType.MYSQL, "default");
+        verify(registry, never()).unregisterAllDatabases("plugin", "plugin");
+        verify(registry, never()).unregisterAllDatabases("plugin", "component.scope");
+        verify(registry, never()).unregisterAllDatabasesForPlugin("plugin");
     }
 }

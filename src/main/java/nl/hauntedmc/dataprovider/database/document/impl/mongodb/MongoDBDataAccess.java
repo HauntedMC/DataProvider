@@ -9,6 +9,7 @@ import nl.hauntedmc.dataprovider.database.document.DocumentDataAccess;
 import nl.hauntedmc.dataprovider.database.document.model.DocumentQuery;
 import nl.hauntedmc.dataprovider.database.document.model.DocumentUpdate;
 import nl.hauntedmc.dataprovider.database.document.model.DocumentUpdateOptions;
+import nl.hauntedmc.dataprovider.internal.concurrent.AsyncTaskSupport;
 import org.bson.Document;
 import org.bson.conversions.Bson;
 
@@ -18,6 +19,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
+import java.util.concurrent.TimeUnit;
+import java.util.Objects;
 
 /**
  * MongoDBDataAccess converts our custom DSL objects into MongoDB Bson objects
@@ -30,9 +33,12 @@ public class MongoDBDataAccess implements DocumentDataAccess {
     private final ExecutorService executor;
 
     public MongoDBDataAccess(MongoClient mongoClient, String databaseName, ExecutorService executor) {
-        this.mongoClient = mongoClient;
+        this.mongoClient = Objects.requireNonNull(mongoClient, "Mongo client cannot be null.");
+        if (databaseName == null || databaseName.isBlank()) {
+            throw new IllegalArgumentException("Database name cannot be null or blank.");
+        }
         this.databaseName = databaseName;
-        this.executor = executor;
+        this.executor = Objects.requireNonNull(executor, "Executor cannot be null.");
     }
 
     private MongoDatabase getDatabase() {
@@ -40,7 +46,7 @@ public class MongoDBDataAccess implements DocumentDataAccess {
     }
 
     private MongoCollection<Document> getCollection(String collection) {
-        return getDatabase().getCollection(collection);
+        return getDatabase().getCollection(requireCollection(collection));
     }
 
     private Bson toBsonQuery(DocumentQuery query) {
@@ -65,70 +71,88 @@ public class MongoDBDataAccess implements DocumentDataAccess {
 
     @Override
     public CompletableFuture<Void> insertOne(String collection, Map<String, Object> document) {
-        return CompletableFuture.runAsync(() ->
-                getCollection(collection).insertOne(toMongoDocument(document)), executor);
+        Objects.requireNonNull(document, "Document cannot be null.");
+        Map<String, Object> safeDocument = Map.copyOf(document);
+        return AsyncTaskSupport.runAsync(executor, "mongodb.insertOne", () ->
+                getCollection(collection).insertOne(toMongoDocument(safeDocument)));
     }
 
     @Override
     public CompletableFuture<Map<String, Object>> findOne(String collection, DocumentQuery query) {
-        return CompletableFuture.supplyAsync(() -> {
+        Objects.requireNonNull(query, "Document query cannot be null.");
+        return AsyncTaskSupport.supplyAsync(executor, "mongodb.findOne", () -> {
             Document found = getCollection(collection)
                     .find(toBsonQuery(query))
                     .first();
             return (found != null) ? documentToMap(found) : null;
-        }, executor);
+        });
     }
 
     @Override
     public CompletableFuture<List<Map<String, Object>>> findMany(String collection, DocumentQuery query) {
-        return CompletableFuture.supplyAsync(() -> {
+        Objects.requireNonNull(query, "Document query cannot be null.");
+        return AsyncTaskSupport.supplyAsync(executor, "mongodb.findMany", () -> {
             List<Map<String, Object>> results = new ArrayList<>();
             for (Document doc : getCollection(collection).find(toBsonQuery(query))) {
                 results.add(documentToMap(doc));
             }
             return results;
-        }, executor);
+        });
     }
 
     @Override
     public CompletableFuture<Void> updateOne(String collection, DocumentQuery query, DocumentUpdate update, DocumentUpdateOptions options) {
-        return CompletableFuture.runAsync(() ->
+        Objects.requireNonNull(query, "Document query cannot be null.");
+        Objects.requireNonNull(update, "Document update cannot be null.");
+        Objects.requireNonNull(options, "Document update options cannot be null.");
+        return AsyncTaskSupport.runAsync(executor, "mongodb.updateOne", () ->
                 getCollection(collection)
-                        .updateOne(toBsonQuery(query), toBsonUpdate(update), toMongoUpdateOptions(options)), executor);
+                        .updateOne(toBsonQuery(query), toBsonUpdate(update), toMongoUpdateOptions(options)));
     }
 
     @Override
     public CompletableFuture<Void> updateMany(String collection, DocumentQuery query, DocumentUpdate update, DocumentUpdateOptions options) {
-        return CompletableFuture.runAsync(() ->
+        Objects.requireNonNull(query, "Document query cannot be null.");
+        Objects.requireNonNull(update, "Document update cannot be null.");
+        Objects.requireNonNull(options, "Document update options cannot be null.");
+        return AsyncTaskSupport.runAsync(executor, "mongodb.updateMany", () ->
                 getCollection(collection)
-                        .updateMany(toBsonQuery(query), toBsonUpdate(update), toMongoUpdateOptions(options)), executor);
+                        .updateMany(toBsonQuery(query), toBsonUpdate(update), toMongoUpdateOptions(options)));
     }
 
     @Override
     public CompletableFuture<Void> deleteOne(String collection, DocumentQuery query) {
-        return CompletableFuture.runAsync(() ->
-                getCollection(collection).deleteOne(toBsonQuery(query)), executor);
+        Objects.requireNonNull(query, "Document query cannot be null.");
+        return AsyncTaskSupport.runAsync(executor, "mongodb.deleteOne", () ->
+                getCollection(collection).deleteOne(toBsonQuery(query)));
     }
 
     @Override
     public CompletableFuture<Void> deleteMany(String collection, DocumentQuery query) {
-        return CompletableFuture.runAsync(() ->
-                getCollection(collection).deleteMany(toBsonQuery(query)), executor);
+        Objects.requireNonNull(query, "Document query cannot be null.");
+        return AsyncTaskSupport.runAsync(executor, "mongodb.deleteMany", () ->
+                getCollection(collection).deleteMany(toBsonQuery(query)));
     }
 
     @Override
     public CompletableFuture<Void> createIndex(String collection, Map<String, Object> indexSpec, Map<String, Object> indexOptions) {
-        return CompletableFuture.runAsync(() -> {
-            Document idxSpecDoc = new Document(indexSpec);
-            IndexOptions options = mapToIndexOptions(indexOptions);
+        Objects.requireNonNull(indexSpec, "Index specification cannot be null.");
+        Map<String, Object> safeSpec = Map.copyOf(indexSpec);
+        Map<String, Object> safeOptions = indexOptions == null ? null : Map.copyOf(indexOptions);
+        return AsyncTaskSupport.runAsync(executor, "mongodb.createIndex", () -> {
+            Document idxSpecDoc = new Document(safeSpec);
+            IndexOptions options = mapToIndexOptions(safeOptions);
             getCollection(collection).createIndex(idxSpecDoc, options);
-        }, executor);
+        });
     }
 
     @Override
     public CompletableFuture<Void> dropIndex(String collection, String indexName) {
-        return CompletableFuture.runAsync(() ->
-                getCollection(collection).dropIndex(indexName), executor);
+        if (indexName == null || indexName.isBlank()) {
+            throw new IllegalArgumentException("Index name cannot be null or blank.");
+        }
+        return AsyncTaskSupport.runAsync(executor, "mongodb.dropIndex", () ->
+                getCollection(collection).dropIndex(indexName));
     }
 
     private IndexOptions mapToIndexOptions(Map<String, Object> indexOptionsMap) {
@@ -143,7 +167,48 @@ public class MongoDBDataAccess implements DocumentDataAccess {
             if (indexOptionsMap.containsKey("name")) {
                 indexOptions.name(String.valueOf(indexOptionsMap.get("name")));
             }
+            if (indexOptionsMap.containsKey("sparse")) {
+                indexOptions.sparse(Boolean.TRUE.equals(indexOptionsMap.get("sparse")));
+            }
+            if (indexOptionsMap.containsKey("expireAfterSeconds")) {
+                Object expireAfter = indexOptionsMap.get("expireAfterSeconds");
+                if (expireAfter instanceof Number number) {
+                    long seconds = number.longValue();
+                    if (seconds < 0) {
+                        throw new IllegalArgumentException("Index option 'expireAfterSeconds' cannot be negative.");
+                    }
+                    indexOptions.expireAfter(seconds, TimeUnit.SECONDS);
+                } else {
+                    throw new IllegalArgumentException("Index option 'expireAfterSeconds' must be numeric.");
+                }
+            }
+            if (indexOptionsMap.containsKey("partialFilterExpression")) {
+                Object partialFilterExpression = indexOptionsMap.get("partialFilterExpression");
+                if (partialFilterExpression instanceof Map<?, ?> mapValue) {
+                    Document partialDocument = new Document();
+                    for (Map.Entry<?, ?> entry : mapValue.entrySet()) {
+                        partialDocument.put(String.valueOf(entry.getKey()), entry.getValue());
+                    }
+                    indexOptions.partialFilterExpression(partialDocument);
+                } else if (partialFilterExpression instanceof Document documentValue) {
+                    indexOptions.partialFilterExpression(documentValue);
+                } else {
+                    throw new IllegalArgumentException(
+                            "Index option 'partialFilterExpression' must be a map or BSON document."
+                    );
+                }
+            }
         }
         return indexOptions;
+    }
+
+    private static String requireCollection(String collection) {
+        if (collection == null || collection.isBlank()) {
+            throw new IllegalArgumentException("Collection name cannot be null or blank.");
+        }
+        if (collection.indexOf('\0') >= 0) {
+            throw new IllegalArgumentException("Collection name cannot contain null characters.");
+        }
+        return collection;
     }
 }

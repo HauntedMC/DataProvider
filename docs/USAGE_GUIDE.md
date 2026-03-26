@@ -80,16 +80,33 @@ Optional<DataSource> dataSource = provider.getDataSourceOptional();
 
 ## 4. Release connections
 
+For most integrations, use only `registerDatabase(...)` and `unregisterDatabase(...)`.
+Use scoped methods only when you intentionally split ownership inside one plugin/software process.
+
 Release a specific connection:
 
 ```java
 api.unregisterDatabase(DatabaseType.MYSQL, "example");
 ```
 
-Release all connections for your plugin context:
+Release all connections for your default plugin/software scope:
 
 ```java
 api.unregisterAllDatabases();
+```
+
+If one plugin/software process manages multiple independent components,
+use explicit scopes so each component can unload independently:
+
+```java
+api.registerDatabaseForScope("component.chat", DatabaseType.REDIS_MESSAGING, "hauntedmc");
+api.unregisterAllDatabasesForScope("component.chat");
+```
+
+For full plugin/software shutdown when registrations may come from multiple classes/scopes:
+
+```java
+api.unregisterAllDatabasesForPlugin();
 ```
 
 ## 5. ORM usage

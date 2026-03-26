@@ -22,6 +22,8 @@ import java.util.regex.Pattern;
 public class DataProviderHandler {
 
     private static final String INTERNAL_PACKAGE_PREFIX = "nl.hauntedmc.dataprovider.internal";
+    private static final int MAX_OWNER_SCOPE_LENGTH = 256;
+    private static final Pattern OWNER_SCOPE_PATTERN = Pattern.compile("[A-Za-z0-9_.:$-]{1,256}");
     private static final Pattern CONNECTION_IDENTIFIER_PATTERN = Pattern.compile("[A-Za-z0-9_.:-]{1,128}");
     private static final String CLOSED_MESSAGE =
             "DataProvider API is no longer available. Obtain a fresh API instance after plugin enable.";
@@ -64,33 +66,108 @@ public class DataProviderHandler {
 
     /**
      * Registers a database connection for the resolved caller plugin.
+     * This is the default path for most integrations.
      */
     public DatabaseProvider registerDatabase(DatabaseType databaseType, String connectionIdentifier) {
         requireOpen();
         Objects.requireNonNull(databaseType, "Database type cannot be null");
         requireConnectionIdentifier(connectionIdentifier);
         CallerContext caller = resolveCallerContext();
-        return registry.registerDatabase(caller.pluginId(), databaseType, connectionIdentifier);
+        return registry.registerDatabase(
+                caller.pluginId(),
+                caller.pluginId(),
+                databaseType,
+                connectionIdentifier
+        );
+    }
+
+    /**
+     * Registers a database connection for the resolved caller plugin under an explicit owner scope.
+     * Use explicit scopes when multiple components share the same wrapper class.
+     */
+    public DatabaseProvider registerDatabaseForScope(
+            String ownerScope,
+            DatabaseType databaseType,
+            String connectionIdentifier
+    ) {
+        requireOpen();
+        Objects.requireNonNull(databaseType, "Database type cannot be null");
+        requireConnectionIdentifier(connectionIdentifier);
+        String normalizedOwnerScope = requireOwnerScope(ownerScope);
+        CallerContext caller = resolveCallerContext();
+        return registry.registerDatabase(
+                caller.pluginId(),
+                normalizedOwnerScope,
+                databaseType,
+                connectionIdentifier
+        );
     }
 
     /**
      * Unregisters a specific database connection for the resolved caller plugin.
+     * This is the default path for most integrations.
      */
     public void unregisterDatabase(DatabaseType databaseType, String connectionIdentifier) {
         requireOpen();
         Objects.requireNonNull(databaseType, "Database type cannot be null");
         requireConnectionIdentifier(connectionIdentifier);
         CallerContext caller = resolveCallerContext();
-        registry.unregisterDatabase(caller.pluginId(), databaseType, connectionIdentifier);
+        registry.unregisterDatabase(
+                caller.pluginId(),
+                caller.pluginId(),
+                databaseType,
+                connectionIdentifier
+        );
     }
 
     /**
-     * Unregisters all database connections for the resolved caller plugin.
+     * Unregisters a specific database connection for the resolved caller plugin under an explicit owner scope.
+     */
+    public void unregisterDatabaseForScope(
+            String ownerScope,
+            DatabaseType databaseType,
+            String connectionIdentifier
+    ) {
+        requireOpen();
+        Objects.requireNonNull(databaseType, "Database type cannot be null");
+        requireConnectionIdentifier(connectionIdentifier);
+        String normalizedOwnerScope = requireOwnerScope(ownerScope);
+        CallerContext caller = resolveCallerContext();
+        registry.unregisterDatabase(
+                caller.pluginId(),
+                normalizedOwnerScope,
+                databaseType,
+                connectionIdentifier
+        );
+    }
+
+    /**
+     * Unregisters all database connections for the resolved caller plugin default owner scope.
      */
     public void unregisterAllDatabases() {
         requireOpen();
         CallerContext caller = resolveCallerContext();
-        registry.unregisterAllDatabases(caller.pluginId());
+        registry.unregisterAllDatabases(caller.pluginId(), caller.pluginId());
+    }
+
+    /**
+     * Unregisters all database connections for the resolved caller plugin under an explicit owner scope.
+     */
+    public void unregisterAllDatabasesForScope(String ownerScope) {
+        requireOpen();
+        String normalizedOwnerScope = requireOwnerScope(ownerScope);
+        CallerContext caller = resolveCallerContext();
+        registry.unregisterAllDatabases(caller.pluginId(), normalizedOwnerScope);
+    }
+
+    /**
+     * Unregisters all database connections for the resolved caller plugin across all caller scopes.
+     * Intended for full plugin shutdown where registrations may originate from multiple owner scopes.
+     */
+    public void unregisterAllDatabasesForPlugin() {
+        requireOpen();
+        CallerContext caller = resolveCallerContext();
+        registry.unregisterAllDatabasesForPlugin(caller.pluginId());
     }
 
     /**
@@ -146,6 +223,20 @@ public class DataProviderHandler {
         if (!CONNECTION_IDENTIFIER_PATTERN.matcher(connectionIdentifier).matches()) {
             throw new IllegalArgumentException("Connection identifier contains unsupported characters.");
         }
+    }
+
+    private static String requireOwnerScope(String ownerScope) {
+        if (ownerScope == null || ownerScope.isBlank()) {
+            throw new IllegalArgumentException("Owner scope cannot be null or blank.");
+        }
+        String normalized = ownerScope.trim();
+        if (normalized.length() > MAX_OWNER_SCOPE_LENGTH) {
+            throw new IllegalArgumentException("Owner scope exceeds maximum supported length.");
+        }
+        if (!OWNER_SCOPE_PATTERN.matcher(normalized).matches()) {
+            throw new IllegalArgumentException("Owner scope contains unsupported characters.");
+        }
+        return normalized;
     }
 
     private void requireInternalCaller() {

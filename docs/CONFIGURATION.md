@@ -44,7 +44,20 @@ databases:
 - `require_secure_transport`
 - `allow_public_key_retrieval`
 - `pool_size`
+- `min_idle`
 - `queue_capacity`
+- `connection_timeout_ms`
+- `validation_timeout_ms`
+- `idle_timeout_ms`
+- `max_lifetime_ms`
+- `leak_detection_threshold_ms`
+- `connect_timeout_ms`
+- `socket_timeout_ms`
+- `query_timeout_seconds`
+- `default_fetch_size`
+- `cache_prepared_statements`
+- `prepared_statement_cache_size`
+- `prepared_statement_cache_sql_limit`
 
 ## MongoDB Keys (`databases/mongodb.yml`)
 
@@ -52,43 +65,63 @@ databases:
 - `authSource` (note exact casing)
 - `require_secure_transport`
 - `tls.enabled`
-- `tls.allow_invalid_hostnames` (deprecated, ignored for security)
-- `tls.trust_all_certificates` (deprecated, ignored for security)
+- `tls.allow_invalid_hostnames` (must remain `false`; startup fails otherwise)
+- `tls.trust_all_certificates` (must remain `false`; startup fails otherwise)
 - `tls.trust_store_path` (optional JKS/PKCS12 path for private CA/self-managed trust)
 - `tls.trust_store_password` (optional trust store password)
 - `tls.trust_store_type` (optional, defaults to JVM `KeyStore.getDefaultType()`)
 - `pool_size`
 - `queue_capacity`
+- `max_connection_pool_size`
+- `min_connection_pool_size`
+- `connect_timeout_ms`
+- `socket_timeout_ms`
+- `server_selection_timeout_ms`
 
 ## Redis Keys (`databases/redis.yml`)
 
 - `host`, `port`, `user`, `password`, `database`
 - `require_secure_transport`
 - `tls.enabled`
-- `tls.verify_hostname` (deprecated, ignored for security)
-- `tls.trust_all_certificates` (deprecated, ignored for security)
+- `tls.verify_hostname` (must remain `true`; startup fails otherwise)
+- `tls.trust_all_certificates` (must remain `false`; startup fails otherwise)
 - `tls.trust_store_path` (optional JKS/PKCS12 path for private CA/self-managed trust)
 - `tls.trust_store_password` (optional trust store password)
 - `tls.trust_store_type` (optional, defaults to JVM `KeyStore.getDefaultType()`)
 - `pool.connections`
 - `pool.threads`
-- `queue_capacity`
+- `pool.min_idle`
+- `pool.max_idle`
+- `pool.test_on_borrow`
+- `pool.test_while_idle`
+- `pool.queue_capacity`
+- `connection_timeout_ms`
+- `socket_timeout_ms`
+- `scan_count`
+- `security.max_scan_results`
 
 ## Redis Messaging Keys (`databases/redis_messaging.yml`)
 
 - Same network + TLS fields as Redis key-value
 - `pool.connections`
 - `pool.threads`
+- `pool.min_idle`
+- `pool.max_idle`
+- `pool.test_on_borrow`
+- `pool.test_while_idle`
 - `pool.queue_capacity`
 - `pool.max_subscriptions`
+- `connection_timeout_ms`
+- `socket_timeout_ms`
 - `security.max_payload_chars`
+- `security.max_queued_messages_per_handler` (per-subscriber queue cap to isolate slow handlers)
 
 ## Common Mistakes
 
 - Identifier mismatch between code and config section names
 - Enabling TLS flags without server-side TLS support
-- Using deprecated insecure TLS flags instead of a trust store for private CA deployments
-- Assuming Redis and Redis Messaging use identical pool key paths (`queue_capacity` differs)
+- Setting insecure TLS flags (`trust_all_certificates`, `allow_invalid_hostnames`, or `verify_hostname=false`) which now fail startup in 2.0
+- Using `queue_capacity` at the root of `redis.yml` instead of `pool.queue_capacity`
 
 ## Operational Notes
 
@@ -96,3 +129,4 @@ databases:
 - Use explicit identifiers (for example `rw`, `ro`, `analytics`) for multi-backend setups.
 - Validate trust store configuration in staging before production rollout.
 - Never commit production credentials.
+- During plugin shutdown across many classes/scopes, pair cleanup with `unregisterAllDatabasesForPlugin()`.

@@ -43,7 +43,7 @@ class DataProviderRegistryTest {
         RecordingLoggerAdapter logger = new RecordingLoggerAdapter();
         DataProviderRegistry registry = new DataProviderRegistry(factory, configHandler, logger);
 
-        DatabaseProvider provider = registry.registerDatabase("plugin", DatabaseType.MYSQL, "default");
+        DatabaseProvider provider = registry.registerDatabase("plugin", "feature-a", DatabaseType.MYSQL, "default");
 
         assertNull(provider);
         verify(configHandler).isDatabaseTypeEnabled(DatabaseType.MYSQL);
@@ -61,8 +61,8 @@ class DataProviderRegistryTest {
         RecordingProvider provider = new RecordingProvider(true);
         when(factory.createDatabaseProvider(DatabaseType.MYSQL, "default")).thenReturn(provider);
 
-        DatabaseProvider first = registry.registerDatabase("plugin", DatabaseType.MYSQL, "default");
-        DatabaseProvider second = registry.registerDatabase("plugin", DatabaseType.MYSQL, "default");
+        DatabaseProvider first = registry.registerDatabase("plugin", "feature-a", DatabaseType.MYSQL, "default");
+        DatabaseProvider second = registry.registerDatabase("plugin", "feature-a", DatabaseType.MYSQL, "default");
 
         assertSame(provider, first);
         assertSame(provider, second);
@@ -71,13 +71,85 @@ class DataProviderRegistryTest {
         DatabaseConnectionKey key = new DatabaseConnectionKey("plugin", DatabaseType.MYSQL, "default");
         assertEquals(2, registry.getActiveDatabaseReferenceCounts().get(key));
 
-        registry.unregisterDatabase("plugin", DatabaseType.MYSQL, "default");
+        registry.unregisterDatabase("plugin", "feature-a", DatabaseType.MYSQL, "default");
         assertEquals(0, provider.disconnectCalls);
         assertEquals(1, registry.getActiveDatabaseReferenceCounts().get(key));
 
-        registry.unregisterDatabase("plugin", DatabaseType.MYSQL, "default");
+        registry.unregisterDatabase("plugin", "feature-a", DatabaseType.MYSQL, "default");
         assertEquals(1, provider.disconnectCalls);
         assertTrue(registry.getActiveDatabases().isEmpty());
+    }
+
+    @Test
+    void unregisterByDifferentScopeDoesNotReleaseOtherFeatureReferences() {
+        DatabaseFactory factory = mock(DatabaseFactory.class);
+        ConfigHandler configHandler = mock(ConfigHandler.class);
+        when(configHandler.isDatabaseTypeEnabled(DatabaseType.MYSQL)).thenReturn(true);
+        RecordingLoggerAdapter logger = new RecordingLoggerAdapter();
+        DataProviderRegistry registry = new DataProviderRegistry(factory, configHandler, logger);
+
+        RecordingProvider provider = new RecordingProvider(true);
+        when(factory.createDatabaseProvider(DatabaseType.MYSQL, "default")).thenReturn(provider);
+
+        registry.registerDatabase("plugin", "feature-a", DatabaseType.MYSQL, "default");
+        registry.unregisterDatabase("plugin", "feature-b", DatabaseType.MYSQL, "default");
+
+        DatabaseConnectionKey key = new DatabaseConnectionKey("plugin", DatabaseType.MYSQL, "default");
+        assertEquals(1, registry.getActiveDatabaseReferenceCounts().get(key));
+        assertEquals(0, provider.disconnectCalls);
+        assertTrue(logger.warnMessages().stream().anyMatch(m -> m.contains("unregistered scope")));
+    }
+
+    @Test
+    void unregisterAllReleasesOnlyCallerScopeReferencesWithinPlugin() {
+        DatabaseFactory factory = mock(DatabaseFactory.class);
+        ConfigHandler configHandler = mock(ConfigHandler.class);
+        when(configHandler.isDatabaseTypeEnabled(DatabaseType.MYSQL)).thenReturn(true);
+        RecordingLoggerAdapter logger = new RecordingLoggerAdapter();
+        DataProviderRegistry registry = new DataProviderRegistry(factory, configHandler, logger);
+
+        RecordingProvider provider = new RecordingProvider(true);
+        when(factory.createDatabaseProvider(DatabaseType.MYSQL, "default")).thenReturn(provider);
+
+        registry.registerDatabase("plugin", "feature-a", DatabaseType.MYSQL, "default");
+        registry.registerDatabase("plugin", "feature-b", DatabaseType.MYSQL, "default");
+
+        registry.unregisterAllDatabases("plugin", "feature-a");
+
+        DatabaseConnectionKey key = new DatabaseConnectionKey("plugin", DatabaseType.MYSQL, "default");
+        assertEquals(1, registry.getActiveDatabaseReferenceCounts().get(key));
+        assertEquals(0, provider.disconnectCalls);
+
+        registry.unregisterAllDatabases("plugin", "feature-b");
+        assertEquals(1, provider.disconnectCalls);
+        assertTrue(registry.getActiveDatabases().isEmpty());
+    }
+
+    @Test
+    void unregisterAllForPluginReleasesAllScopesWithinPlugin() {
+        DatabaseFactory factory = mock(DatabaseFactory.class);
+        ConfigHandler configHandler = mock(ConfigHandler.class);
+        when(configHandler.isDatabaseTypeEnabled(DatabaseType.MYSQL)).thenReturn(true);
+        RecordingLoggerAdapter logger = new RecordingLoggerAdapter();
+        DataProviderRegistry registry = new DataProviderRegistry(factory, configHandler, logger);
+
+        RecordingProvider provider = new RecordingProvider(true);
+        RecordingProvider otherPluginProvider = new RecordingProvider(true);
+        when(factory.createDatabaseProvider(DatabaseType.MYSQL, "default")).thenReturn(provider);
+        when(factory.createDatabaseProvider(DatabaseType.MYSQL, "analytics")).thenReturn(otherPluginProvider);
+
+        registry.registerDatabase("plugin", "feature-a", DatabaseType.MYSQL, "default");
+        registry.registerDatabase("plugin", "feature-b", DatabaseType.MYSQL, "default");
+        registry.registerDatabase("other-plugin", "feature-x", DatabaseType.MYSQL, "analytics");
+
+        registry.unregisterAllDatabasesForPlugin("plugin");
+
+        assertEquals(1, provider.disconnectCalls);
+        assertEquals(0, otherPluginProvider.disconnectCalls);
+        assertEquals(1, registry.getActiveDatabases().size());
+        assertTrue(registry.getActiveDatabases().containsKey(
+                new DatabaseConnectionKey("other-plugin", DatabaseType.MYSQL, "analytics")
+        ));
     }
 
     @Test
@@ -91,7 +163,7 @@ class DataProviderRegistryTest {
         RecordingProvider provider = new RecordingProvider(true);
         when(factory.createDatabaseProvider(DatabaseType.MYSQL, "default")).thenReturn(provider);
 
-        registry.registerDatabase("plugin", DatabaseType.MYSQL, "default");
+        registry.registerDatabase("plugin", "feature-a", DatabaseType.MYSQL, "default");
         provider.connected = false;
 
         DatabaseProvider lookedUp = registry.getDatabase("plugin", DatabaseType.MYSQL, "default");
@@ -110,7 +182,7 @@ class DataProviderRegistryTest {
 
         RecordingProvider provider = new RecordingProvider(true);
         when(factory.createDatabaseProvider(DatabaseType.MYSQL, "default")).thenReturn(provider);
-        registry.registerDatabase("plugin", DatabaseType.MYSQL, "default");
+        registry.registerDatabase("plugin", "feature-a", DatabaseType.MYSQL, "default");
 
         provider.healthFailure = new RuntimeException("health check failed");
         assertNull(registry.getDatabase("plugin", DatabaseType.MYSQL, "default"));
@@ -131,9 +203,9 @@ class DataProviderRegistryTest {
                 .thenReturn(stale)
                 .thenReturn(replacement);
 
-        registry.registerDatabase("plugin", DatabaseType.MYSQL, "default");
+        registry.registerDatabase("plugin", "feature-a", DatabaseType.MYSQL, "default");
         stale.connected = false;
-        DatabaseProvider result = registry.registerDatabase("plugin", DatabaseType.MYSQL, "default");
+        DatabaseProvider result = registry.registerDatabase("plugin", "feature-a", DatabaseType.MYSQL, "default");
 
         assertSame(replacement, result);
         assertEquals(1, stale.disconnectCalls);
@@ -153,10 +225,10 @@ class DataProviderRegistryTest {
         when(factory.createDatabaseProvider(DatabaseType.MYSQL, "a")).thenReturn(a);
         when(factory.createDatabaseProvider(DatabaseType.MYSQL, "b")).thenReturn(b);
 
-        registry.registerDatabase("plugin-a", DatabaseType.MYSQL, "a");
-        registry.registerDatabase("plugin-b", DatabaseType.MYSQL, "b");
+        registry.registerDatabase("plugin-a", "feature-a", DatabaseType.MYSQL, "a");
+        registry.registerDatabase("plugin-b", "feature-b", DatabaseType.MYSQL, "b");
 
-        registry.unregisterAllDatabases("plugin-a");
+        registry.unregisterAllDatabases("plugin-a", "feature-a");
 
         assertEquals(1, a.disconnectCalls);
         assertEquals(0, b.disconnectCalls);
@@ -178,8 +250,8 @@ class DataProviderRegistryTest {
         when(factory.createDatabaseProvider(DatabaseType.MYSQL, "a")).thenReturn(a);
         when(factory.createDatabaseProvider(DatabaseType.MYSQL, "b")).thenReturn(b);
 
-        registry.registerDatabase("plugin-a", DatabaseType.MYSQL, "a");
-        registry.registerDatabase("plugin-b", DatabaseType.MYSQL, "b");
+        registry.registerDatabase("plugin-a", "feature-a", DatabaseType.MYSQL, "a");
+        registry.registerDatabase("plugin-b", "feature-b", DatabaseType.MYSQL, "b");
 
         registry.shutdownAllDatabases();
 
@@ -201,7 +273,7 @@ class DataProviderRegistryTest {
 
         RecordingProvider provider = new RecordingProvider(true);
         when(factory.createDatabaseProvider(DatabaseType.MYSQL, "default")).thenReturn(provider);
-        registry.registerDatabase("plugin", DatabaseType.MYSQL, "default");
+        registry.registerDatabase("plugin", "feature-a", DatabaseType.MYSQL, "default");
 
         registry.shutdownAllDatabases();
         registry.shutdownAllDatabases();
@@ -211,7 +283,7 @@ class DataProviderRegistryTest {
 
         IllegalStateException registerFailure = assertThrows(
                 IllegalStateException.class,
-                () -> registry.registerDatabase("plugin", DatabaseType.MYSQL, "default")
+                () -> registry.registerDatabase("plugin", "feature-a", DatabaseType.MYSQL, "default")
         );
         assertTrue(registerFailure.getMessage().contains("shut down"));
         assertThrows(
@@ -220,9 +292,9 @@ class DataProviderRegistryTest {
         );
         assertThrows(
                 IllegalStateException.class,
-                () -> registry.unregisterDatabase("plugin", DatabaseType.MYSQL, "default")
+                () -> registry.unregisterDatabase("plugin", "feature-a", DatabaseType.MYSQL, "default")
         );
-        assertThrows(IllegalStateException.class, () -> registry.unregisterAllDatabases("plugin"));
+        assertThrows(IllegalStateException.class, () -> registry.unregisterAllDatabases("plugin", "feature-a"));
         assertThrows(IllegalStateException.class, registry::getActiveDatabases);
         assertThrows(IllegalStateException.class, registry::getActiveDatabaseReferenceCounts);
     }
@@ -239,7 +311,7 @@ class DataProviderRegistryTest {
         provider.connectFailure = new RuntimeException("connect failed");
         when(factory.createDatabaseProvider(DatabaseType.MYSQL, "default")).thenReturn(provider);
 
-        DatabaseProvider result = registry.registerDatabase("plugin", DatabaseType.MYSQL, "default");
+        DatabaseProvider result = registry.registerDatabase("plugin", "feature-a", DatabaseType.MYSQL, "default");
 
         assertNull(result);
         assertEquals(1, provider.connectCalls);
@@ -256,7 +328,7 @@ class DataProviderRegistryTest {
         DataProviderRegistry registry = new DataProviderRegistry(factory, configHandler, logger);
         when(factory.createDatabaseProvider(DatabaseType.MYSQL, "default")).thenReturn(null);
 
-        DatabaseProvider result = registry.registerDatabase("plugin", DatabaseType.MYSQL, "default");
+        DatabaseProvider result = registry.registerDatabase("plugin", "feature-a", DatabaseType.MYSQL, "default");
         assertNull(result);
         assertTrue(registry.getActiveDatabases().isEmpty());
     }
@@ -271,7 +343,7 @@ class DataProviderRegistryTest {
 
         RecordingProvider provider = new RecordingProvider(true);
         when(factory.createDatabaseProvider(DatabaseType.MYSQL, "default")).thenReturn(provider);
-        registry.registerDatabase("plugin", DatabaseType.MYSQL, "default");
+        registry.registerDatabase("plugin", "feature-a", DatabaseType.MYSQL, "default");
 
         ConcurrentMap<DatabaseConnectionKey, DatabaseProvider> active = registry.getActiveDatabases();
         Map<DatabaseConnectionKey, Integer> refs = registry.getActiveDatabaseReferenceCounts();

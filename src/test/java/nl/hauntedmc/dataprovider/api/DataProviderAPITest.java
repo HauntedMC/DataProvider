@@ -20,6 +20,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNotSame;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.mock;
@@ -37,11 +38,13 @@ class DataProviderAPITest {
     void registerAndLookupOptionalApisHandleNullProvider() {
         DataProviderHandler handler = mock(DataProviderHandler.class);
         when(handler.registerDatabase(DatabaseType.MYSQL, "default")).thenReturn(null);
+        when(handler.registerDatabaseForScope("component.scope", DatabaseType.MYSQL, "default")).thenReturn(null);
         when(handler.getRegisteredDatabase(DatabaseType.MYSQL, "default")).thenReturn(null);
 
         DataProviderAPI api = new DataProviderAPI(handler);
 
         assertEquals(Optional.empty(), api.registerDatabaseOptional(DatabaseType.MYSQL, "default"));
+        assertNull(api.registerDatabaseForScope("component.scope", DatabaseType.MYSQL, "default"));
         assertEquals(Optional.empty(), api.getRegisteredDatabaseOptional(DatabaseType.MYSQL, "default"));
     }
 
@@ -50,6 +53,7 @@ class DataProviderAPITest {
         DataProviderHandler handler = mock(DataProviderHandler.class);
         StubMessagingDatabaseProvider provider = new StubMessagingDatabaseProvider(new StubMessagingDataAccess());
         when(handler.registerDatabase(DatabaseType.REDIS, "cache")).thenReturn(provider);
+        when(handler.registerDatabaseForScope("component.scope", DatabaseType.REDIS, "cache")).thenReturn(provider);
         when(handler.getRegisteredDatabase(DatabaseType.REDIS, "cache")).thenReturn(provider);
 
         DataProviderAPI api = new DataProviderAPI(handler);
@@ -69,6 +73,7 @@ class DataProviderAPITest {
                 "cache",
                 StubMessagingDataAccess.class
         );
+        DatabaseProvider scoped = api.registerDatabaseForScope("component.scope", DatabaseType.REDIS, "cache");
         Optional<StubMessagingDataAccess> lookupAccess = api.getRegisteredDataAccess(
                 DatabaseType.REDIS,
                 "cache",
@@ -79,8 +84,10 @@ class DataProviderAPITest {
         assertTrue(lookupAs.isPresent());
         assertTrue(registerAccess.isPresent());
         assertTrue(lookupAccess.isPresent());
+        assertNotNull(scoped);
         assertNotSame(provider, registerAs.get());
         assertNotSame(provider, lookupAs.get());
+        assertNotSame(provider, scoped);
     }
 
     @Test
@@ -119,10 +126,16 @@ class DataProviderAPITest {
         DataProviderAPI api = new DataProviderAPI(handler);
 
         api.unregisterDatabase(DatabaseType.MYSQL, "default");
+        api.unregisterDatabaseForScope("component.scope", DatabaseType.MYSQL, "default");
         api.unregisterAllDatabases();
+        api.unregisterAllDatabasesForScope("component.scope");
+        api.unregisterAllDatabasesForPlugin();
 
         verify(handler).unregisterDatabase(DatabaseType.MYSQL, "default");
+        verify(handler).unregisterDatabaseForScope("component.scope", DatabaseType.MYSQL, "default");
         verify(handler).unregisterAllDatabases();
+        verify(handler).unregisterAllDatabasesForScope("component.scope");
+        verify(handler).unregisterAllDatabasesForPlugin();
     }
 
     @Test

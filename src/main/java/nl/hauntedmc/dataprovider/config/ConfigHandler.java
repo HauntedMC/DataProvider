@@ -1,6 +1,7 @@
 package nl.hauntedmc.dataprovider.config;
 
 import nl.hauntedmc.dataprovider.database.DatabaseType;
+import nl.hauntedmc.dataprovider.internal.security.FilePermissionHardening;
 import nl.hauntedmc.dataprovider.platform.common.logger.ILoggerAdapter;
 import org.spongepowered.configurate.CommentedConfigurationNode;
 import org.spongepowered.configurate.loader.ConfigurationLoader;
@@ -47,7 +48,9 @@ public class ConfigHandler {
      */
     private void ensureConfigFileExists() {
         try {
-            Files.createDirectories(configFile.getParent());
+            Path parentDirectory = configFile.getParent();
+            Files.createDirectories(parentDirectory);
+            FilePermissionHardening.restrictDirectoryToOwner(parentDirectory, logger, "DataProvider config directory");
             if (!Files.exists(configFile)) {
                 try (InputStream in = getClass().getResourceAsStream("/config.yml")) {
                     if (in != null) {
@@ -59,6 +62,7 @@ public class ConfigHandler {
                     }
                 }
             }
+            FilePermissionHardening.restrictFileToOwner(configFile, logger, "DataProvider config.yml");
         } catch (IOException e) {
             throw new IllegalStateException("Error ensuring config file exists at " + configFile, e);
         }
@@ -118,6 +122,7 @@ public class ConfigHandler {
     private void saveConfig() {
         try {
             loader.save(config);
+            FilePermissionHardening.restrictFileToOwner(configFile, logger, "DataProvider config.yml");
         } catch (IOException e) {
             throw new IllegalStateException("Error saving config file at " + configFile, e);
         }

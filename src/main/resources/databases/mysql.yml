@@ -8,4 +8,17 @@ default:
   require_secure_transport: false
   allow_public_key_retrieval: false
   pool_size: 10
+  min_idle: 2
   queue_capacity: 2000
+  connection_timeout_ms: 30000
+  validation_timeout_ms: 3000
+  idle_timeout_ms: 600000
+  max_lifetime_ms: 1800000
+  leak_detection_threshold_ms: 0
+  connect_timeout_ms: 10000
+  socket_timeout_ms: 10000
+  query_timeout_seconds: 0
+  default_fetch_size: 0
+  cache_prepared_statements: true
+  prepared_statement_cache_size: 250
+  prepared_statement_cache_sql_limit: 2048
