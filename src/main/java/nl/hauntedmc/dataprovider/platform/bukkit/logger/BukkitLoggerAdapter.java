@@ -2,15 +2,16 @@ package nl.hauntedmc.dataprovider.platform.bukkit.logger;
 
 import nl.hauntedmc.dataprovider.platform.common.logger.ILoggerAdapter;
 
+import java.util.Objects;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
-public class BukkitLoggerAdapter implements ILoggerAdapter {
+public final class BukkitLoggerAdapter implements ILoggerAdapter {
 
     private final Logger logger;
 
     public BukkitLoggerAdapter(Logger logger) {
-        this.logger = logger;
+        this.logger = Objects.requireNonNull(logger, "Logger cannot be null.");
     }
 
     @Override

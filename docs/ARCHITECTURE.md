@@ -10,7 +10,8 @@ Main modules:
 - `api`: public registration/lookup surface
 - `internal`: registry, factory, config mapping, identity, and lifecycle logic
 - `database.*`: backend implementations and typed data-access contracts
-- `platform.bukkit` / `platform.velocity`: platform bootstrap and caller context resolution
+- `platform.common`: shared platform runtime lifecycle and command behavior
+- `platform.bukkit` / `platform.velocity`: platform adapters (bootstrap, command wiring, caller context resolution)
 
 ## Registration Model
 
@@ -37,6 +38,13 @@ Main modules:
 - Stale/disconnected providers are evicted from registry lookup paths.
 - Shutdown hooks unregister or stop backend resources cleanly.
 - Bounded executors are used for asynchronous backend work queues.
+- Platform runtime wrappers use a shared thread-safe lifecycle holder to prevent stale instance leaks across enable/disable cycles.
+
+## Platform Layer Design
+
+- `PlatformDataProviderRuntime` centralizes bootstrap shutdown behavior and static API access checks.
+- Platform command adapters delegate to a shared `DataProviderCommandService` so Bukkit and Velocity command behavior stays identical.
+- Platform-specific wrappers only map host APIs to shared internals (logger, command registration, event/plugin lifecycle hooks).
 
 ## ORM Integration
 

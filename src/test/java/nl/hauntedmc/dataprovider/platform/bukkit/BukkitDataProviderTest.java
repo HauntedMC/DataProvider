@@ -3,6 +3,8 @@ package nl.hauntedmc.dataprovider.platform.bukkit;
 import nl.hauntedmc.dataprovider.DataProvider;
 import nl.hauntedmc.dataprovider.api.DataProviderAPI;
 import nl.hauntedmc.dataprovider.internal.DataProviderHandler;
+import nl.hauntedmc.dataprovider.platform.common.lifecycle.PlatformDataProviderRuntime;
+import nl.hauntedmc.dataprovider.platform.common.logger.ILoggerAdapter;
 import org.junit.jupiter.api.Test;
 
 import java.lang.reflect.Field;
@@ -17,12 +19,10 @@ class BukkitDataProviderTest {
 
     @Test
     void getDataProviderApiThrowsWhenNotInitialized() throws ReflectiveOperationException {
-        DataProvider original = swapStaticDataProvider(null);
-        try {
-            assertThrows(IllegalStateException.class, BukkitDataProvider::getDataProviderAPI);
-        } finally {
-            swapStaticDataProvider(original);
-        }
+        PlatformDataProviderRuntime runtime = resolveRuntime();
+        runtime.stop(mock(ILoggerAdapter.class));
+
+        assertThrows(IllegalStateException.class, BukkitDataProvider::getDataProviderAPI);
     }
 
     @Test
@@ -31,22 +31,22 @@ class BukkitDataProviderTest {
         DataProviderHandler handler = mock(DataProviderHandler.class);
         when(provider.getDataProviderHandler()).thenReturn(handler);
 
-        DataProvider original = swapStaticDataProvider(provider);
+        PlatformDataProviderRuntime runtime = resolveRuntime();
+        runtime.stop(mock(ILoggerAdapter.class));
+        runtime.start(() -> provider, mock(ILoggerAdapter.class));
         try {
             DataProviderAPI api = BukkitDataProvider.getDataProviderAPI();
             assertNotNull(api);
             api.unregisterAllDatabases();
             verify(handler).unregisterAllDatabases();
         } finally {
-            swapStaticDataProvider(original);
+            runtime.stop(mock(ILoggerAdapter.class));
         }
     }
 
-    private static DataProvider swapStaticDataProvider(DataProvider replacement) throws ReflectiveOperationException {
-        Field field = BukkitDataProvider.class.getDeclaredField("dataProvider");
+    private static PlatformDataProviderRuntime resolveRuntime() throws ReflectiveOperationException {
+        Field field = BukkitDataProvider.class.getDeclaredField("RUNTIME");
         field.setAccessible(true);
-        DataProvider previous = (DataProvider) field.get(null);
-        field.set(null, replacement);
-        return previous;
+        return (PlatformDataProviderRuntime) field.get(null);
     }
 }

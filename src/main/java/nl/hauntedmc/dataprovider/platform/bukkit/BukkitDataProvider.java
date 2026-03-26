@@ -2,68 +2,63 @@ package nl.hauntedmc.dataprovider.platform.bukkit;
 
 import nl.hauntedmc.dataprovider.DataProvider;
 import nl.hauntedmc.dataprovider.api.DataProviderAPI;
+import nl.hauntedmc.dataprovider.internal.DataProviderHandler;
 import nl.hauntedmc.dataprovider.platform.bukkit.command.DataProviderCommand;
 import nl.hauntedmc.dataprovider.platform.bukkit.identity.BukkitCallerContextResolver;
 import nl.hauntedmc.dataprovider.platform.bukkit.logger.BukkitLoggerAdapter;
+import nl.hauntedmc.dataprovider.platform.common.lifecycle.PlatformDataProviderRuntime;
+import org.bukkit.command.PluginCommand;
 import org.bukkit.plugin.java.JavaPlugin;
 
-import java.util.Objects;
-import java.util.logging.Level;
+public final class BukkitDataProvider extends JavaPlugin {
 
-public class BukkitDataProvider extends JavaPlugin {
-
-    private static volatile DataProvider dataProvider;
+    private static final String COMMAND_NAME = "dataprovider";
+    private static final PlatformDataProviderRuntime RUNTIME = new PlatformDataProviderRuntime();
 
 
     @Override
     public void onEnable() {
-        DataProvider previousProvider = dataProvider;
-        if (previousProvider != null) {
-            getLogger().warning("Detected leftover DataProvider instance during enable; forcing cleanup first.");
-            dataProvider = null;
-            try {
-                previousProvider.shutdownAllDatabases();
-            } catch (Exception e) {
-                getLogger().log(Level.SEVERE, "Failed to shut down leftover DataProvider instance.", e);
-            }
-        }
-
-        BukkitLoggerAdapter logInstance = new BukkitLoggerAdapter(getLogger());
-        dataProvider = new DataProvider(
-                logInstance,
-                getDataPath(),
-                this.getClassLoader(),
-                new BukkitCallerContextResolver(this.getClassLoader())
+        BukkitLoggerAdapter loggerAdapter = new BukkitLoggerAdapter(getLogger());
+        DataProvider provider = RUNTIME.start(
+                () -> new DataProvider(
+                        loggerAdapter,
+                        getDataPath(),
+                        getClassLoader(),
+                        new BukkitCallerContextResolver(getClassLoader())
+                ),
+                loggerAdapter
         );
-
-        // Init Bukkit Command
-        DataProviderCommand commandExecutor = new DataProviderCommand(dataProvider.getDataProviderHandler());
-        Objects.requireNonNull(getCommand("dataprovider")).setExecutor(commandExecutor);
-        Objects.requireNonNull(getCommand("dataprovider")).setTabCompleter(commandExecutor);
+        try {
+            registerCommand(provider.getDataProviderHandler());
+        } catch (RuntimeException exception) {
+            loggerAdapter.error("Failed to initialize Bukkit command wiring.", exception);
+            RUNTIME.stop(loggerAdapter);
+            throw exception;
+        }
 
         getLogger().info("Enabled (v" + getDescription().getVersion() + ").");
     }
 
     @Override
     public void onDisable() {
-        DataProvider providerToShutdown = dataProvider;
-        dataProvider = null;
-        if (providerToShutdown != null) {
-            try {
-                providerToShutdown.shutdownAllDatabases();
-            } catch (Exception e) {
-                getLogger().log(Level.SEVERE, "Failed to shut down DataProvider cleanly.", e);
-            }
-        }
+        RUNTIME.stop(new BukkitLoggerAdapter(getLogger()));
         getLogger().info("Disabled.");
     }
 
     // START EXTERNALLY ACCESSIBLE
     public static DataProviderAPI getDataProviderAPI() {
-        if (dataProvider == null) {
-            throw new IllegalStateException("DataProvider is not initialized yet.");
-        }
-        return new DataProviderAPI(dataProvider.getDataProviderHandler());
+        return RUNTIME.getDataProviderAPI();
     }
     // END EXTERNALLY ACCESSIBLE
+
+    private void registerCommand(DataProviderHandler handler) {
+        PluginCommand command = getCommand(COMMAND_NAME);
+        if (command == null) {
+            throw new IllegalStateException("Command '" + COMMAND_NAME + "' is missing from plugin.yml.");
+        }
+
+        DataProviderCommand commandExecutor = new DataProviderCommand(handler);
+        command.setExecutor(commandExecutor);
+        command.setTabCompleter(commandExecutor);
+    }
 }

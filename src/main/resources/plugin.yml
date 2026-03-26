@@ -6,4 +6,4 @@ api-version: 1.19
 commands:
   dataprovider:
     description: Displays status of active database connections.
-    usage: /dataprovider <status>
+    usage: /dataprovider <status|help>
