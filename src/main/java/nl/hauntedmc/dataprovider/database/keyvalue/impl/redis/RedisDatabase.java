@@ -27,10 +27,10 @@ public class RedisDatabase implements KeyValueDatabaseProvider, ManagedDatabaseP
 
     private final CommentedConfigurationNode config;
     private final ILoggerAdapter logger;
-    private JedisPool jedisPool;
-    private ExecutorService executor;
-    private RedisDataAccess dataAccess;
-    private boolean connected;
+    private volatile JedisPool jedisPool;
+    private volatile ExecutorService executor;
+    private volatile RedisDataAccess dataAccess;
+    private volatile boolean connected;
 
     public RedisDatabase(CommentedConfigurationNode config, ILoggerAdapter logger) {
         this.config = config;

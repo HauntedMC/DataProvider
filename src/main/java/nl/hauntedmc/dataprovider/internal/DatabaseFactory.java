@@ -21,9 +21,18 @@ class DatabaseFactory {
     }
 
     protected ManagedDatabaseProvider createDatabaseProvider(DatabaseType type, String connectionIdentifier) {
+        return createDatabaseProvider(type, ConnectionIdentifier.of(connectionIdentifier));
+    }
+
+    protected ManagedDatabaseProvider createDatabaseProvider(
+            DatabaseType type,
+            ConnectionIdentifier connectionIdentifier
+    ) {
+        Objects.requireNonNull(type, "Database type cannot be null.");
+        Objects.requireNonNull(connectionIdentifier, "Connection identifier cannot be null.");
         CommentedConfigurationNode connectionConfig = configMap.getConfig(type, connectionIdentifier);
         if (connectionConfig == null) {
-            logger.error("Could not load configuration for " + connectionIdentifier + " (" + type.name() + ")");
+            logger.error("Could not load configuration for " + connectionIdentifier.value() + " (" + type.name() + ")");
             return null;
         }
         return switch (type) {

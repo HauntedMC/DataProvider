@@ -25,7 +25,7 @@ class DataProviderScopeTest {
         DataProviderHandler handler = mock(DataProviderHandler.class);
         DataProviderAPI api = new DataProviderAPI(handler);
 
-        assertThrows(IllegalArgumentException.class, () -> api.scope(null));
+        assertThrows(NullPointerException.class, () -> api.scope((String) null));
         assertThrows(IllegalArgumentException.class, () -> api.scope(" "));
         assertThrows(IllegalArgumentException.class, () -> api.scope("bad scope"));
     }
@@ -34,7 +34,8 @@ class DataProviderScopeTest {
     void typedScopeMethodsDelegateAndWrapResults() {
         DataProviderHandler handler = mock(DataProviderHandler.class);
         StubDatabaseProvider provider = new StubDatabaseProvider(new StubDataAccess());
-        when(handler.registerDatabaseForScope("component.scope", DatabaseType.MYSQL, "default")).thenReturn(provider);
+        when(handler.registerDatabaseForScope(OwnerScope.of("component.scope"), DatabaseType.MYSQL, "default"))
+                .thenReturn(provider);
 
         DataProviderScope scope = new DataProviderAPI(handler).scope("component.scope");
 
@@ -64,14 +65,14 @@ class DataProviderScopeTest {
         scope.unregisterAllDatabases();
         scope.close();
 
-        verify(handler).unregisterDatabaseForScope("component.scope", DatabaseType.MYSQL, "default");
-        verify(handler, times(2)).unregisterAllDatabasesForScope("component.scope");
+        verify(handler).unregisterDatabaseForScope(OwnerScope.of("component.scope"), DatabaseType.MYSQL, "default");
+        verify(handler, times(2)).unregisterAllDatabasesForScope(OwnerScope.of("component.scope"));
     }
 
     @Test
     void exposesNormalizedOwnerScope() {
         DataProviderScope scope = new DataProviderAPI(mock(DataProviderHandler.class)).scope(" component.scope ");
-        assertEquals("component.scope", scope.ownerScope());
+        assertEquals(OwnerScope.of("component.scope"), scope.ownerScope());
     }
 
     private static final class StubDataAccess implements DataAccess {

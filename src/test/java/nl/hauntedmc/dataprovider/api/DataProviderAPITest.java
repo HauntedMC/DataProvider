@@ -87,19 +87,20 @@ class DataProviderAPITest {
     void scopeFacadeDelegatesScopedOperations() {
         DataProviderHandler handler = mock(DataProviderHandler.class);
         StubMessagingDatabaseProvider provider = new StubMessagingDatabaseProvider(new StubMessagingDataAccess());
-        when(handler.registerDatabaseForScope("component.scope", DatabaseType.REDIS, "cache")).thenReturn(provider);
+        when(handler.registerDatabaseForScope(OwnerScope.of("component.scope"), DatabaseType.REDIS, "cache"))
+                .thenReturn(provider);
 
         DataProviderAPI api = new DataProviderAPI(handler);
         DataProviderScope scope = api.scope("component.scope");
 
-        assertEquals("component.scope", scope.ownerScope());
+        assertEquals(OwnerScope.of("component.scope"), scope.ownerScope());
         assertNotNull(scope.registerDatabase(DatabaseType.REDIS, "cache"));
         scope.unregisterDatabase(DatabaseType.REDIS, "cache");
         scope.unregisterAllDatabases();
 
-        verify(handler).registerDatabaseForScope("component.scope", DatabaseType.REDIS, "cache");
-        verify(handler).unregisterDatabaseForScope("component.scope", DatabaseType.REDIS, "cache");
-        verify(handler).unregisterAllDatabasesForScope("component.scope");
+        verify(handler).registerDatabaseForScope(OwnerScope.of("component.scope"), DatabaseType.REDIS, "cache");
+        verify(handler).unregisterDatabaseForScope(OwnerScope.of("component.scope"), DatabaseType.REDIS, "cache");
+        verify(handler).unregisterAllDatabasesForScope(OwnerScope.of("component.scope"));
     }
 
     @Test

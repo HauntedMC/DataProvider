@@ -26,9 +26,9 @@ public final class RedisMessagingDatabase implements MessagingDatabaseProvider, 
     private final CommentedConfigurationNode cfg;
     private final ILoggerAdapter logger;
     private final MessageRegistry messageRegistry;
-    private JedisPool pool;
-    private ExecutorService workers;
-    private RedisMessagingDataAccess bus;
+    private volatile JedisPool pool;
+    private volatile ExecutorService workers;
+    private volatile RedisMessagingDataAccess bus;
     private volatile boolean connected;
 
     public RedisMessagingDatabase(CommentedConfigurationNode cfg, ILoggerAdapter logger) {

@@ -59,6 +59,13 @@ public class DataProviderAPI {
      * Default integrations usually do not need this.
      */
     public DataProviderScope scope(String ownerScope) {
+        return scope(OwnerScope.of(ownerScope));
+    }
+
+    /**
+     * Creates an optional scoped lifecycle facade using a typed owner scope.
+     */
+    public DataProviderScope scope(OwnerScope ownerScope) {
         return new DataProviderScope(handler, ownerScope);
     }
 

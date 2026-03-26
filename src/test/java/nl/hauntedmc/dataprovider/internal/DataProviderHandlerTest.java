@@ -47,9 +47,23 @@ class DataProviderHandlerTest {
         DataProviderHandler handler = new DataProviderHandler(registry, resolver, logger, getClass().getClassLoader());
         DatabaseProvider provider = mock(DatabaseProvider.class);
 
-        when(registry.registerDatabase("feature-plugin", "feature-plugin", DatabaseType.MYSQL, "default")).thenReturn(provider);
-        when(registry.registerDatabase("feature-plugin", "component.scope", DatabaseType.MYSQL, "default")).thenReturn(provider);
-        when(registry.getDatabase("feature-plugin", DatabaseType.MYSQL, "default")).thenReturn(provider);
+        when(registry.registerDatabase(
+                PluginId.of("feature-plugin"),
+                OwnerScopeId.of("feature-plugin"),
+                DatabaseType.MYSQL,
+                ConnectionIdentifier.of("default")
+        )).thenReturn(provider);
+        when(registry.registerDatabase(
+                PluginId.of("feature-plugin"),
+                OwnerScopeId.of("component.scope"),
+                DatabaseType.MYSQL,
+                ConnectionIdentifier.of("default")
+        )).thenReturn(provider);
+        when(registry.getDatabase(
+                PluginId.of("feature-plugin"),
+                DatabaseType.MYSQL,
+                ConnectionIdentifier.of("default")
+        )).thenReturn(provider);
 
         assertSame(provider, handler.registerDatabase(DatabaseType.MYSQL, "default"));
         assertSame(provider, handler.registerDatabaseForScope("component.scope", DatabaseType.MYSQL, "default"));
@@ -60,14 +74,38 @@ class DataProviderHandlerTest {
         handler.unregisterAllDatabasesForScope("component.scope");
         handler.unregisterAllDatabasesForPlugin();
 
-        verify(registry).registerDatabase("feature-plugin", "feature-plugin", DatabaseType.MYSQL, "default");
-        verify(registry).registerDatabase("feature-plugin", "component.scope", DatabaseType.MYSQL, "default");
-        verify(registry).getDatabase("feature-plugin", DatabaseType.MYSQL, "default");
-        verify(registry).unregisterDatabase("feature-plugin", "feature-plugin", DatabaseType.MYSQL, "default");
-        verify(registry).unregisterDatabase("feature-plugin", "component.scope", DatabaseType.MYSQL, "default");
-        verify(registry).unregisterAllDatabases("feature-plugin", "feature-plugin");
-        verify(registry).unregisterAllDatabases("feature-plugin", "component.scope");
-        verify(registry).unregisterAllDatabasesForPlugin("feature-plugin");
+        verify(registry).registerDatabase(
+                PluginId.of("feature-plugin"),
+                OwnerScopeId.of("feature-plugin"),
+                DatabaseType.MYSQL,
+                ConnectionIdentifier.of("default")
+        );
+        verify(registry).registerDatabase(
+                PluginId.of("feature-plugin"),
+                OwnerScopeId.of("component.scope"),
+                DatabaseType.MYSQL,
+                ConnectionIdentifier.of("default")
+        );
+        verify(registry).getDatabase(
+                PluginId.of("feature-plugin"),
+                DatabaseType.MYSQL,
+                ConnectionIdentifier.of("default")
+        );
+        verify(registry).unregisterDatabase(
+                PluginId.of("feature-plugin"),
+                OwnerScopeId.of("feature-plugin"),
+                DatabaseType.MYSQL,
+                ConnectionIdentifier.of("default")
+        );
+        verify(registry).unregisterDatabase(
+                PluginId.of("feature-plugin"),
+                OwnerScopeId.of("component.scope"),
+                DatabaseType.MYSQL,
+                ConnectionIdentifier.of("default")
+        );
+        verify(registry).unregisterAllDatabases(PluginId.of("feature-plugin"), OwnerScopeId.of("feature-plugin"));
+        verify(registry).unregisterAllDatabases(PluginId.of("feature-plugin"), OwnerScopeId.of("component.scope"));
+        verify(registry).unregisterAllDatabasesForPlugin(PluginId.of("feature-plugin"));
     }
 
     @Test
@@ -185,13 +223,37 @@ class DataProviderHandlerTest {
         assertThrows(IllegalStateException.class, handler::getActiveDatabases);
         assertThrows(IllegalStateException.class, handler::getActiveDatabaseReferenceCounts);
 
-        verify(registry, never()).registerDatabase("plugin", "plugin", DatabaseType.MYSQL, "default");
-        verify(registry, never()).registerDatabase("plugin", "component.scope", DatabaseType.MYSQL, "default");
-        verify(registry, never()).getDatabase("plugin", DatabaseType.MYSQL, "default");
-        verify(registry, never()).unregisterDatabase("plugin", "plugin", DatabaseType.MYSQL, "default");
-        verify(registry, never()).unregisterDatabase("plugin", "component.scope", DatabaseType.MYSQL, "default");
-        verify(registry, never()).unregisterAllDatabases("plugin", "plugin");
-        verify(registry, never()).unregisterAllDatabases("plugin", "component.scope");
-        verify(registry, never()).unregisterAllDatabasesForPlugin("plugin");
+        verify(registry, never()).registerDatabase(
+                PluginId.of("plugin"),
+                OwnerScopeId.of("plugin"),
+                DatabaseType.MYSQL,
+                ConnectionIdentifier.of("default")
+        );
+        verify(registry, never()).registerDatabase(
+                PluginId.of("plugin"),
+                OwnerScopeId.of("component.scope"),
+                DatabaseType.MYSQL,
+                ConnectionIdentifier.of("default")
+        );
+        verify(registry, never()).getDatabase(
+                PluginId.of("plugin"),
+                DatabaseType.MYSQL,
+                ConnectionIdentifier.of("default")
+        );
+        verify(registry, never()).unregisterDatabase(
+                PluginId.of("plugin"),
+                OwnerScopeId.of("plugin"),
+                DatabaseType.MYSQL,
+                ConnectionIdentifier.of("default")
+        );
+        verify(registry, never()).unregisterDatabase(
+                PluginId.of("plugin"),
+                OwnerScopeId.of("component.scope"),
+                DatabaseType.MYSQL,
+                ConnectionIdentifier.of("default")
+        );
+        verify(registry, never()).unregisterAllDatabases(PluginId.of("plugin"), OwnerScopeId.of("plugin"));
+        verify(registry, never()).unregisterAllDatabases(PluginId.of("plugin"), OwnerScopeId.of("component.scope"));
+        verify(registry, never()).unregisterAllDatabasesForPlugin(PluginId.of("plugin"));
     }
 }

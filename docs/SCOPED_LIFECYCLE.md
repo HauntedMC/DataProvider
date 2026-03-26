@@ -1,12 +1,19 @@
 # Scoped Lifecycle (Optional)
 
-`DataProviderScope` is an advanced ownership feature.
+`DataProviderScope` is an advanced ownership option.
 Use it only when one plugin/software process contains multiple independently managed components.
 
 ## Create a Scope
 
 ```java
 DataProviderScope chatScope = api.scope("component.chat");
+```
+
+You can also use a typed scope object:
+
+```java
+OwnerScope chatOwner = OwnerScope.of("component.chat");
+DataProviderScope chatScope = api.scope(chatOwner);
 ```
 
 Scope names must be stable, non-blank, and use safe identifier characters.

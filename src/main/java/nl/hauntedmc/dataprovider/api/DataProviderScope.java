@@ -7,7 +7,6 @@ import nl.hauntedmc.dataprovider.internal.DataProviderHandler;
 
 import java.util.Objects;
 import java.util.Optional;
-import java.util.regex.Pattern;
 
 /**
  * Optional scoped lifecycle helper for advanced integrations that need isolated ownership domains
@@ -20,20 +19,18 @@ import java.util.regex.Pattern;
  */
 public final class DataProviderScope implements AutoCloseable {
 
-    private static final Pattern OWNER_SCOPE_PATTERN = Pattern.compile("[A-Za-z0-9_.:$-]{1,256}");
-
     private final DataProviderHandler handler;
-    private final String ownerScope;
+    private final OwnerScope ownerScope;
 
-    DataProviderScope(DataProviderHandler handler, String ownerScope) {
+    DataProviderScope(DataProviderHandler handler, OwnerScope ownerScope) {
         this.handler = Objects.requireNonNull(handler, "DataProviderHandler cannot be null.");
-        this.ownerScope = validateOwnerScope(ownerScope);
+        this.ownerScope = Objects.requireNonNull(ownerScope, "Owner scope cannot be null.");
     }
 
     /**
      * Returns the normalized scope identifier used for ownership tracking.
      */
-    public String ownerScope() {
+    public OwnerScope ownerScope() {
         return ownerScope;
     }
 
@@ -92,16 +89,5 @@ public final class DataProviderScope implements AutoCloseable {
     @Override
     public void close() {
         unregisterAllDatabases();
-    }
-
-    private static String validateOwnerScope(String ownerScope) {
-        if (ownerScope == null || ownerScope.isBlank()) {
-            throw new IllegalArgumentException("Owner scope cannot be null or blank.");
-        }
-        String normalized = ownerScope.trim();
-        if (!OWNER_SCOPE_PATTERN.matcher(normalized).matches()) {
-            throw new IllegalArgumentException("Owner scope contains unsupported characters.");
-        }
-        return normalized;
     }
 }

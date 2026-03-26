@@ -6,7 +6,7 @@
 [![License](https://img.shields.io/github/license/HauntedMC/dataprovider)](LICENSE)
 [![Java 21](https://img.shields.io/badge/Java-21-007396)](https://adoptium.net/)
 
-Build plugin features, not database plumbing.
+Build plugins and services, not database plumbing.
 
 `DataProvider` is shared infrastructure for plugin developers on Velocity and Bukkit/Paper.  
 It gives you one clean API for MySQL, MongoDB, Redis, and Redis messaging so your plugin code can stay focused on gameplay and business logic.

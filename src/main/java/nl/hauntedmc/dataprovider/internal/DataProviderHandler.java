@@ -1,5 +1,6 @@
 package nl.hauntedmc.dataprovider.internal;
 
+import nl.hauntedmc.dataprovider.api.OwnerScope;
 import nl.hauntedmc.dataprovider.database.DatabaseConnectionKey;
 import nl.hauntedmc.dataprovider.database.DatabaseProvider;
 import nl.hauntedmc.dataprovider.database.DatabaseType;
@@ -13,7 +14,6 @@ import java.util.Objects;
 import java.nio.file.Path;
 import java.util.Map;
 import java.util.concurrent.ConcurrentMap;
-import java.util.regex.Pattern;
 
 /**
  * Public entry point for plugin-scoped database operations.
@@ -22,9 +22,6 @@ import java.util.regex.Pattern;
 public class DataProviderHandler {
 
     private static final String INTERNAL_PACKAGE_PREFIX = "nl.hauntedmc.dataprovider.internal";
-    private static final int MAX_OWNER_SCOPE_LENGTH = 256;
-    private static final Pattern OWNER_SCOPE_PATTERN = Pattern.compile("[A-Za-z0-9_.:$-]{1,256}");
-    private static final Pattern CONNECTION_IDENTIFIER_PATTERN = Pattern.compile("[A-Za-z0-9_.:-]{1,128}");
     private static final String CLOSED_MESSAGE =
             "DataProvider API is no longer available. Obtain a fresh API instance after plugin enable.";
 
@@ -71,13 +68,14 @@ public class DataProviderHandler {
     public DatabaseProvider registerDatabase(DatabaseType databaseType, String connectionIdentifier) {
         requireOpen();
         Objects.requireNonNull(databaseType, "Database type cannot be null");
-        requireConnectionIdentifier(connectionIdentifier);
         CallerContext caller = resolveCallerContext();
+        PluginId pluginId = PluginId.of(caller.pluginId());
+        ConnectionIdentifier identifier = ConnectionIdentifier.of(connectionIdentifier);
         return registry.registerDatabase(
-                caller.pluginId(),
-                caller.pluginId(),
+                pluginId,
+                OwnerScopeId.of(pluginId.value()),
                 databaseType,
-                connectionIdentifier
+                identifier
         );
     }
 
@@ -90,16 +88,29 @@ public class DataProviderHandler {
             DatabaseType databaseType,
             String connectionIdentifier
     ) {
+        return registerDatabaseForScope(OwnerScope.of(ownerScope), databaseType, connectionIdentifier);
+    }
+
+    /**
+     * Registers a database connection under a typed explicit owner scope.
+     * Used by the optional scoped API facade.
+     */
+    public DatabaseProvider registerDatabaseForScope(
+            OwnerScope ownerScope,
+            DatabaseType databaseType,
+            String connectionIdentifier
+    ) {
         requireOpen();
         Objects.requireNonNull(databaseType, "Database type cannot be null");
-        requireConnectionIdentifier(connectionIdentifier);
-        String normalizedOwnerScope = requireOwnerScope(ownerScope);
+        Objects.requireNonNull(ownerScope, "Owner scope cannot be null.");
         CallerContext caller = resolveCallerContext();
+        PluginId pluginId = PluginId.of(caller.pluginId());
+        ConnectionIdentifier identifier = ConnectionIdentifier.of(connectionIdentifier);
         return registry.registerDatabase(
-                caller.pluginId(),
-                normalizedOwnerScope,
+                pluginId,
+                OwnerScopeId.from(ownerScope),
                 databaseType,
-                connectionIdentifier
+                identifier
         );
     }
 
@@ -110,13 +121,14 @@ public class DataProviderHandler {
     public void unregisterDatabase(DatabaseType databaseType, String connectionIdentifier) {
         requireOpen();
         Objects.requireNonNull(databaseType, "Database type cannot be null");
-        requireConnectionIdentifier(connectionIdentifier);
         CallerContext caller = resolveCallerContext();
+        PluginId pluginId = PluginId.of(caller.pluginId());
+        ConnectionIdentifier identifier = ConnectionIdentifier.of(connectionIdentifier);
         registry.unregisterDatabase(
-                caller.pluginId(),
-                caller.pluginId(),
+                pluginId,
+                OwnerScopeId.of(pluginId.value()),
                 databaseType,
-                connectionIdentifier
+                identifier
         );
     }
 
@@ -129,16 +141,29 @@ public class DataProviderHandler {
             DatabaseType databaseType,
             String connectionIdentifier
     ) {
+        unregisterDatabaseForScope(OwnerScope.of(ownerScope), databaseType, connectionIdentifier);
+    }
+
+    /**
+     * Unregisters a specific database connection under a typed explicit owner scope.
+     * Used by the optional scoped API facade.
+     */
+    public void unregisterDatabaseForScope(
+            OwnerScope ownerScope,
+            DatabaseType databaseType,
+            String connectionIdentifier
+    ) {
         requireOpen();
         Objects.requireNonNull(databaseType, "Database type cannot be null");
-        requireConnectionIdentifier(connectionIdentifier);
-        String normalizedOwnerScope = requireOwnerScope(ownerScope);
+        Objects.requireNonNull(ownerScope, "Owner scope cannot be null.");
         CallerContext caller = resolveCallerContext();
+        PluginId pluginId = PluginId.of(caller.pluginId());
+        ConnectionIdentifier identifier = ConnectionIdentifier.of(connectionIdentifier);
         registry.unregisterDatabase(
-                caller.pluginId(),
-                normalizedOwnerScope,
+                pluginId,
+                OwnerScopeId.from(ownerScope),
                 databaseType,
-                connectionIdentifier
+                identifier
         );
     }
 
@@ -148,7 +173,8 @@ public class DataProviderHandler {
     public void unregisterAllDatabases() {
         requireOpen();
         CallerContext caller = resolveCallerContext();
-        registry.unregisterAllDatabases(caller.pluginId(), caller.pluginId());
+        PluginId pluginId = PluginId.of(caller.pluginId());
+        registry.unregisterAllDatabases(pluginId, OwnerScopeId.of(pluginId.value()));
     }
 
     /**
@@ -156,10 +182,19 @@ public class DataProviderHandler {
      * Used by the optional scoped API facade.
      */
     public void unregisterAllDatabasesForScope(String ownerScope) {
+        unregisterAllDatabasesForScope(OwnerScope.of(ownerScope));
+    }
+
+    /**
+     * Unregisters all database connections under a typed explicit owner scope.
+     * Used by the optional scoped API facade.
+     */
+    public void unregisterAllDatabasesForScope(OwnerScope ownerScope) {
         requireOpen();
-        String normalizedOwnerScope = requireOwnerScope(ownerScope);
+        Objects.requireNonNull(ownerScope, "Owner scope cannot be null.");
         CallerContext caller = resolveCallerContext();
-        registry.unregisterAllDatabases(caller.pluginId(), normalizedOwnerScope);
+        PluginId pluginId = PluginId.of(caller.pluginId());
+        registry.unregisterAllDatabases(pluginId, OwnerScopeId.from(ownerScope));
     }
 
     /**
@@ -169,7 +204,7 @@ public class DataProviderHandler {
     public void unregisterAllDatabasesForPlugin() {
         requireOpen();
         CallerContext caller = resolveCallerContext();
-        registry.unregisterAllDatabasesForPlugin(caller.pluginId());
+        registry.unregisterAllDatabasesForPlugin(PluginId.of(caller.pluginId()));
     }
 
     /**
@@ -186,9 +221,12 @@ public class DataProviderHandler {
     public DatabaseProvider getRegisteredDatabase(DatabaseType databaseType, String connectionIdentifier) {
         requireOpen();
         Objects.requireNonNull(databaseType, "Database type cannot be null");
-        requireConnectionIdentifier(connectionIdentifier);
         CallerContext caller = resolveCallerContext();
-        return registry.getDatabase(caller.pluginId(), databaseType, connectionIdentifier);
+        return registry.getDatabase(
+                PluginId.of(caller.pluginId()),
+                databaseType,
+                ConnectionIdentifier.of(connectionIdentifier)
+        );
     }
 
     /**
@@ -216,29 +254,6 @@ public class DataProviderHandler {
             throw new SecurityException("Could not resolve caller plugin context.");
         }
         return caller;
-    }
-
-    private static void requireConnectionIdentifier(String connectionIdentifier) {
-        if (connectionIdentifier == null || connectionIdentifier.isBlank()) {
-            throw new IllegalArgumentException("Connection identifier cannot be null or blank.");
-        }
-        if (!CONNECTION_IDENTIFIER_PATTERN.matcher(connectionIdentifier).matches()) {
-            throw new IllegalArgumentException("Connection identifier contains unsupported characters.");
-        }
-    }
-
-    private static String requireOwnerScope(String ownerScope) {
-        if (ownerScope == null || ownerScope.isBlank()) {
-            throw new IllegalArgumentException("Owner scope cannot be null or blank.");
-        }
-        String normalized = ownerScope.trim();
-        if (normalized.length() > MAX_OWNER_SCOPE_LENGTH) {
-            throw new IllegalArgumentException("Owner scope exceeds maximum supported length.");
-        }
-        if (!OWNER_SCOPE_PATTERN.matcher(normalized).matches()) {
-            throw new IllegalArgumentException("Owner scope contains unsupported characters.");
-        }
-        return normalized;
     }
 
     private void requireInternalCaller() {

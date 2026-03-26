@@ -20,7 +20,14 @@ class DataProviderRegistry {
     private static final String SHUTDOWN_MESSAGE =
             "DataProvider is shut down. Obtain a fresh API instance after plugin enable.";
 
-    private final ConcurrentMap<DatabaseConnectionKey, ActiveDatabaseRegistration> activeDatabases = new ConcurrentHashMap<>();
+    /**
+     * Active registrations keyed by typed plugin/type/identifier identity.
+     */
+    private final ConcurrentMap<RegistrationKey, ActiveDatabaseRegistration> activeDatabases = new ConcurrentHashMap<>();
+    /**
+     * Guards lifecycle transitions (shutdown / bulk unregister) while allowing concurrent
+     * register/get/unregister operations through the read lock.
+     */
     private final ReadWriteLock lifecycleLock = new ReentrantReadWriteLock(true);
     private final DatabaseFactory factory;
     private final ConfigHandler configHandler;
@@ -39,15 +46,31 @@ class DataProviderRegistry {
             DatabaseType databaseType,
             String connectionIdentifier
     ) {
-        Objects.requireNonNull(pluginName, "Plugin name cannot be null.");
+        return registerDatabase(
+                PluginId.of(pluginName),
+                OwnerScopeId.of(ownerScope),
+                databaseType,
+                ConnectionIdentifier.of(connectionIdentifier)
+        );
+    }
+
+    DatabaseProvider registerDatabase(
+            PluginId pluginId,
+            OwnerScopeId ownerScope,
+            DatabaseType databaseType,
+            ConnectionIdentifier connectionIdentifier
+    ) {
+        Objects.requireNonNull(pluginId, "Plugin id cannot be null.");
         Objects.requireNonNull(ownerScope, "Owner scope cannot be null.");
         Objects.requireNonNull(databaseType, "Database type cannot be null.");
         Objects.requireNonNull(connectionIdentifier, "Connection identifier cannot be null.");
+        RegistrationKey key = new RegistrationKey(pluginId, databaseType, connectionIdentifier);
+        String pluginName = key.pluginId().value();
+        String identifierValue = key.connectionIdentifier().value();
         Lock readLock = lifecycleLock.readLock();
         readLock.lock();
         try {
             ensureOpen();
-            DatabaseConnectionKey key = new DatabaseConnectionKey(pluginName, databaseType, connectionIdentifier);
 
             while (true) {
                 ActiveDatabaseRegistration existingRegistration = activeDatabases.get(key);
@@ -55,7 +78,7 @@ class DataProviderRegistry {
                     ManagedDatabaseProvider existingProvider = existingRegistration.provider();
                     if (isProviderHealthy(existingProvider, key) && existingRegistration.tryAcquireReference(ownerScope)) {
                         int references = existingRegistration.referenceCount();
-                        logger.info(pluginName + " reused " + databaseType.name() + " connection (" + connectionIdentifier
+                        logger.info(pluginName + " reused " + databaseType.name() + " connection (" + identifierValue
                                 + "), active references=" + references);
                         return existingProvider;
                     }
@@ -64,7 +87,7 @@ class DataProviderRegistry {
                     }
                     disconnectQuietly(existingProvider, key, "stale existing connection");
                     logger.warn("Removed stale " + databaseType.name() + " connection for " + pluginName
-                            + " (" + connectionIdentifier + ") before re-registering.");
+                            + " (" + identifierValue + ") before re-registering.");
                 }
 
                 if (!configHandler.isDatabaseTypeEnabled(databaseType)) {
@@ -87,7 +110,7 @@ class DataProviderRegistry {
                             logger.error("Failed to clean up failed connection for " + key, e);
                         }
                         logger.error("Failed to establish connection for " + pluginName + " with " + databaseType.name()
-                                + " (" + connectionIdentifier + ")");
+                                + " (" + identifierValue + ")");
                         return null;
                     }
 
@@ -97,7 +120,7 @@ class DataProviderRegistry {
                     );
                     ActiveDatabaseRegistration raceWinner = activeDatabases.putIfAbsent(key, createdRegistration);
                     if (raceWinner == null) {
-                        logger.info(pluginName + " registered " + databaseType.name() + " connection (" + connectionIdentifier
+                        logger.info(pluginName + " registered " + databaseType.name() + " connection (" + identifierValue
                                 + "), active references=1");
                         return createdProvider;
                     }
@@ -111,7 +134,7 @@ class DataProviderRegistry {
                     ManagedDatabaseProvider raceWinnerProvider = raceWinner.provider();
                     if (isProviderHealthy(raceWinnerProvider, key) && raceWinner.tryAcquireReference(ownerScope)) {
                         int references = raceWinner.referenceCount();
-                        logger.info(pluginName + " already has " + databaseType.name() + " connection (" + connectionIdentifier
+                        logger.info(pluginName + " already has " + databaseType.name() + " connection (" + identifierValue
                                 + "), active references=" + references);
                         return raceWinnerProvider;
                     }
@@ -136,7 +159,7 @@ class DataProviderRegistry {
         }
     }
 
-    private boolean isProviderHealthy(DatabaseProvider provider, DatabaseConnectionKey key) {
+    private boolean isProviderHealthy(DatabaseProvider provider, RegistrationKey key) {
         try {
             return provider.isConnected();
         } catch (Exception e) {
@@ -145,7 +168,7 @@ class DataProviderRegistry {
         }
     }
 
-    private void disconnectQuietly(ManagedDatabaseProvider provider, DatabaseConnectionKey key, String reason) {
+    private void disconnectQuietly(ManagedDatabaseProvider provider, RegistrationKey key, String reason) {
         try {
             provider.disconnect();
         } catch (Exception e) {
@@ -154,14 +177,28 @@ class DataProviderRegistry {
     }
 
     protected DatabaseProvider getDatabase(String pluginName, DatabaseType databaseType, String connectionIdentifier) {
-        Objects.requireNonNull(pluginName, "Plugin name cannot be null.");
+        return getDatabase(
+                PluginId.of(pluginName),
+                databaseType,
+                ConnectionIdentifier.of(connectionIdentifier)
+        );
+    }
+
+    DatabaseProvider getDatabase(
+            PluginId pluginId,
+            DatabaseType databaseType,
+            ConnectionIdentifier connectionIdentifier
+    ) {
+        Objects.requireNonNull(pluginId, "Plugin id cannot be null.");
         Objects.requireNonNull(databaseType, "Database type cannot be null.");
         Objects.requireNonNull(connectionIdentifier, "Connection identifier cannot be null.");
+        RegistrationKey key = new RegistrationKey(pluginId, databaseType, connectionIdentifier);
+        String pluginName = key.pluginId().value();
+        String identifierValue = key.connectionIdentifier().value();
         Lock readLock = lifecycleLock.readLock();
         readLock.lock();
         try {
             ensureOpen();
-            DatabaseConnectionKey key = new DatabaseConnectionKey(pluginName, databaseType, connectionIdentifier);
             ActiveDatabaseRegistration registration = activeDatabases.get(key);
             if (registration == null) {
                 return null;
@@ -175,7 +212,7 @@ class DataProviderRegistry {
             if (activeDatabases.remove(key, registration)) {
                 disconnectQuietly(provider, key, "stale connection during lookup");
                 logger.warn("Removed stale " + databaseType.name() + " connection for " + pluginName
-                        + " (" + connectionIdentifier + ") while retrieving the provider.");
+                        + " (" + identifierValue + ") while retrieving the provider.");
             }
             return null;
         } finally {
@@ -189,15 +226,31 @@ class DataProviderRegistry {
             DatabaseType databaseType,
             String connectionIdentifier
     ) {
-        Objects.requireNonNull(pluginName, "Plugin name cannot be null.");
+        unregisterDatabase(
+                PluginId.of(pluginName),
+                OwnerScopeId.of(ownerScope),
+                databaseType,
+                ConnectionIdentifier.of(connectionIdentifier)
+        );
+    }
+
+    void unregisterDatabase(
+            PluginId pluginId,
+            OwnerScopeId ownerScope,
+            DatabaseType databaseType,
+            ConnectionIdentifier connectionIdentifier
+    ) {
+        Objects.requireNonNull(pluginId, "Plugin id cannot be null.");
         Objects.requireNonNull(ownerScope, "Owner scope cannot be null.");
         Objects.requireNonNull(databaseType, "Database type cannot be null.");
         Objects.requireNonNull(connectionIdentifier, "Connection identifier cannot be null.");
+        RegistrationKey key = new RegistrationKey(pluginId, databaseType, connectionIdentifier);
+        String pluginName = key.pluginId().value();
+        String identifierValue = key.connectionIdentifier().value();
         Lock readLock = lifecycleLock.readLock();
         readLock.lock();
         try {
             ensureOpen();
-            DatabaseConnectionKey key = new DatabaseConnectionKey(pluginName, databaseType, connectionIdentifier);
             ActiveDatabaseRegistration registration = activeDatabases.get(key);
             if (registration == null) {
                 return;
@@ -206,12 +259,12 @@ class DataProviderRegistry {
             ReferenceReleaseResult releaseResult = registration.releaseReference(ownerScope);
             if (!releaseResult.ownerHadReference()) {
                 logger.warn(pluginName + " attempted to release " + databaseType.name() + " connection ("
-                        + connectionIdentifier + ") from unregistered scope " + ownerScope);
+                        + identifierValue + ") from unregistered scope " + ownerScope.value());
                 return;
             }
             int references = releaseResult.totalReferences();
             if (references > 0) {
-                logger.info(pluginName + " released " + databaseType.name() + " connection (" + connectionIdentifier
+                logger.info(pluginName + " released " + databaseType.name() + " connection (" + identifierValue
                         + "), remaining references=" + references);
                 return;
             }
@@ -225,7 +278,7 @@ class DataProviderRegistry {
             } catch (Exception e) {
                 logger.error("Error disconnecting " + key, e);
             }
-            logger.info(pluginName + " unregistered " + databaseType.name() + " connection (" + connectionIdentifier + ")");
+            logger.info(pluginName + " unregistered " + databaseType.name() + " connection (" + identifierValue + ")");
         } finally {
             readLock.unlock();
         }
@@ -235,15 +288,19 @@ class DataProviderRegistry {
      * Releases registrations for a specific plugin + owner scope pair.
      */
     protected void unregisterAllDatabases(String pluginName, String ownerScope) {
-        Objects.requireNonNull(pluginName, "Plugin name cannot be null.");
+        unregisterAllDatabases(PluginId.of(pluginName), OwnerScopeId.of(ownerScope));
+    }
+
+    void unregisterAllDatabases(PluginId pluginId, OwnerScopeId ownerScope) {
+        Objects.requireNonNull(pluginId, "Plugin id cannot be null.");
         Objects.requireNonNull(ownerScope, "Owner scope cannot be null.");
         Lock writeLock = lifecycleLock.writeLock();
         writeLock.lock();
         try {
             ensureOpen();
-            for (Map.Entry<DatabaseConnectionKey, ActiveDatabaseRegistration> entry : activeDatabases.entrySet()) {
-                DatabaseConnectionKey key = entry.getKey();
-                if (!key.pluginName().equals(pluginName)) {
+            for (Map.Entry<RegistrationKey, ActiveDatabaseRegistration> entry : activeDatabases.entrySet()) {
+                RegistrationKey key = entry.getKey();
+                if (!key.pluginId().equals(pluginId)) {
                     continue;
                 }
 
@@ -272,14 +329,18 @@ class DataProviderRegistry {
      * Intended for deterministic plugin/process shutdown cleanup.
      */
     protected void unregisterAllDatabasesForPlugin(String pluginName) {
-        Objects.requireNonNull(pluginName, "Plugin name cannot be null.");
+        unregisterAllDatabasesForPlugin(PluginId.of(pluginName));
+    }
+
+    void unregisterAllDatabasesForPlugin(PluginId pluginId) {
+        Objects.requireNonNull(pluginId, "Plugin id cannot be null.");
         Lock writeLock = lifecycleLock.writeLock();
         writeLock.lock();
         try {
             ensureOpen();
-            for (Map.Entry<DatabaseConnectionKey, ActiveDatabaseRegistration> entry : activeDatabases.entrySet()) {
-                DatabaseConnectionKey key = entry.getKey();
-                if (!key.pluginName().equals(pluginName)) {
+            for (Map.Entry<RegistrationKey, ActiveDatabaseRegistration> entry : activeDatabases.entrySet()) {
+                RegistrationKey key = entry.getKey();
+                if (!key.pluginId().equals(pluginId)) {
                     continue;
                 }
 
@@ -308,7 +369,7 @@ class DataProviderRegistry {
                 return;
             }
             closed = true;
-            for (Map.Entry<DatabaseConnectionKey, ActiveDatabaseRegistration> entry : activeDatabases.entrySet()) {
+            for (Map.Entry<RegistrationKey, ActiveDatabaseRegistration> entry : activeDatabases.entrySet()) {
                 try {
                     entry.getValue().provider().disconnect();
                 } catch (Exception e) {
@@ -328,8 +389,8 @@ class DataProviderRegistry {
         try {
             ensureOpen();
             ConcurrentMap<DatabaseConnectionKey, DatabaseProvider> snapshot = new ConcurrentHashMap<>();
-            for (Map.Entry<DatabaseConnectionKey, ActiveDatabaseRegistration> entry : activeDatabases.entrySet()) {
-                snapshot.put(entry.getKey(), entry.getValue().provider());
+            for (Map.Entry<RegistrationKey, ActiveDatabaseRegistration> entry : activeDatabases.entrySet()) {
+                snapshot.put(entry.getKey().toExternalKey(), entry.getValue().provider());
             }
             return snapshot;
         } finally {
@@ -343,8 +404,8 @@ class DataProviderRegistry {
         try {
             ensureOpen();
             Map<DatabaseConnectionKey, Integer> snapshot = new HashMap<>();
-            for (Map.Entry<DatabaseConnectionKey, ActiveDatabaseRegistration> entry : activeDatabases.entrySet()) {
-                snapshot.put(entry.getKey(), entry.getValue().referenceCount());
+            for (Map.Entry<RegistrationKey, ActiveDatabaseRegistration> entry : activeDatabases.entrySet()) {
+                snapshot.put(entry.getKey().toExternalKey(), entry.getValue().referenceCount());
             }
             return snapshot;
         } finally {
@@ -362,18 +423,32 @@ class DataProviderRegistry {
         }
     }
 
+    /**
+     * Internal key representation that keeps identity typed across registry operations.
+     * Conversion to {@link DatabaseConnectionKey} is done only for external snapshots.
+     */
+    private record RegistrationKey(PluginId pluginId, DatabaseType type, ConnectionIdentifier connectionIdentifier) {
+        private RegistrationKey {
+            Objects.requireNonNull(pluginId, "Plugin id cannot be null.");
+            Objects.requireNonNull(type, "Database type cannot be null.");
+            Objects.requireNonNull(connectionIdentifier, "Connection identifier cannot be null.");
+        }
+
+        private DatabaseConnectionKey toExternalKey() {
+            return new DatabaseConnectionKey(pluginId.value(), type, connectionIdentifier.value());
+        }
+    }
+
     private static final class ActiveDatabaseRegistration {
         private final ManagedDatabaseProvider provider;
         // Tracks ownership per logical scope (default plugin scope or explicit scope string).
-        private final Map<String, Integer> ownerReferenceCounts = new HashMap<>();
+        private final Map<OwnerScopeId, Integer> ownerReferenceCounts = new HashMap<>();
         // Total references across all owner scopes for this (plugin, type, identifier) key.
         private int referenceCount;
 
-        private ActiveDatabaseRegistration(ManagedDatabaseProvider provider, String initialOwnerScope) {
+        private ActiveDatabaseRegistration(ManagedDatabaseProvider provider, OwnerScopeId initialOwnerScope) {
             this.provider = Objects.requireNonNull(provider, "Database provider cannot be null.");
-            if (initialOwnerScope == null || initialOwnerScope.isBlank()) {
-                throw new IllegalArgumentException("Initial owner scope cannot be null or blank.");
-            }
+            Objects.requireNonNull(initialOwnerScope, "Initial owner scope cannot be null.");
             this.referenceCount = 1;
             ownerReferenceCounts.put(initialOwnerScope, 1);
         }
@@ -382,8 +457,8 @@ class DataProviderRegistry {
             return provider;
         }
 
-        private synchronized boolean tryAcquireReference(String ownerScope) {
-            if (ownerScope == null || ownerScope.isBlank()) {
+        private synchronized boolean tryAcquireReference(OwnerScopeId ownerScope) {
+            if (ownerScope == null) {
                 return false;
             }
             if (referenceCount <= 0) {
@@ -394,8 +469,8 @@ class DataProviderRegistry {
             return true;
         }
 
-        private synchronized ReferenceReleaseResult releaseReference(String ownerScope) {
-            if (ownerScope == null || ownerScope.isBlank() || referenceCount <= 0) {
+        private synchronized ReferenceReleaseResult releaseReference(OwnerScopeId ownerScope) {
+            if (ownerScope == null || referenceCount <= 0) {
                 return new ReferenceReleaseResult(false, Math.max(referenceCount, 0));
             }
             Integer ownerCount = ownerReferenceCounts.get(ownerScope);
@@ -413,8 +488,8 @@ class DataProviderRegistry {
             return new ReferenceReleaseResult(true, referenceCount);
         }
 
-        private synchronized int releaseAllForOwner(String ownerScope) {
-            if (ownerScope == null || ownerScope.isBlank() || referenceCount <= 0) {
+        private synchronized int releaseAllForOwner(OwnerScopeId ownerScope) {
+            if (ownerScope == null || referenceCount <= 0) {
                 return Math.max(referenceCount, 0);
             }
             Integer ownerCount = ownerReferenceCounts.remove(ownerScope);

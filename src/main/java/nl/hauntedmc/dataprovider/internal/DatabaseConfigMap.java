@@ -102,15 +102,22 @@ class DatabaseConfigMap {
      * @return the corresponding CommentedConfigurationNode, or null if not found.
      */
     protected CommentedConfigurationNode getConfig(DatabaseType type, String connectionIdentifier) {
+        return getConfig(type, ConnectionIdentifier.of(connectionIdentifier));
+    }
+
+    protected CommentedConfigurationNode getConfig(DatabaseType type, ConnectionIdentifier connectionIdentifier) {
+        Objects.requireNonNull(type, "Database type cannot be null.");
+        Objects.requireNonNull(connectionIdentifier, "Connection identifier cannot be null.");
         CommentedConfigurationNode config = configMap.get(type);
         if (config == null) {
             logger.warn("No configuration loaded for database type " + type.name());
             return null;
         }
 
-        CommentedConfigurationNode section = config.node(connectionIdentifier);
+        String identifierValue = connectionIdentifier.value();
+        CommentedConfigurationNode section = config.node(identifierValue);
         if (section.virtual()) {
-            logger.warn("No configuration section found for '" + connectionIdentifier + "' in "
+            logger.warn("No configuration section found for '" + identifierValue + "' in "
                     + type.getConfigFileName() + ". Available sections: " + describeAvailableSections(config));
             return null;
         }

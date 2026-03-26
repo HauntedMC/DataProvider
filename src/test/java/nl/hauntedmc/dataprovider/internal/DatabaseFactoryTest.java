@@ -32,7 +32,7 @@ class DatabaseFactoryTest {
     void returnsNullAndLogsWhenConfigurationIsMissing() {
         RecordingLoggerAdapter logger = new RecordingLoggerAdapter();
         DatabaseConfigMap configMap = mock(DatabaseConfigMap.class);
-        when(configMap.getConfig(DatabaseType.MYSQL, "missing")).thenReturn(null);
+        when(configMap.getConfig(DatabaseType.MYSQL, ConnectionIdentifier.of("missing"))).thenReturn(null);
 
         DatabaseFactory factory = new DatabaseFactory(configMap, logger);
         DatabaseProvider provider = factory.createDatabaseProvider(DatabaseType.MYSQL, "missing");
@@ -48,7 +48,7 @@ class DatabaseFactoryTest {
         CommentedConfigurationNode node = CommentedConfigurationNode.root();
 
         for (DatabaseType type : DatabaseType.values()) {
-            when(configMap.getConfig(type, "default")).thenReturn(node);
+            when(configMap.getConfig(type, ConnectionIdentifier.of("default"))).thenReturn(node);
         }
 
         DatabaseFactory factory = new DatabaseFactory(configMap, logger);

@@ -201,12 +201,13 @@ final class RedisDataAccess implements KeyValueDataAccess {
         if (fields == null || fields.length == 0) {
             return CompletableFuture.completedFuture(null);
         }
-        for (String field : fields) {
+        String[] safeFields = fields.clone();
+        for (String field : safeFields) {
             requireKey(field);
         }
         return AsyncTaskSupport.runAsync(executor, "redis.hdel", () -> {
             try (Jedis jedis = jedisPool.getResource()) {
-                jedis.hdel(validatedHashKey, fields);
+                jedis.hdel(validatedHashKey, safeFields);
             }
         });
     }
@@ -217,12 +218,13 @@ final class RedisDataAccess implements KeyValueDataAccess {
         if (members == null || members.length == 0) {
             return CompletableFuture.completedFuture(null);
         }
-        for (String member : members) {
+        String[] safeMembers = members.clone();
+        for (String member : safeMembers) {
             Objects.requireNonNull(member, "Set member cannot be null.");
         }
         return AsyncTaskSupport.runAsync(executor, "redis.sadd", () -> {
             try (Jedis jedis = jedisPool.getResource()) {
-                jedis.sadd(validatedKey, members);
+                jedis.sadd(validatedKey, safeMembers);
             }
         });
     }
@@ -243,12 +245,13 @@ final class RedisDataAccess implements KeyValueDataAccess {
         if (members == null || members.length == 0) {
             return CompletableFuture.completedFuture(null);
         }
-        for (String member : members) {
+        String[] safeMembers = members.clone();
+        for (String member : safeMembers) {
             Objects.requireNonNull(member, "Set member cannot be null.");
         }
         return AsyncTaskSupport.runAsync(executor, "redis.srem", () -> {
             try (Jedis jedis = jedisPool.getResource()) {
-                jedis.srem(validatedKey, members);
+                jedis.srem(validatedKey, safeMembers);
             }
         });
     }

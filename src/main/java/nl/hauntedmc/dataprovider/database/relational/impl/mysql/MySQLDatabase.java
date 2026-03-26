@@ -32,10 +32,10 @@ public class MySQLDatabase implements RelationalDatabaseProvider, ManagedDatabas
 
     private final CommentedConfigurationNode config;
     private final ILoggerAdapter logger;
-    private HikariDataSource dataSource;
-    private ExecutorService executor;
-    private RelationalDataAccess dataAccess;
-    private SchemaManager schemaManager;
+    private volatile HikariDataSource dataSource;
+    private volatile ExecutorService executor;
+    private volatile RelationalDataAccess dataAccess;
+    private volatile SchemaManager schemaManager;
 
     public MySQLDatabase(CommentedConfigurationNode config, ILoggerAdapter logger) {
         this.config = config;

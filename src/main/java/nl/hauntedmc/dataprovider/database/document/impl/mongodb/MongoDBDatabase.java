@@ -32,11 +32,11 @@ public class MongoDBDatabase implements DocumentDatabaseProvider, ManagedDatabas
 
     private final CommentedConfigurationNode config;
     private final ILoggerAdapter logger;
-    private MongoClient mongoClient;
-    private ExecutorService executor;
-    private MongoDBDataAccess dataAccess;
-    private boolean connected;
-    private String databaseName;
+    private volatile MongoClient mongoClient;
+    private volatile ExecutorService executor;
+    private volatile MongoDBDataAccess dataAccess;
+    private volatile boolean connected;
+    private volatile String databaseName;
 
     public MongoDBDatabase(CommentedConfigurationNode config, ILoggerAdapter logger) {
         this.config = config;
