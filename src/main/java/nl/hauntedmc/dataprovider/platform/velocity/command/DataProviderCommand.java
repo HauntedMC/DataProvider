@@ -29,6 +29,6 @@ public final class DataProviderCommand implements SimpleCommand {
 
     @Override
     public CompletableFuture<List<String>> suggestAsync(Invocation invocation) {
-        return CompletableFuture.completedFuture(commandService.suggest(invocation.arguments()));
+        return CompletableFuture.completedFuture(commandService.suggest(invocation.arguments(), invocation.source()::hasPermission));
     }
 }

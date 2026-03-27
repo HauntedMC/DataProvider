@@ -247,6 +247,33 @@ public class DataProviderHandler {
         return registry.getActiveDatabaseReferenceCounts();
     }
 
+    /**
+     * Returns the configured enabled/disabled state per database backend type.
+     */
+    public Map<DatabaseType, Boolean> getConfiguredDatabaseTypeStates() {
+        requireOpen();
+        requireInternalCaller();
+        return registry.getConfiguredDatabaseTypeStates();
+    }
+
+    /**
+     * Returns the normalized configured ORM schema mode.
+     */
+    public String getConfiguredOrmSchemaMode() {
+        requireOpen();
+        requireInternalCaller();
+        return registry.getOrmSchemaMode();
+    }
+
+    /**
+     * Reloads DataProvider configuration from disk.
+     */
+    public void reloadConfiguration() {
+        requireOpen();
+        requireInternalCaller();
+        registry.reloadConfiguration();
+    }
+
     private CallerContext resolveCallerContext() {
         CallerContext caller = callerContextResolver.resolveCaller();
         if (caller == null) {

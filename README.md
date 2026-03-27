@@ -76,6 +76,19 @@ api.unregisterDatabase(DatabaseType.MYSQL, "default");
 
 If you maintain multiple plugins, this gives your team one standard integration model instead of backend-specific code per project.
 
+## Admin Commands
+
+- `/dataprovider help` shows command usage.
+- `/dataprovider status [summary|connections] [unhealthy] [plugin <name>] [type <databaseType>]` shows active connection diagnostics.
+- `/dataprovider config` prints current runtime config state (`orm.schema_mode` + backend enablement).
+- `/dataprovider reload` reloads `config.yml` from disk.
+
+Permissions:
+
+- `dataprovider.command.status`
+- `dataprovider.command.config`
+- `dataprovider.command.reload`
+
 ## Install DataProvider (Server)
 
 1. Build or download `DataProvider.jar`.

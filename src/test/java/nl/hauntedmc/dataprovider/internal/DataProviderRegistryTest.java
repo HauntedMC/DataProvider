@@ -267,6 +267,9 @@ class DataProviderRegistryTest {
         assertTrue(registry.isClosed());
         assertThrows(IllegalStateException.class, registry::getActiveDatabases);
         assertThrows(IllegalStateException.class, registry::getActiveDatabaseReferenceCounts);
+        assertThrows(IllegalStateException.class, registry::getConfiguredDatabaseTypeStates);
+        assertThrows(IllegalStateException.class, registry::getOrmSchemaMode);
+        assertThrows(IllegalStateException.class, registry::reloadConfiguration);
         assertTrue(logger.infoMessages().stream().anyMatch(m -> m.contains("All database connections have been closed")));
     }
 
@@ -305,6 +308,9 @@ class DataProviderRegistryTest {
         assertThrows(IllegalStateException.class, () -> registry.unregisterAllDatabases("plugin", "feature-a"));
         assertThrows(IllegalStateException.class, registry::getActiveDatabases);
         assertThrows(IllegalStateException.class, registry::getActiveDatabaseReferenceCounts);
+        assertThrows(IllegalStateException.class, registry::getConfiguredDatabaseTypeStates);
+        assertThrows(IllegalStateException.class, registry::getOrmSchemaMode);
+        assertThrows(IllegalStateException.class, registry::reloadConfiguration);
     }
 
     @Test
@@ -361,6 +367,26 @@ class DataProviderRegistryTest {
         DatabaseConnectionKey key = new DatabaseConnectionKey("plugin", DatabaseType.MYSQL, "default");
         assertSame(provider, active.get(key));
         assertEquals(1, refs.get(key));
+    }
+
+    @Test
+    void configStateAndReloadOperationsDelegateToConfigHandler() {
+        DatabaseFactory factory = mock(DatabaseFactory.class);
+        ConfigHandler configHandler = mock(ConfigHandler.class);
+        for (DatabaseType type : DatabaseType.values()) {
+            when(configHandler.isDatabaseTypeEnabled(type)).thenReturn(type != DatabaseType.REDIS);
+        }
+        when(configHandler.getOrmSchemaMode()).thenReturn("update");
+        RecordingLoggerAdapter logger = new RecordingLoggerAdapter();
+        DataProviderRegistry registry = new DataProviderRegistry(factory, configHandler, logger);
+
+        Map<DatabaseType, Boolean> states = registry.getConfiguredDatabaseTypeStates();
+        assertEquals(DatabaseType.values().length, states.size());
+        assertEquals(Boolean.FALSE, states.get(DatabaseType.REDIS));
+        assertEquals("update", registry.getOrmSchemaMode());
+
+        registry.reloadConfiguration();
+        verify(configHandler).reloadConfig();
     }
 
     private static final class RecordingProvider implements ManagedDatabaseProvider {

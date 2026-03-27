@@ -35,6 +35,20 @@ Treat `DataProviderAPI` as runtime-scoped, not permanent.
 - Do not keep API references across plugin reloads or disable/enable cycles.
 - After DataProvider shuts down, old API handles throw `IllegalStateException`; reacquire a fresh API after DataProvider is enabled again.
 
+## 1.2 Built-in admin commands
+
+`DataProvider` ships with runtime diagnostics commands for Bukkit/Paper and Velocity:
+
+- `/dataprovider status [summary|connections] [unhealthy] [plugin <name>] [type <databaseType>]`
+- `/dataprovider config`
+- `/dataprovider reload`
+
+Permission nodes:
+
+- `dataprovider.command.status`
+- `dataprovider.command.config`
+- `dataprovider.command.reload`
+
 ## 2. Register a connection
 
 Basic:

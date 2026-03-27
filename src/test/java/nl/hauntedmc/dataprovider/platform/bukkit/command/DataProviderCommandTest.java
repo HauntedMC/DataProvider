@@ -37,7 +37,7 @@ class DataProviderCommandTest {
 
         command.onCommand(sender.sender(), mock(Command.class), "dataprovider", new String[0]);
 
-        assertTrue(sender.hasMessageContaining("Usage: /dataprovider status"));
+        assertTrue(sender.hasMessageContaining("DataProvider command help:"));
         verify(handler, never()).getActiveDatabases();
     }
 
@@ -49,7 +49,7 @@ class DataProviderCommandTest {
 
         command.onCommand(sender.sender(), mock(Command.class), "dataprovider", new String[]{"status"});
 
-        assertTrue(sender.hasMessageContaining("do not have permission"));
+        assertTrue(sender.hasMessageContaining("Missing permission: dataprovider.command.status"));
         verify(handler, never()).getActiveDatabases();
     }
 
@@ -74,8 +74,8 @@ class DataProviderCommandTest {
 
         command.onCommand(sender.sender(), mock(Command.class), "dataprovider", new String[]{"status"});
 
-        assertTrue(sender.hasMessageContaining("Active Database Connections:"));
-        assertTrue(sender.hasMessageContaining("Plugin: FeatureA"));
+        assertTrue(sender.hasMessageContaining("DataProvider Status"));
+        assertTrue(sender.hasMessageContaining("plugin=FeatureA"));
     }
 
     @Test
@@ -93,6 +93,7 @@ class DataProviderCommandTest {
     void tabCompletionSuggestsStatusAndHelp() {
         DataProviderCommand command = new DataProviderCommand(mock(DataProviderHandler.class));
         RecordingBukkitSender sender = new RecordingBukkitSender();
+        sender.grantPermission("dataprovider.command.status");
         List<String> completions = command.onTabComplete(
                 sender.sender(),
                 mock(Command.class),

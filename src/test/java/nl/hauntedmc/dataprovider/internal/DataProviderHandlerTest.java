@@ -12,6 +12,7 @@ import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -172,6 +173,9 @@ class DataProviderHandlerTest {
         assertThrows(SecurityException.class, handler::shutdownAllDatabases);
         assertThrows(SecurityException.class, handler::getActiveDatabases);
         assertThrows(SecurityException.class, handler::getActiveDatabaseReferenceCounts);
+        assertThrows(SecurityException.class, handler::getConfiguredDatabaseTypeStates);
+        assertThrows(SecurityException.class, handler::getConfiguredOrmSchemaMode);
+        assertThrows(SecurityException.class, handler::reloadConfiguration);
     }
 
     @Test
@@ -185,14 +189,21 @@ class DataProviderHandlerTest {
 
         ConcurrentMap<DatabaseConnectionKey, DatabaseProvider> active = new ConcurrentHashMap<>();
         Map<DatabaseConnectionKey, Integer> refs = Map.of();
+        Map<DatabaseType, Boolean> states = Map.of(DatabaseType.MYSQL, true);
         when(registry.getActiveDatabases()).thenReturn(active);
         when(registry.getActiveDatabaseReferenceCounts()).thenReturn(refs);
+        when(registry.getConfiguredDatabaseTypeStates()).thenReturn(states);
+        when(registry.getOrmSchemaMode()).thenReturn("validate");
 
         assertSame(active, handler.getActiveDatabases());
         assertSame(refs, handler.getActiveDatabaseReferenceCounts());
+        assertSame(states, handler.getConfiguredDatabaseTypeStates());
+        assertEquals("validate", handler.getConfiguredOrmSchemaMode());
         handler.shutdownAllDatabases();
+        handler.reloadConfiguration();
 
         verify(registry).shutdownAllDatabases();
+        verify(registry).reloadConfiguration();
     }
 
     @Test
@@ -222,6 +233,9 @@ class DataProviderHandlerTest {
         assertThrows(IllegalStateException.class, handler::unregisterAllDatabasesForPlugin);
         assertThrows(IllegalStateException.class, handler::getActiveDatabases);
         assertThrows(IllegalStateException.class, handler::getActiveDatabaseReferenceCounts);
+        assertThrows(IllegalStateException.class, handler::getConfiguredDatabaseTypeStates);
+        assertThrows(IllegalStateException.class, handler::getConfiguredOrmSchemaMode);
+        assertThrows(IllegalStateException.class, handler::reloadConfiguration);
 
         verify(registry, never()).registerDatabase(
                 PluginId.of("plugin"),
@@ -255,5 +269,8 @@ class DataProviderHandlerTest {
         verify(registry, never()).unregisterAllDatabases(PluginId.of("plugin"), OwnerScopeId.of("plugin"));
         verify(registry, never()).unregisterAllDatabases(PluginId.of("plugin"), OwnerScopeId.of("component.scope"));
         verify(registry, never()).unregisterAllDatabasesForPlugin(PluginId.of("plugin"));
+        verify(registry, never()).getConfiguredDatabaseTypeStates();
+        verify(registry, never()).getOrmSchemaMode();
+        verify(registry, never()).reloadConfiguration();
     }
 }

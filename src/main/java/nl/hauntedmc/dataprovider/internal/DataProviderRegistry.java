@@ -6,6 +6,7 @@ import nl.hauntedmc.dataprovider.database.DatabaseType;
 import nl.hauntedmc.dataprovider.database.DatabaseProvider;
 import nl.hauntedmc.dataprovider.logging.LoggerAdapter;
 
+import java.util.EnumMap;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Objects;
@@ -410,6 +411,44 @@ class DataProviderRegistry {
             return snapshot;
         } finally {
             readLock.unlock();
+        }
+    }
+
+    protected Map<DatabaseType, Boolean> getConfiguredDatabaseTypeStates() {
+        Lock readLock = lifecycleLock.readLock();
+        readLock.lock();
+        try {
+            ensureOpen();
+            Map<DatabaseType, Boolean> states = new EnumMap<>(DatabaseType.class);
+            for (DatabaseType type : DatabaseType.values()) {
+                states.put(type, configHandler.isDatabaseTypeEnabled(type));
+            }
+            return states;
+        } finally {
+            readLock.unlock();
+        }
+    }
+
+    protected String getOrmSchemaMode() {
+        Lock readLock = lifecycleLock.readLock();
+        readLock.lock();
+        try {
+            ensureOpen();
+            return configHandler.getOrmSchemaMode();
+        } finally {
+            readLock.unlock();
+        }
+    }
+
+    protected void reloadConfiguration() {
+        Lock writeLock = lifecycleLock.writeLock();
+        writeLock.lock();
+        try {
+            ensureOpen();
+            configHandler.reloadConfig();
+            logger.info("Reloaded DataProvider configuration from disk.");
+        } finally {
+            writeLock.unlock();
         }
     }
 

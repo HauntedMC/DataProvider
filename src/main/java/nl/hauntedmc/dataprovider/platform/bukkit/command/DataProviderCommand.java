@@ -33,6 +33,6 @@ public final class DataProviderCommand implements CommandExecutor, TabCompleter 
     @Override
     public List<String> onTabComplete(@NotNull CommandSender sender, @NotNull Command command,
                                       @NotNull String alias, String[] args) {
-        return commandService.suggest(args);
+        return commandService.suggest(args, sender::hasPermission);
     }
 }
