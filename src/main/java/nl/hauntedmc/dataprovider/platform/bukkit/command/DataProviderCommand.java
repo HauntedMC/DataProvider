@@ -1,7 +1,7 @@
 package nl.hauntedmc.dataprovider.platform.bukkit.command;
 
 import nl.hauntedmc.dataprovider.internal.DataProviderHandler;
-import nl.hauntedmc.dataprovider.platform.common.command.DataProviderCommandService;
+import nl.hauntedmc.dataprovider.platform.internal.command.DataProviderCommandService;
 import org.bukkit.command.Command;
 import org.bukkit.command.CommandExecutor;
 import org.bukkit.command.CommandSender;

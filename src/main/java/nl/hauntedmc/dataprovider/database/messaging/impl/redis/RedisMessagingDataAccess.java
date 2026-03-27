@@ -5,7 +5,7 @@ import nl.hauntedmc.dataprovider.database.messaging.api.EventMessage;
 import nl.hauntedmc.dataprovider.database.messaging.api.MessageRegistry;
 import nl.hauntedmc.dataprovider.database.messaging.api.Subscription;
 import nl.hauntedmc.dataprovider.internal.concurrent.AsyncTaskSupport;
-import nl.hauntedmc.dataprovider.platform.common.logger.ILoggerAdapter;
+import nl.hauntedmc.dataprovider.logging.LoggerAdapter;
 import redis.clients.jedis.Jedis;
 import redis.clients.jedis.JedisPool;
 import redis.clients.jedis.JedisPubSub;
@@ -28,7 +28,7 @@ final class RedisMessagingDataAccess implements MessagingDataAccess {
 
     private final JedisPool pool;
     private final ExecutorService workers;
-    private final ILoggerAdapter logger;
+    private final LoggerAdapter logger;
     private final MessageRegistry messageRegistry;
     private final int maxSubscriptions;
     private final int maxPayloadChars;
@@ -40,7 +40,7 @@ final class RedisMessagingDataAccess implements MessagingDataAccess {
     RedisMessagingDataAccess(
             JedisPool pool,
             ExecutorService workers,
-            ILoggerAdapter logger,
+            LoggerAdapter logger,
             MessageRegistry messageRegistry,
             int maxSubscriptions,
             int maxPayloadChars,

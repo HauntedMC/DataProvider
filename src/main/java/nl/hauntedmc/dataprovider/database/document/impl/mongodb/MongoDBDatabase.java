@@ -9,7 +9,7 @@ import nl.hauntedmc.dataprovider.internal.ManagedDatabaseProvider;
 import nl.hauntedmc.dataprovider.database.document.DocumentDataAccess;
 import nl.hauntedmc.dataprovider.database.document.DocumentDatabaseProvider;
 import nl.hauntedmc.dataprovider.database.security.TlsSupport;
-import nl.hauntedmc.dataprovider.platform.common.logger.ILoggerAdapter;
+import nl.hauntedmc.dataprovider.logging.LoggerAdapter;
 import org.spongepowered.configurate.CommentedConfigurationNode;
 import org.bson.Document;
 
@@ -31,14 +31,14 @@ public class MongoDBDatabase implements DocumentDatabaseProvider, ManagedDatabas
     private static final Pattern DATABASE_PATTERN = Pattern.compile("[A-Za-z0-9_.\\-]+");
 
     private final CommentedConfigurationNode config;
-    private final ILoggerAdapter logger;
+    private final LoggerAdapter logger;
     private volatile MongoClient mongoClient;
     private volatile ExecutorService executor;
     private volatile MongoDBDataAccess dataAccess;
     private volatile boolean connected;
     private volatile String databaseName;
 
-    public MongoDBDatabase(CommentedConfigurationNode config, ILoggerAdapter logger) {
+    public MongoDBDatabase(CommentedConfigurationNode config, LoggerAdapter logger) {
         this.config = config;
         this.logger = Objects.requireNonNull(logger, "Logger cannot be null.");
     }

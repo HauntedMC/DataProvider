@@ -1,7 +1,7 @@
 package nl.hauntedmc.dataprovider.database.messaging.api;
 
 import com.google.gson.*;
-import nl.hauntedmc.dataprovider.platform.common.logger.ILoggerAdapter;
+import nl.hauntedmc.dataprovider.logging.LoggerAdapter;
 
 import java.util.Map;
 import java.util.Objects;
@@ -17,9 +17,9 @@ import java.util.concurrent.ConcurrentHashMap;
 public final class MessageRegistry {
     private final Gson gson = new Gson();
     private final Map<String, Class<? extends EventMessage>> types = new ConcurrentHashMap<>();
-    private final ILoggerAdapter logger;
+    private final LoggerAdapter logger;
 
-    public MessageRegistry(ILoggerAdapter logger) {
+    public MessageRegistry(LoggerAdapter logger) {
         this.logger = Objects.requireNonNull(logger, "Logger cannot be null.");
     }
 

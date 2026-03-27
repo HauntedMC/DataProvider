@@ -3,7 +3,7 @@ package nl.hauntedmc.dataprovider.platform.velocity.command;
 import com.velocitypowered.api.command.CommandSource;
 import com.velocitypowered.api.command.SimpleCommand;
 import nl.hauntedmc.dataprovider.internal.DataProviderHandler;
-import nl.hauntedmc.dataprovider.platform.common.command.DataProviderCommandService;
+import nl.hauntedmc.dataprovider.platform.internal.command.DataProviderCommandService;
 
 import java.util.List;
 import java.util.Objects;

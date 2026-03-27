@@ -4,7 +4,7 @@ import nl.hauntedmc.dataprovider.config.ConfigHandler;
 import nl.hauntedmc.dataprovider.database.DatabaseConnectionKey;
 import nl.hauntedmc.dataprovider.database.DatabaseType;
 import nl.hauntedmc.dataprovider.database.DatabaseProvider;
-import nl.hauntedmc.dataprovider.platform.common.logger.ILoggerAdapter;
+import nl.hauntedmc.dataprovider.logging.LoggerAdapter;
 
 import java.util.HashMap;
 import java.util.Map;
@@ -31,10 +31,10 @@ class DataProviderRegistry {
     private final ReadWriteLock lifecycleLock = new ReentrantReadWriteLock(true);
     private final DatabaseFactory factory;
     private final ConfigHandler configHandler;
-    private final ILoggerAdapter logger;
+    private final LoggerAdapter logger;
     private volatile boolean closed;
 
-    public DataProviderRegistry(DatabaseFactory factory, ConfigHandler configHandler, ILoggerAdapter logger) {
+    public DataProviderRegistry(DatabaseFactory factory, ConfigHandler configHandler, LoggerAdapter logger) {
         this.factory = Objects.requireNonNull(factory, "Factory cannot be null.");
         this.configHandler = Objects.requireNonNull(configHandler, "Config handler cannot be null.");
         this.logger = Objects.requireNonNull(logger, "Logger cannot be null.");

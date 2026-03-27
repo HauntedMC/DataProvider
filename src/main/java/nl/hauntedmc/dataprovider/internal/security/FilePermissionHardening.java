@@ -1,6 +1,6 @@
 package nl.hauntedmc.dataprovider.internal.security;
 
-import nl.hauntedmc.dataprovider.platform.common.logger.ILoggerAdapter;
+import nl.hauntedmc.dataprovider.logging.LoggerAdapter;
 
 import java.io.IOException;
 import java.nio.file.Files;
@@ -27,18 +27,18 @@ public final class FilePermissionHardening {
     private FilePermissionHardening() {
     }
 
-    public static void restrictDirectoryToOwner(Path directory, ILoggerAdapter logger, String description) {
+    public static void restrictDirectoryToOwner(Path directory, LoggerAdapter logger, String description) {
         restrictToOwner(directory, OWNER_DIRECTORY_PERMISSIONS, logger, description);
     }
 
-    public static void restrictFileToOwner(Path file, ILoggerAdapter logger, String description) {
+    public static void restrictFileToOwner(Path file, LoggerAdapter logger, String description) {
         restrictToOwner(file, OWNER_FILE_PERMISSIONS, logger, description);
     }
 
     private static void restrictToOwner(
             Path path,
             Set<PosixFilePermission> permissions,
-            ILoggerAdapter logger,
+            LoggerAdapter logger,
             String description
     ) {
         if (path == null || logger == null || description == null || !Files.exists(path)) {

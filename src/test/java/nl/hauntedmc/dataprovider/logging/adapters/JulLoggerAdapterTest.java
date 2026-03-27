@@ -1,4 +1,4 @@
-package nl.hauntedmc.dataprovider.platform.bukkit.logger;
+package nl.hauntedmc.dataprovider.logging.adapters;
 
 import org.junit.jupiter.api.Test;
 
@@ -13,16 +13,16 @@ import java.util.logging.Logger;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertSame;
 
-class BukkitLoggerAdapterTest {
+class JulLoggerAdapterTest {
 
     @Test
     void forwardsMessagesWithExpectedLevels() {
-        Logger logger = Logger.getLogger("BukkitLoggerAdapterTest-" + UUID.randomUUID());
+        Logger logger = Logger.getLogger("JulLoggerAdapterTest-" + UUID.randomUUID());
         logger.setUseParentHandlers(false);
         RecordingHandler handler = new RecordingHandler();
         logger.addHandler(handler);
 
-        BukkitLoggerAdapter adapter = new BukkitLoggerAdapter(logger);
+        JulLoggerAdapter adapter = new JulLoggerAdapter(logger);
         RuntimeException throwable = new RuntimeException("boom");
 
         adapter.info("info");

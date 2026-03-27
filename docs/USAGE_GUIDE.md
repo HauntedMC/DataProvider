@@ -5,13 +5,24 @@
 Velocity:
 
 ```java
-DataProviderAPI api = VelocityDataProvider.getDataProviderAPI();
+DataProviderAPI api = proxyServer.getPluginManager()
+        .getPlugin("dataprovider")
+        .flatMap(container -> container.getInstance()
+                .filter(DataProviderApiSupplier.class::isInstance)
+                .map(DataProviderApiSupplier.class::cast)
+                .map(DataProviderApiSupplier::dataProviderApi))
+        .orElseThrow(() -> new IllegalStateException("DataProvider is unavailable."));
 ```
 
 Bukkit/Paper:
 
 ```java
-DataProviderAPI api = BukkitDataProvider.getDataProviderAPI();
+RegisteredServiceProvider<DataProviderAPI> registration =
+        Bukkit.getServicesManager().getRegistration(DataProviderAPI.class);
+if (registration == null) {
+    throw new IllegalStateException("DataProvider is unavailable.");
+}
+DataProviderAPI api = registration.getProvider();
 ```
 
 Caller identity is resolved automatically from the plugin runtime context.

@@ -2,7 +2,7 @@ package nl.hauntedmc.dataprovider.config;
 
 import nl.hauntedmc.dataprovider.database.DatabaseType;
 import nl.hauntedmc.dataprovider.internal.security.FilePermissionHardening;
-import nl.hauntedmc.dataprovider.platform.common.logger.ILoggerAdapter;
+import nl.hauntedmc.dataprovider.logging.LoggerAdapter;
 import org.spongepowered.configurate.CommentedConfigurationNode;
 import org.spongepowered.configurate.loader.ConfigurationLoader;
 import org.spongepowered.configurate.serialize.SerializationException;
@@ -21,7 +21,7 @@ public class ConfigHandler {
     private static final String DEFAULT_ORM_SCHEMA_MODE = "validate";
     private static final Set<String> SUPPORTED_ORM_SCHEMA_MODES = Set.of("validate", "none", "update", "create");
 
-    private final ILoggerAdapter logger;
+    private final LoggerAdapter logger;
     private CommentedConfigurationNode config;
     private final Path configFile;
     private final ConfigurationLoader<CommentedConfigurationNode> loader;
@@ -29,7 +29,7 @@ public class ConfigHandler {
     /**
      * Creates a new ConfigHandler using a default data directory and config file.
      */
-    public ConfigHandler(Path dataDir, ILoggerAdapter logger) {
+    public ConfigHandler(Path dataDir, LoggerAdapter logger) {
         this.logger = Objects.requireNonNull(logger, "Logger cannot be null.");
         Objects.requireNonNull(dataDir, "Data directory cannot be null.");
         this.configFile = dataDir.resolve("config.yml");

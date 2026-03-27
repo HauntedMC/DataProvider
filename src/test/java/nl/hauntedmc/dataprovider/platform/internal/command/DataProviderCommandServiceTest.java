@@ -1,4 +1,4 @@
-package nl.hauntedmc.dataprovider.platform.common.command;
+package nl.hauntedmc.dataprovider.platform.internal.command;
 
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.serializer.plain.PlainTextComponentSerializer;

@@ -2,7 +2,7 @@ package nl.hauntedmc.dataprovider.internal;
 
 import nl.hauntedmc.dataprovider.database.DatabaseType;
 import nl.hauntedmc.dataprovider.internal.security.FilePermissionHardening;
-import nl.hauntedmc.dataprovider.platform.common.logger.ILoggerAdapter;
+import nl.hauntedmc.dataprovider.logging.LoggerAdapter;
 import org.spongepowered.configurate.CommentedConfigurationNode;
 import org.spongepowered.configurate.loader.ConfigurationLoader;
 import org.spongepowered.configurate.yaml.YamlConfigurationLoader;
@@ -22,11 +22,11 @@ import java.util.Objects;
 class DatabaseConfigMap {
 
     private final Path dataPath;
-    private final ILoggerAdapter logger;
+    private final LoggerAdapter logger;
     private final ClassLoader resourceClassLoader;
     private final Map<DatabaseType, CommentedConfigurationNode> configMap = new HashMap<>();
 
-    protected DatabaseConfigMap(Path dataPath, ILoggerAdapter logger, ClassLoader resourceClassLoader) {
+    protected DatabaseConfigMap(Path dataPath, LoggerAdapter logger, ClassLoader resourceClassLoader) {
         this.dataPath = Objects.requireNonNull(dataPath, "Data path cannot be null.");
         this.logger = Objects.requireNonNull(logger, "Logger cannot be null.");
         this.resourceClassLoader = Objects.requireNonNull(resourceClassLoader, "Resource class loader cannot be null.");

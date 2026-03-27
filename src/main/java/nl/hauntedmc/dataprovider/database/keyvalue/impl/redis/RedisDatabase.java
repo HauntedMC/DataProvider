@@ -5,7 +5,7 @@ import nl.hauntedmc.dataprovider.internal.ManagedDatabaseProvider;
 import nl.hauntedmc.dataprovider.database.keyvalue.KeyValueDataAccess;
 import nl.hauntedmc.dataprovider.database.keyvalue.KeyValueDatabaseProvider;
 import nl.hauntedmc.dataprovider.database.security.TlsSupport;
-import nl.hauntedmc.dataprovider.platform.common.logger.ILoggerAdapter;
+import nl.hauntedmc.dataprovider.logging.LoggerAdapter;
 import org.spongepowered.configurate.CommentedConfigurationNode;
 import redis.clients.jedis.DefaultJedisClientConfig;
 import redis.clients.jedis.HostAndPort;
@@ -26,13 +26,13 @@ public class RedisDatabase implements KeyValueDatabaseProvider, ManagedDatabaseP
     private static final Pattern HOST_PATTERN = Pattern.compile("[A-Za-z0-9._:\\-\\[\\]]+");
 
     private final CommentedConfigurationNode config;
-    private final ILoggerAdapter logger;
+    private final LoggerAdapter logger;
     private volatile JedisPool jedisPool;
     private volatile ExecutorService executor;
     private volatile RedisDataAccess dataAccess;
     private volatile boolean connected;
 
-    public RedisDatabase(CommentedConfigurationNode config, ILoggerAdapter logger) {
+    public RedisDatabase(CommentedConfigurationNode config, LoggerAdapter logger) {
         this.config = config;
         this.logger = Objects.requireNonNull(logger, "Logger cannot be null.");
     }

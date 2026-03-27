@@ -34,9 +34,32 @@ It gives you one clean API for MySQL, MongoDB, Redis, and Redis messaging so you
 
 ## Quick Start
 
-```java
-DataProviderAPI api = VelocityDataProvider.getDataProviderAPI();
+Resolve the API from your platform runtime:
 
+Velocity:
+
+```java
+DataProviderAPI api = proxyServer.getPluginManager()
+        .getPlugin("dataprovider")
+        .flatMap(container -> container.getInstance()
+                .filter(DataProviderApiSupplier.class::isInstance)
+                .map(DataProviderApiSupplier.class::cast)
+                .map(DataProviderApiSupplier::dataProviderApi))
+        .orElseThrow(() -> new IllegalStateException("DataProvider is unavailable."));
+```
+
+Bukkit/Paper:
+
+```java
+RegisteredServiceProvider<DataProviderAPI> registration =
+        Bukkit.getServicesManager().getRegistration(DataProviderAPI.class);
+if (registration == null) {
+    return;
+}
+DataProviderAPI api = registration.getProvider();
+```
+
+```java
 Optional<RelationalDatabaseProvider> mysql = api.registerDatabaseAs(
         DatabaseType.MYSQL,
         "default",

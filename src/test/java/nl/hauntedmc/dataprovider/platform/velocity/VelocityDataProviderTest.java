@@ -7,15 +7,13 @@ import com.velocitypowered.api.plugin.PluginContainer;
 import com.velocitypowered.api.plugin.PluginDescription;
 import com.velocitypowered.api.plugin.PluginManager;
 import com.velocitypowered.api.proxy.ProxyServer;
-import nl.hauntedmc.dataprovider.DataProvider;
 import nl.hauntedmc.dataprovider.api.DataProviderAPI;
-import nl.hauntedmc.dataprovider.internal.DataProviderHandler;
-import nl.hauntedmc.dataprovider.platform.common.lifecycle.PlatformDataProviderRuntime;
-import nl.hauntedmc.dataprovider.platform.common.logger.ILoggerAdapter;
 import org.junit.jupiter.api.Test;
+import org.slf4j.Logger;
 
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
+import java.nio.file.Path;
 import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -79,35 +77,34 @@ class VelocityDataProviderTest {
     }
 
     @Test
-    void getDataProviderApiThrowsWhenNotInitialized() throws ReflectiveOperationException {
-        PlatformDataProviderRuntime runtime = resolveRuntime();
-        runtime.stop(mock(ILoggerAdapter.class));
+    void dataProviderApiThrowsWhenNotInitialized() {
+        VelocityDataProvider provider = new VelocityDataProvider(
+                mock(ProxyServer.class),
+                mock(Logger.class),
+                Path.of(".")
+        );
 
-        assertThrows(IllegalStateException.class, VelocityDataProvider::getDataProviderAPI);
+        assertThrows(IllegalStateException.class, provider::dataProviderApi);
     }
 
     @Test
-    void getDataProviderApiReturnsFacadeWhenInitialized() throws ReflectiveOperationException {
-        DataProvider provider = mock(DataProvider.class);
-        DataProviderHandler handler = mock(DataProviderHandler.class);
-        when(provider.getDataProviderHandler()).thenReturn(handler);
+    void dataProviderApiReturnsStoredApiWhenInitialized() throws ReflectiveOperationException {
+        nl.hauntedmc.dataprovider.internal.DataProviderHandler handler =
+                mock(nl.hauntedmc.dataprovider.internal.DataProviderHandler.class);
 
-        PlatformDataProviderRuntime runtime = resolveRuntime();
-        runtime.stop(mock(ILoggerAdapter.class));
-        runtime.start(() -> provider, mock(ILoggerAdapter.class));
-        try {
-            DataProviderAPI api = VelocityDataProvider.getDataProviderAPI();
-            assertNotNull(api);
-            api.unregisterAllDatabases();
-            verify(handler).unregisterAllDatabases();
-        } finally {
-            runtime.stop(mock(ILoggerAdapter.class));
-        }
-    }
+        VelocityDataProvider velocityDataProvider = new VelocityDataProvider(
+                mock(ProxyServer.class),
+                mock(Logger.class),
+                Path.of(".")
+        );
 
-    private static PlatformDataProviderRuntime resolveRuntime() throws ReflectiveOperationException {
-        Field field = VelocityDataProvider.class.getDeclaredField("RUNTIME");
+        Field field = VelocityDataProvider.class.getDeclaredField("dataProviderApi");
         field.setAccessible(true);
-        return (PlatformDataProviderRuntime) field.get(null);
+        field.set(velocityDataProvider, new DataProviderAPI(handler));
+
+        DataProviderAPI api = velocityDataProvider.dataProviderApi();
+        assertNotNull(api);
+        api.unregisterAllDatabases();
+        verify(handler).unregisterAllDatabases();
     }
 }

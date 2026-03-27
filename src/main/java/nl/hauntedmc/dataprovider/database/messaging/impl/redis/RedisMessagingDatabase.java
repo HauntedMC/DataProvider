@@ -6,7 +6,7 @@ import nl.hauntedmc.dataprovider.database.messaging.MessagingDataAccess;
 import nl.hauntedmc.dataprovider.database.messaging.MessagingDatabaseProvider;
 import nl.hauntedmc.dataprovider.database.messaging.api.MessageRegistry;
 import nl.hauntedmc.dataprovider.database.security.TlsSupport;
-import nl.hauntedmc.dataprovider.platform.common.logger.ILoggerAdapter;
+import nl.hauntedmc.dataprovider.logging.LoggerAdapter;
 import org.spongepowered.configurate.CommentedConfigurationNode;
 import redis.clients.jedis.*;
 
@@ -24,14 +24,14 @@ public final class RedisMessagingDatabase implements MessagingDatabaseProvider, 
     private static final Pattern HOST_PATTERN = Pattern.compile("[A-Za-z0-9._:\\-\\[\\]]+");
 
     private final CommentedConfigurationNode cfg;
-    private final ILoggerAdapter logger;
+    private final LoggerAdapter logger;
     private final MessageRegistry messageRegistry;
     private volatile JedisPool pool;
     private volatile ExecutorService workers;
     private volatile RedisMessagingDataAccess bus;
     private volatile boolean connected;
 
-    public RedisMessagingDatabase(CommentedConfigurationNode cfg, ILoggerAdapter logger) {
+    public RedisMessagingDatabase(CommentedConfigurationNode cfg, LoggerAdapter logger) {
         this.cfg = cfg;
         this.logger = Objects.requireNonNull(logger, "Logger cannot be null.");
         this.messageRegistry = new MessageRegistry(logger);

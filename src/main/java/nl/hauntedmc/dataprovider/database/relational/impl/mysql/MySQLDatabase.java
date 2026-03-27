@@ -7,7 +7,7 @@ import nl.hauntedmc.dataprovider.internal.ManagedDatabaseProvider;
 import nl.hauntedmc.dataprovider.database.relational.RelationalDataAccess;
 import nl.hauntedmc.dataprovider.database.relational.RelationalDatabaseProvider;
 import nl.hauntedmc.dataprovider.database.relational.schema.SchemaManager;
-import nl.hauntedmc.dataprovider.platform.common.logger.ILoggerAdapter;
+import nl.hauntedmc.dataprovider.logging.LoggerAdapter;
 import org.spongepowered.configurate.CommentedConfigurationNode;
 
 import javax.sql.DataSource;
@@ -31,13 +31,13 @@ public class MySQLDatabase implements RelationalDatabaseProvider, ManagedDatabas
     private static final Pattern DATABASE_PATTERN = Pattern.compile("[A-Za-z0-9_$.\\-]+");
 
     private final CommentedConfigurationNode config;
-    private final ILoggerAdapter logger;
+    private final LoggerAdapter logger;
     private volatile HikariDataSource dataSource;
     private volatile ExecutorService executor;
     private volatile RelationalDataAccess dataAccess;
     private volatile SchemaManager schemaManager;
 
-    public MySQLDatabase(CommentedConfigurationNode config, ILoggerAdapter logger) {
+    public MySQLDatabase(CommentedConfigurationNode config, LoggerAdapter logger) {
         this.config = config;
         this.logger = Objects.requireNonNull(logger, "Logger cannot be null.");
     }

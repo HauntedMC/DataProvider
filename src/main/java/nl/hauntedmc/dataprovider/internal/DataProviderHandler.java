@@ -8,7 +8,7 @@ import nl.hauntedmc.dataprovider.config.ConfigHandler;
 import nl.hauntedmc.dataprovider.internal.identity.CallerContext;
 import nl.hauntedmc.dataprovider.internal.identity.CallerContextResolver;
 import nl.hauntedmc.dataprovider.internal.identity.StackCallerClassLoaderResolver;
-import nl.hauntedmc.dataprovider.platform.common.logger.ILoggerAdapter;
+import nl.hauntedmc.dataprovider.logging.LoggerAdapter;
 
 import java.util.Objects;
 import java.nio.file.Path;
@@ -27,7 +27,7 @@ public class DataProviderHandler {
 
     private final DataProviderRegistry registry;
     private final CallerContextResolver callerContextResolver;
-    private final ILoggerAdapter logger;
+    private final LoggerAdapter logger;
     private final ClassLoader ownClassLoader;
 
     public DataProviderHandler(
@@ -35,7 +35,7 @@ public class DataProviderHandler {
             ClassLoader resourceClassLoader,
             ConfigHandler configHandler,
             CallerContextResolver callerContextResolver,
-            ILoggerAdapter logger
+            LoggerAdapter logger
     ) {
         Objects.requireNonNull(dataPath, "Data path cannot be null.");
         Objects.requireNonNull(resourceClassLoader, "Resource class loader cannot be null.");
@@ -52,7 +52,7 @@ public class DataProviderHandler {
     DataProviderHandler(
             DataProviderRegistry registry,
             CallerContextResolver callerContextResolver,
-            ILoggerAdapter logger,
+            LoggerAdapter logger,
             ClassLoader ownClassLoader
     ) {
         this.logger = Objects.requireNonNull(logger, "Logger cannot be null.");
