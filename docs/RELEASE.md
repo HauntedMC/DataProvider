@@ -21,10 +21,12 @@ Use `update_version.sh` to bump `major`, `minor`, or `patch`:
 
 The script updates:
 
-- `version.txt`
-- `pom.xml`
-- `README.md` (version examples)
+- `pom.xml` (via Maven `versions:set`; source of truth)
 - `src/main/java/nl/hauntedmc/dataprovider/platform/velocity/VelocityDataProvider.java`
+
+Manual step:
+
+- Update README dependency version examples if needed.
 
 Then it commits and tags (`vX.Y.Z`) locally.
 Push when ready:

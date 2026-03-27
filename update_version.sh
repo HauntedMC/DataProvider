@@ -1,9 +1,106 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-usage() {
-  echo "Usage: $0 <major|minor|patch>" >&2
+readonly POM_FILE="pom.xml"
+readonly VELOCITY_FILE="src/main/java/nl/hauntedmc/dataprovider/platform/velocity/VelocityDataProvider.java"
+
+die() {
+  echo "Error: $*" >&2
+  exit 1
 }
+
+usage() {
+  cat >&2 <<'USAGE'
+Usage: ./update_version.sh <major|minor|patch>
+
+Bumps the Maven project version in pom.xml and keeps release metadata in sync.
+Then creates a local commit and a local git tag vX.Y.Z.
+USAGE
+}
+
+require_file() {
+  local path="$1"
+  [[ -f "$path" ]] || die "${path} not found."
+}
+
+require_clean_worktree() {
+  [[ -z "$(git status --porcelain)" ]] || die "Working tree is not clean. Commit or stash changes first."
+}
+
+resolve_maven_version() {
+  local version
+  version="$(
+    mvn -q -ntp -DforceStdout help:evaluate -Dexpression=project.version \
+      | awk '/^[0-9]+\.[0-9]+\.[0-9]+$/ { print; exit }'
+  )"
+  [[ -n "$version" ]] || die "Unable to resolve a release semantic version from Maven."
+  echo "$version"
+}
+
+bump_semver() {
+  local semver="$1"
+  local bump_type="$2"
+  local major minor patch
+
+  [[ "$semver" =~ ^([0-9]+)\.([0-9]+)\.([0-9]+)$ ]] || die "Current version must be semantic (X.Y.Z), got '${semver}'."
+
+  major="${BASH_REMATCH[1]}"
+  minor="${BASH_REMATCH[2]}"
+  patch="${BASH_REMATCH[3]}"
+
+  case "$bump_type" in
+    major)
+      major=$((major + 1))
+      minor=0
+      patch=0
+      ;;
+    minor)
+      minor=$((minor + 1))
+      patch=0
+      ;;
+    patch)
+      patch=$((patch + 1))
+      ;;
+    *)
+      usage
+      exit 1
+      ;;
+  esac
+
+  echo "${major}.${minor}.${patch}"
+}
+
+update_velocity_plugin_annotation() {
+  local new_version="$1"
+  local tmp_file
+  tmp_file="$(mktemp)"
+
+  awk -v v="$new_version" '
+    BEGIN { replaced = 0 }
+    {
+      if (!replaced && $0 ~ /version = "[^"]+"/) {
+        sub(/version = "[^"]+"/, "version = \"" v "\"")
+        replaced = 1
+      }
+      print
+    }
+    END {
+      if (!replaced) {
+        exit 2
+      }
+    }
+  ' "$VELOCITY_FILE" > "$tmp_file" || {
+    rm -f "$tmp_file"
+    die "Could not update Velocity @Plugin version in ${VELOCITY_FILE}."
+  }
+
+  mv "$tmp_file" "$VELOCITY_FILE"
+}
+
+if [[ $# -eq 1 && ( "$1" == "--help" || "$1" == "-h" ) ]]; then
+  usage
+  exit 0
+fi
 
 if [[ $# -ne 1 ]]; then
   usage
@@ -11,107 +108,48 @@ if [[ $# -ne 1 ]]; then
 fi
 
 if ! git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
-  echo "This script must be run inside a git repository." >&2
-  exit 1
+  die "This script must be run inside a git repository."
 fi
+
+command -v mvn >/dev/null 2>&1 || die "Maven (mvn) is required."
+
+repo_root="$(git rev-parse --show-toplevel)"
+cd "$repo_root"
+
+require_file "$POM_FILE"
+require_file "$VELOCITY_FILE"
+require_clean_worktree
 
 bump_type="$1"
-if [[ "$bump_type" != "major" && "$bump_type" != "minor" && "$bump_type" != "patch" ]]; then
+[[ "$bump_type" == "major" || "$bump_type" == "minor" || "$bump_type" == "patch" ]] || {
   usage
   exit 1
+}
+
+current_version="$(resolve_maven_version)"
+new_version="$(bump_semver "$current_version" "$bump_type")"
+new_tag="v${new_version}"
+
+if git rev-parse -q --verify "refs/tags/${new_tag}" >/dev/null 2>&1; then
+  die "Tag ${new_tag} already exists."
 fi
 
-if [[ ! -f version.txt ]]; then
-  echo "version.txt not found." >&2
-  exit 1
-fi
+echo "Current version: ${current_version}"
+echo "Bumping to: ${new_version}"
 
-if [[ ! -f pom.xml ]]; then
-  echo "pom.xml not found." >&2
-  exit 1
-fi
+# Use Maven's versions plugin so pom.xml remains the single source of truth.
+mvn -B -ntp versions:set -DnewVersion="${new_version}" -DgenerateBackupPoms=false -DprocessAllModules=true
 
-if [[ ! -f README.md ]]; then
-  echo "README.md not found." >&2
-  exit 1
-fi
+resolved_after_bump="$(resolve_maven_version)"
+[[ "$resolved_after_bump" == "$new_version" ]] || {
+  die "Maven version after bump is '${resolved_after_bump}', expected '${new_version}'."
+}
 
-velocity_file="src/main/java/nl/hauntedmc/dataprovider/platform/velocity/VelocityDataProvider.java"
-if [[ ! -f "$velocity_file" ]]; then
-  echo "${velocity_file} not found." >&2
-  exit 1
-fi
+update_velocity_plugin_annotation "$new_version"
 
-if [[ -n "$(git status --porcelain)" ]]; then
-  echo "Working tree is not clean. Commit or stash changes before bumping version." >&2
-  exit 1
-fi
+git add "$POM_FILE" "$VELOCITY_FILE"
+git commit -m "Bump version to ${new_tag} for release"
+git tag "$new_tag"
 
-current_version="$(<version.txt)"
-if [[ ! "$current_version" =~ ^v([0-9]+)\.([0-9]+)\.([0-9]+)$ ]]; then
-  echo "version.txt must contain a semantic version like v1.2.3." >&2
-  exit 1
-fi
-
-major="${BASH_REMATCH[1]}"
-minor="${BASH_REMATCH[2]}"
-patch="${BASH_REMATCH[3]}"
-
-current_raw_version="${major}.${minor}.${patch}"
-pom_raw_version="$(grep -m1 -oE '<version>[0-9]+\.[0-9]+\.[0-9]+</version>' pom.xml | sed -E 's#</?version>##g')"
-if [[ "$pom_raw_version" != "$current_raw_version" ]]; then
-  echo "version.txt (${current_version}) does not match pom.xml (${pom_raw_version})." >&2
-  exit 1
-fi
-
-case "$bump_type" in
-  major)
-    major=$((major + 1))
-    minor=0
-    patch=0
-    ;;
-  minor)
-    minor=$((minor + 1))
-    patch=0
-    ;;
-  patch)
-    patch=$((patch + 1))
-    ;;
-esac
-
-new_version="v${major}.${minor}.${patch}"
-new_raw_version="${major}.${minor}.${patch}"
-
-if git rev-parse -q --verify "refs/tags/${new_version}" >/dev/null 2>&1; then
-  echo "Tag ${new_version} already exists." >&2
-  exit 1
-fi
-
-echo "New version: $new_version"
-printf '%s\n' "$new_version" > version.txt
-
-# Update project version (first <version> in pom.xml = project version).
-awk -v v="$new_raw_version" '
-  BEGIN { replaced = 0 }
-  {
-    if (!replaced && $0 ~ /<version>[0-9]+\.[0-9]+\.[0-9]+<\/version>/) {
-      sub(/<version>[0-9]+\.[0-9]+\.[0-9]+<\/version>/, "<version>" v "</version>")
-      replaced = 1
-    }
-    print
-  }
-' pom.xml > pom.xml.tmp
-mv pom.xml.tmp pom.xml
-
-# Keep runtime metadata in sync for Velocity.
-sed -E -i "s/(version = \")[0-9]+\.[0-9]+\.[0-9]+(\")/\1${new_raw_version}\2/" "$velocity_file"
-
-# Keep dependency examples in README in sync.
-sed -i "s/${current_raw_version}/${new_raw_version}/g" README.md
-
-git add version.txt pom.xml README.md "$velocity_file"
-git commit -m "Bump version to $new_version for release"
-git tag "$new_version"
-
-echo "Version updated locally. Push the branch and tag when ready:"
-echo "  git push && git push origin $new_version"
+echo "Version updated locally."
+echo "Next step: git push && git push origin ${new_tag}"
