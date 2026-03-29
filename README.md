@@ -19,12 +19,11 @@ It gives you one clean API for MySQL, MongoDB, Redis, and Redis messaging so you
 - Cleaner codebase: typed APIs reduce casting and repetitive boilerplate.
 - Better runtime behavior: connection reuse and lifecycle cleanup are handled centrally.
 
-## What You Get
+## Features
 
-- Unified backend support: `MYSQL`, `MONGODB`, `REDIS`, `REDIS_MESSAGING`
+- Following data backends are implemented: `MYSQL`, `MONGODB`, `REDIS`, `REDIS_MESSAGING`
 - Platform support: Velocity + Bukkit/Paper
-- Reference-counted connection lifecycle management
-- Optional ORM support for relational workflows (`ORMContext`)
+- Optional ORM (through hibernate) support for relational workflows (`ORMContext`)
 
 ## Requirements
 
