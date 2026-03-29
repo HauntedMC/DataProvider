@@ -11,9 +11,12 @@ import com.velocitypowered.api.plugin.annotation.DataDirectory;
 import com.velocitypowered.api.proxy.ProxyServer;
 import nl.hauntedmc.dataprovider.DataProvider;
 import nl.hauntedmc.dataprovider.api.DataProviderAPI;
+import nl.hauntedmc.dataprovider.api.DataProviderApiSupplier;
+import nl.hauntedmc.dataprovider.internal.DataProviderHandler;
+import nl.hauntedmc.dataprovider.platform.internal.lifecycle.PlatformDataProviderRuntime;
 import nl.hauntedmc.dataprovider.platform.velocity.command.DataProviderCommand;
 import nl.hauntedmc.dataprovider.platform.velocity.identity.VelocityCallerContextResolver;
-import nl.hauntedmc.dataprovider.platform.velocity.logger.SLF4JLoggerAdapter;
+import nl.hauntedmc.dataprovider.logging.adapters.Slf4jLoggerAdapter;
 import org.slf4j.Logger;
 
 import java.nio.file.Path;
@@ -21,16 +24,22 @@ import java.nio.file.Path;
 @Plugin(
         id = "dataprovider",
         name = "DataProvider",
-        version = "1.21.0",
+        version = "2.0.0",
         description = "A cross-platform data provider plugin.",
         authors = {"HauntedMC"}
 )
-public class VelocityDataProvider {
+public final class VelocityDataProvider implements DataProviderApiSupplier {
+
+    private static final short INITIALIZE_EVENT_PRIORITY = Short.MAX_VALUE;
+    private static final short SHUTDOWN_EVENT_PRIORITY = Short.MIN_VALUE;
+    private static final String COMMAND_NAME = "dataprovider";
+    private static final String NOT_INITIALIZED_MESSAGE = "DataProvider is not initialized yet.";
 
     private final ProxyServer proxyServer;
     private final Logger logger;
     private final Path dataDirectory;
-    private static DataProvider dataProvider;
+    private final PlatformDataProviderRuntime runtime = new PlatformDataProviderRuntime();
+    private volatile DataProviderAPI dataProviderApi;
 
     @Inject
     public VelocityDataProvider(ProxyServer proxyServer, Logger logger, @DataDirectory Path dataDirectory) {
@@ -39,42 +48,55 @@ public class VelocityDataProvider {
         this.dataDirectory = dataDirectory;
     }
 
-    @Subscribe
+    @Subscribe(priority = INITIALIZE_EVENT_PRIORITY)
     public void onProxyInitialize(ProxyInitializeEvent event) {
-        SLF4JLoggerAdapter logInstance = new SLF4JLoggerAdapter(logger);
-        dataProvider = new DataProvider(
-                logInstance,
-                dataDirectory,
-                getClass().getClassLoader(),
-                new VelocityCallerContextResolver(proxyServer, getClass().getClassLoader())
+        Slf4jLoggerAdapter loggerAdapter = new Slf4jLoggerAdapter(logger);
+        runtime.start(
+                () -> new DataProvider(
+                        loggerAdapter,
+                        dataDirectory,
+                        getClass().getClassLoader(),
+                        new VelocityCallerContextResolver(proxyServer, getClass().getClassLoader())
+                ),
+                this::initializeBindings,
+                loggerAdapter
         );
 
-        CommandManager commandManager = proxyServer.getCommandManager();
-        CommandMeta meta = commandManager.metaBuilder("dataprovider")
-                .build();
-        commandManager.register(meta, new DataProviderCommand(dataProvider.getDataProviderHandler()));
-
-        String pluginVersion = proxyServer.getPluginManager()
-                .fromInstance(this)
-                .map(container -> container.getDescription().getVersion().toString())
-                .orElse("unknown");
+        String pluginVersion = resolvePluginVersion(proxyServer, this);
         logger.info("DataProvider plugin enabled on Velocity (v{}).", pluginVersion);
     }
 
-    @Subscribe
+    @Subscribe(priority = SHUTDOWN_EVENT_PRIORITY)
     public void onProxyShutdown(ProxyShutdownEvent event) {
-        if (dataProvider != null) {
-            dataProvider.shutdownAllDatabases();
-        }
+        dataProviderApi = null;
+        runtime.stop(new Slf4jLoggerAdapter(logger));
         logger.info("DataProvider plugin disabled on Velocity.");
     }
 
-    // START EXTERNALLY ACCESSIBLE
-    public static DataProviderAPI getDataProviderAPI() {
-        if (dataProvider == null) {
-            throw new IllegalStateException("DataProvider is not initialized yet.");
+    @Override
+    public DataProviderAPI dataProviderApi() {
+        DataProviderAPI api = dataProviderApi;
+        if (api == null) {
+            throw new IllegalStateException(NOT_INITIALIZED_MESSAGE);
         }
-        return new DataProviderAPI(dataProvider.getDataProviderHandler());
+        return api;
     }
-    // END EXTERNALLY ACCESSIBLE
+
+    private void initializeBindings(DataProvider provider) {
+        registerCommand(provider.getDataProviderHandler());
+        dataProviderApi = new DataProviderAPI(provider.getDataProviderHandler());
+    }
+
+    private void registerCommand(DataProviderHandler handler) {
+        CommandManager commandManager = proxyServer.getCommandManager();
+        CommandMeta meta = commandManager.metaBuilder(COMMAND_NAME).build();
+        commandManager.register(meta, new DataProviderCommand(handler));
+    }
+
+    static String resolvePluginVersion(ProxyServer proxyServer, Object pluginInstance) {
+        return proxyServer.getPluginManager()
+                .fromInstance(pluginInstance)
+                .flatMap(container -> container.getDescription().getVersion())
+                .orElse("unknown");
+    }
 }

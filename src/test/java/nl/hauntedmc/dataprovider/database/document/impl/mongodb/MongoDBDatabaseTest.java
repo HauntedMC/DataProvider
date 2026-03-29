@@ -39,4 +39,20 @@ class MongoDBDatabaseTest {
         assertFalse(database.isConnected());
         assertNull(database.getDataAccess());
     }
+
+    @Test
+    void connectFailsWhenInsecureTlsFlagsAreEnabled() throws Exception {
+        CommentedConfigurationNode config = CommentedConfigurationNode.root();
+        config.node("tls", "enabled").set(true);
+        config.node("tls", "allow_invalid_hostnames").set(true);
+
+        RecordingLoggerAdapter logger = new RecordingLoggerAdapter();
+        MongoDBDatabase database = new MongoDBDatabase(config, logger);
+        database.connect();
+
+        assertFalse(database.isConnected());
+        assertNull(database.getDataAccess());
+        assertTrue(logger.errorMessages().stream().anyMatch(message ->
+                message.contains("Connection failed")));
+    }
 }

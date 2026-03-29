@@ -2,7 +2,7 @@ import nl.hauntedmc.dataprovider.api.DataProviderAPI;
 import nl.hauntedmc.dataprovider.api.orm.ORMContext;
 import nl.hauntedmc.dataprovider.database.DatabaseType;
 import nl.hauntedmc.dataprovider.database.relational.RelationalDatabaseProvider;
-import nl.hauntedmc.dataprovider.platform.common.logger.ILoggerAdapter;
+import nl.hauntedmc.dataprovider.logging.LoggerAdapter;
 
 import java.util.Optional;
 
@@ -13,7 +13,7 @@ public final class RelationalOrmExample {
 
     private ORMContext ormContext;
 
-    public void onEnable(DataProviderAPI api, ILoggerAdapter logger) {
+    public void onEnable(DataProviderAPI api, LoggerAdapter logger) {
         Optional<RelationalDatabaseProvider> relational = api.registerDatabaseAs(
                 DatabaseType.MYSQL,
                 "example",

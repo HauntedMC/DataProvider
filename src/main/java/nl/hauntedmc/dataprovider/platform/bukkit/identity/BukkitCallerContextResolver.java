@@ -2,6 +2,7 @@ package nl.hauntedmc.dataprovider.platform.bukkit.identity;
 
 import nl.hauntedmc.dataprovider.internal.identity.CallerContext;
 import nl.hauntedmc.dataprovider.internal.identity.CallerContextResolver;
+import nl.hauntedmc.dataprovider.internal.identity.PluginCallerChainResolver;
 import nl.hauntedmc.dataprovider.internal.identity.StackCallerClassLoaderResolver;
 import org.bukkit.Bukkit;
 import org.bukkit.plugin.Plugin;
@@ -22,29 +23,20 @@ public final class BukkitCallerContextResolver implements CallerContextResolver 
 
     @Override
     public CallerContext resolveCaller() {
-        List<ClassLoader> callerChain = StackCallerClassLoaderResolver.resolveExternalCallerChain(ownClassLoader);
-        Plugin resolvedPlugin = null;
-        ClassLoader resolvedLoader = null;
+        return resolveCaller(StackCallerClassLoaderResolver.resolveExternalCallerChain(ownClassLoader));
+    }
 
-        for (ClassLoader callerLoader : callerChain) {
-            Plugin plugin = findPluginByClassLoader(callerLoader);
-            if (plugin == null) {
-                continue;
-            }
-            if (resolvedPlugin == null) {
-                resolvedPlugin = plugin;
-                resolvedLoader = callerLoader;
-                continue;
-            }
-            if (callerLoader != resolvedLoader) {
-                throw new SecurityException("Ambiguous caller plugin chain detected.");
-            }
-        }
+    CallerContext resolveCaller(List<ClassLoader> callerChain) {
+        return PluginCallerChainResolver.resolveNearestMappedCaller(
+                callerChain,
+                this::resolvePluginName,
+                "Caller class loader is not mapped to a Bukkit plugin."
+        );
+    }
 
-        if (resolvedPlugin == null || resolvedLoader == null) {
-            throw new SecurityException("Caller class loader is not mapped to a Bukkit plugin.");
-        }
-        return new CallerContext(resolvedPlugin.getName(), resolvedLoader);
+    private String resolvePluginName(ClassLoader callerLoader) {
+        Plugin plugin = findPluginByClassLoader(callerLoader);
+        return plugin == null ? null : plugin.getName();
     }
 
     private static Plugin findPluginByClassLoader(ClassLoader callerLoader) {

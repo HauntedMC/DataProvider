@@ -6,7 +6,7 @@
 [![License](https://img.shields.io/github/license/HauntedMC/dataprovider)](LICENSE)
 [![Java 21](https://img.shields.io/badge/Java-21-007396)](https://adoptium.net/)
 
-Build plugin features, not database plumbing.
+Build plugins and services, not database plumbing.
 
 `DataProvider` is shared infrastructure for plugin developers on Velocity and Bukkit/Paper.  
 It gives you one clean API for MySQL, MongoDB, Redis, and Redis messaging so your plugin code can stay focused on gameplay and business logic.
@@ -19,12 +19,11 @@ It gives you one clean API for MySQL, MongoDB, Redis, and Redis messaging so you
 - Cleaner codebase: typed APIs reduce casting and repetitive boilerplate.
 - Better runtime behavior: connection reuse and lifecycle cleanup are handled centrally.
 
-## What You Get
+## Features
 
-- Unified backend support: `MYSQL`, `MONGODB`, `REDIS`, `REDIS_MESSAGING`
+- Following data backends are implemented: `MYSQL`, `MONGODB`, `REDIS`, `REDIS_MESSAGING`
 - Platform support: Velocity + Bukkit/Paper
-- Reference-counted connection lifecycle management
-- Optional ORM support for relational workflows (`ORMContext`)
+- Optional ORM (through hibernate) support for relational workflows (`ORMContext`)
 
 ## Requirements
 
@@ -34,9 +33,32 @@ It gives you one clean API for MySQL, MongoDB, Redis, and Redis messaging so you
 
 ## Quick Start
 
-```java
-DataProviderAPI api = VelocityDataProvider.getDataProviderAPI();
+Resolve the API from your platform runtime:
 
+Velocity:
+
+```java
+DataProviderAPI api = proxyServer.getPluginManager()
+        .getPlugin("dataprovider")
+        .flatMap(container -> container.getInstance()
+                .filter(DataProviderApiSupplier.class::isInstance)
+                .map(DataProviderApiSupplier.class::cast)
+                .map(DataProviderApiSupplier::dataProviderApi))
+        .orElseThrow(() -> new IllegalStateException("DataProvider is unavailable."));
+```
+
+Bukkit/Paper:
+
+```java
+RegisteredServiceProvider<DataProviderAPI> registration =
+        Bukkit.getServicesManager().getRegistration(DataProviderAPI.class);
+if (registration == null) {
+    return;
+}
+DataProviderAPI api = registration.getProvider();
+```
+
+```java
 Optional<RelationalDatabaseProvider> mysql = api.registerDatabaseAs(
         DatabaseType.MYSQL,
         "default",
@@ -52,6 +74,19 @@ api.unregisterDatabase(DatabaseType.MYSQL, "default");
 ```
 
 If you maintain multiple plugins, this gives your team one standard integration model instead of backend-specific code per project.
+
+## Admin Commands
+
+- `/dataprovider help` shows command usage.
+- `/dataprovider status [summary|connections] [unhealthy] [plugin <name>] [type <databaseType>]` shows active connection diagnostics.
+- `/dataprovider config` prints current runtime config state (`orm.schema_mode` + backend enablement).
+- `/dataprovider reload` reloads `config.yml` from disk.
+
+Permissions:
+
+- `dataprovider.command.status`
+- `dataprovider.command.config`
+- `dataprovider.command.reload`
 
 ## Install DataProvider (Server)
 

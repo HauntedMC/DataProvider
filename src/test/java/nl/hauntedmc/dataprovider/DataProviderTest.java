@@ -1,5 +1,7 @@
 package nl.hauntedmc.dataprovider;
 
+import nl.hauntedmc.dataprovider.api.DataProviderAPI;
+import nl.hauntedmc.dataprovider.database.DatabaseType;
 import nl.hauntedmc.dataprovider.internal.identity.CallerContext;
 import nl.hauntedmc.dataprovider.internal.identity.CallerContextResolver;
 import nl.hauntedmc.dataprovider.testutil.RecordingLoggerAdapter;
@@ -63,5 +65,28 @@ class DataProviderTest {
             assertNull(provider.getResource("missing-resource.txt"));
             assertThrows(IllegalArgumentException.class, () -> provider.getResource(null));
         }
+    }
+
+    @Test
+    void staleApiReferenceFailsAfterShutdownAndNewProviderStartsClean() {
+        RecordingLoggerAdapter logger = new RecordingLoggerAdapter();
+        ClassLoader classLoader = getClass().getClassLoader();
+        CallerContextResolver resolver = () -> new CallerContext("plugin", classLoader);
+
+        DataProvider firstProvider = new DataProvider(logger, tempDir.resolve("data-first"), classLoader, resolver);
+        DataProviderAPI staleApi = new DataProviderAPI(firstProvider.getDataProviderHandler());
+
+        firstProvider.shutdownAllDatabases();
+
+        IllegalStateException staleFailure = assertThrows(
+                IllegalStateException.class,
+                () -> staleApi.registerDatabase(DatabaseType.MYSQL, "default")
+        );
+        assertTrue(staleFailure.getMessage().contains("no longer available"));
+
+        DataProvider secondProvider = new DataProvider(logger, tempDir.resolve("data-second"), classLoader, resolver);
+        DataProviderAPI freshApi = new DataProviderAPI(secondProvider.getDataProviderHandler());
+        assertNull(freshApi.getRegisteredDatabase(DatabaseType.MYSQL, "default"));
+        secondProvider.shutdownAllDatabases();
     }
 }

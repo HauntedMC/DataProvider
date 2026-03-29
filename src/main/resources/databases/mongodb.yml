@@ -15,3 +15,8 @@ default:
     trust_store_type: ""
   pool_size: 8
   queue_capacity: 1600
+  max_connection_pool_size: 16
+  min_connection_pool_size: 0
+  connect_timeout_ms: 5000
+  socket_timeout_ms: 5000
+  server_selection_timeout_ms: 5000

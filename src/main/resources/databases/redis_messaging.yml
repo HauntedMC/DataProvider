@@ -15,7 +15,14 @@ default:
   pool:
     connections: 8
     threads:     8
+    min_idle: 2
+    max_idle: 8
+    test_on_borrow: true
+    test_while_idle: true
     queue_capacity: 1600
     max_subscriptions: 64
+  connection_timeout_ms: 2000
+  socket_timeout_ms: 2000
   security:
     max_payload_chars: 32768
+    max_queued_messages_per_handler: 1024

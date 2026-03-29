@@ -1,4 +1,4 @@
-package nl.hauntedmc.dataprovider.platform.velocity.logger;
+package nl.hauntedmc.dataprovider.logging.adapters;
 
 import org.junit.jupiter.api.Test;
 import org.slf4j.Logger;
@@ -6,13 +6,13 @@ import org.slf4j.Logger;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 
-class SLF4JLoggerAdapterTest {
+class Slf4jLoggerAdapterTest {
 
     @Test
     void forwardsAllLogCallsToSlf4jLogger() {
         Logger logger = mock(Logger.class);
         RuntimeException throwable = new RuntimeException("boom");
-        SLF4JLoggerAdapter adapter = new SLF4JLoggerAdapter(logger);
+        Slf4jLoggerAdapter adapter = new Slf4jLoggerAdapter(logger);
 
         adapter.info("info");
         adapter.warn("warn");

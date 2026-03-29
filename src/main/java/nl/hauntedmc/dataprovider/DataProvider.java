@@ -3,7 +3,7 @@ package nl.hauntedmc.dataprovider;
 import nl.hauntedmc.dataprovider.config.ConfigHandler;
 import nl.hauntedmc.dataprovider.internal.DataProviderHandler;
 import nl.hauntedmc.dataprovider.internal.identity.CallerContextResolver;
-import nl.hauntedmc.dataprovider.platform.common.logger.ILoggerAdapter;
+import nl.hauntedmc.dataprovider.logging.LoggerAdapter;
 import org.jspecify.annotations.Nullable;
 
 import java.io.IOException;
@@ -15,14 +15,14 @@ import java.util.Objects;
 
 public class DataProvider {
 
-    private final ILoggerAdapter logger;
+    private final LoggerAdapter logger;
     private final Path dataPath;
     private final ClassLoader parentClassLoader;
     private final ConfigHandler configHandler;
     private final DataProviderHandler dataProviderHandler;
 
     public DataProvider(
-            ILoggerAdapter logger,
+            LoggerAdapter logger,
             Path dataDirectory,
             ClassLoader classLoader,
             CallerContextResolver callerContextResolver
@@ -45,7 +45,7 @@ public class DataProvider {
         );
     }
 
-    public ILoggerAdapter getLogger() {
+    public LoggerAdapter getLogger() {
         return logger;
     }
 

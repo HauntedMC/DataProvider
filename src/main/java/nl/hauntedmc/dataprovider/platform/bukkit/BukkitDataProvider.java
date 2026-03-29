@@ -2,51 +2,67 @@ package nl.hauntedmc.dataprovider.platform.bukkit;
 
 import nl.hauntedmc.dataprovider.DataProvider;
 import nl.hauntedmc.dataprovider.api.DataProviderAPI;
+import nl.hauntedmc.dataprovider.internal.DataProviderHandler;
 import nl.hauntedmc.dataprovider.platform.bukkit.command.DataProviderCommand;
 import nl.hauntedmc.dataprovider.platform.bukkit.identity.BukkitCallerContextResolver;
-import nl.hauntedmc.dataprovider.platform.bukkit.logger.BukkitLoggerAdapter;
+import nl.hauntedmc.dataprovider.logging.adapters.JulLoggerAdapter;
+import nl.hauntedmc.dataprovider.platform.internal.lifecycle.PlatformDataProviderRuntime;
+import org.bukkit.command.PluginCommand;
+import org.bukkit.plugin.ServicePriority;
 import org.bukkit.plugin.java.JavaPlugin;
 
-import java.util.Objects;
+public final class BukkitDataProvider extends JavaPlugin {
 
-public class BukkitDataProvider extends JavaPlugin {
-
-    private static DataProvider dataProvider;
+    private static final String COMMAND_NAME = "dataprovider";
+    private final PlatformDataProviderRuntime runtime = new PlatformDataProviderRuntime();
 
 
     @Override
     public void onEnable() {
-
-        BukkitLoggerAdapter logInstance = new BukkitLoggerAdapter(getLogger());
-        dataProvider = new DataProvider(
-                logInstance,
-                getDataPath(),
-                this.getClassLoader(),
-                new BukkitCallerContextResolver(this.getClassLoader())
+        JulLoggerAdapter loggerAdapter = new JulLoggerAdapter(getLogger());
+        runtime.start(
+                () -> new DataProvider(
+                        loggerAdapter,
+                        getDataPath(),
+                        getClassLoader(),
+                        new BukkitCallerContextResolver(getClassLoader())
+                ),
+                this::initializeBindings,
+                loggerAdapter
         );
-
-        // Init Bukkit Command
-        DataProviderCommand commandExecutor = new DataProviderCommand(dataProvider.getDataProviderHandler());
-        Objects.requireNonNull(getCommand("dataprovider")).setExecutor(commandExecutor);
-        Objects.requireNonNull(getCommand("dataprovider")).setTabCompleter(commandExecutor);
 
         getLogger().info("Enabled (v" + getDescription().getVersion() + ").");
     }
 
     @Override
     public void onDisable() {
-        if (dataProvider != null) {
-            dataProvider.shutdownAllDatabases();
-        }
+        getServer().getServicesManager().unregisterAll(this);
+        runtime.stop(new JulLoggerAdapter(getLogger()));
         getLogger().info("Disabled.");
     }
 
-    // START EXTERNALLY ACCESSIBLE
-    public static DataProviderAPI getDataProviderAPI() {
-        if (dataProvider == null) {
-            throw new IllegalStateException("DataProvider is not initialized yet.");
-        }
-        return new DataProviderAPI(dataProvider.getDataProviderHandler());
+    private void initializeBindings(DataProvider provider) {
+        registerCommand(provider.getDataProviderHandler());
+        registerApiService(new DataProviderAPI(provider.getDataProviderHandler()));
     }
-    // END EXTERNALLY ACCESSIBLE
+
+    private void registerCommand(DataProviderHandler handler) {
+        PluginCommand command = getCommand(COMMAND_NAME);
+        if (command == null) {
+            throw new IllegalStateException("Command '" + COMMAND_NAME + "' is missing from plugin.yml.");
+        }
+
+        DataProviderCommand commandExecutor = new DataProviderCommand(handler);
+        command.setExecutor(commandExecutor);
+        command.setTabCompleter(commandExecutor);
+    }
+
+    private void registerApiService(DataProviderAPI dataProviderAPI) {
+        getServer().getServicesManager().register(
+                DataProviderAPI.class,
+                dataProviderAPI,
+                this,
+                ServicePriority.Normal
+        );
+    }
 }

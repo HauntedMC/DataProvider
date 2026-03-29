@@ -5,20 +5,10 @@ import java.util.Objects;
 import java.util.Optional;
 
 /**
- * The minimal shared parent for all database providers (relational or NoSQL).
- * Allows storing them in a common map.
+ * Read-only database handle exposed to plugin consumers.
+ * Lifecycle operations are owned by DataProvider internals.
  */
 public interface DatabaseProvider {
-
-    /**
-     * Establish a connection to the database.
-     */
-    void connect();
-
-    /**
-     * Close the database connection.
-     */
-    void disconnect();
 
     /**
      * Check if the database is currently connected.

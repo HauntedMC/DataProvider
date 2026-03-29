@@ -36,4 +36,14 @@ class RedisMessagingDatabaseTest {
         assertFalse(database.isConnected());
         assertNull(database.getDataAccess());
     }
+
+    @Test
+    void connectRejectsInsecureTlsFlags() throws Exception {
+        CommentedConfigurationNode config = CommentedConfigurationNode.root();
+        config.node("tls", "enabled").set(true);
+        config.node("tls", "trust_all_certificates").set(true);
+
+        RedisMessagingDatabase database = new RedisMessagingDatabase(config, new RecordingLoggerAdapter());
+        assertThrows(IllegalStateException.class, database::connect);
+    }
 }

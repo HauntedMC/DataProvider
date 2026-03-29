@@ -10,7 +10,8 @@ Main modules:
 - `api`: public registration/lookup surface
 - `internal`: registry, factory, config mapping, identity, and lifecycle logic
 - `database.*`: backend implementations and typed data-access contracts
-- `platform.bukkit` / `platform.velocity`: platform bootstrap and caller context resolution
+- `platform.internal`: shared platform runtime lifecycle and command behavior
+- `platform.bukkit` / `platform.velocity`: platform adapters (bootstrap, command wiring, caller context resolution)
 
 ## Registration Model
 
@@ -30,9 +31,22 @@ Main modules:
 ## Lifecycle Safety
 
 - Per-caller ownership checks gate unregister operations.
+- Reference ownership is tracked by owner scope.
+- Default API methods use plugin-level owner scope for predictable lifecycle behavior.
+- If one plugin/software process multiplexes multiple components through one wrapper class, use optional scoped lifecycle facades (`DataProviderAPI.scope(...)`) to preserve component isolation.
+- Explicit plugin-wide cleanup is available for shutdown flows that span multiple caller scopes.
 - Stale/disconnected providers are evicted from registry lookup paths.
 - Shutdown hooks unregister or stop backend resources cleanly.
 - Bounded executors are used for asynchronous backend work queues.
+- Platform runtime wrappers use a shared thread-safe lifecycle holder to prevent stale instance leaks across enable/disable cycles.
+
+## Platform Layer Design
+
+- `PlatformDataProviderRuntime` centralizes bootstrap shutdown behavior and startup rollback handling.
+- Platform command adapters delegate to a shared `DataProviderCommandService` so Bukkit and Velocity command behavior stays identical.
+- Command service exposes diagnostics-focused admin commands (`status`, `config`, `reload`) with permission-gated filtering and runtime health summaries.
+- API discovery is platform-native: Bukkit registers `DataProviderAPI` in `ServicesManager`; Velocity exposes `DataProviderApiSupplier` on plugin instance.
+- Platform-specific wrappers only map host APIs to shared internals (logger, command registration, event/plugin lifecycle hooks).
 
 ## ORM Integration
 

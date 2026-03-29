@@ -3,6 +3,7 @@ package nl.hauntedmc.dataprovider.database.relational.impl.mysql;
 import nl.hauntedmc.dataprovider.database.relational.schema.ColumnDefinition;
 import nl.hauntedmc.dataprovider.database.relational.schema.SchemaManager;
 import nl.hauntedmc.dataprovider.database.relational.schema.TableDefinition;
+import nl.hauntedmc.dataprovider.internal.concurrent.AsyncTaskSupport;
 
 import javax.sql.DataSource;
 import java.sql.Connection;
@@ -33,7 +34,7 @@ public class MySQLSchemaManager implements SchemaManager {
 
     @Override
     public CompletableFuture<Void> createTable(TableDefinition tableDefinition) {
-        return CompletableFuture.runAsync(() -> {
+        return AsyncTaskSupport.runAsync(executor, "mysql.schema.createTable", () -> {
             if (tableDefinition == null) {
                 throw new IllegalArgumentException("Table definition cannot be null.");
             }
@@ -71,12 +72,12 @@ public class MySQLSchemaManager implements SchemaManager {
             } catch (SQLException e) {
                 throw new RuntimeException("Failed to create table: " + e.getMessage(), e);
             }
-        }, executor);
+        });
     }
 
     @Override
     public CompletableFuture<Void> alterTable(TableDefinition tableDefinition) {
-        return CompletableFuture.runAsync(() -> {
+        return AsyncTaskSupport.runAsync(executor, "mysql.schema.alterTable", () -> {
             if (tableDefinition == null) {
                 throw new IllegalArgumentException("Table definition cannot be null.");
             }
@@ -111,12 +112,12 @@ public class MySQLSchemaManager implements SchemaManager {
             } catch (SQLException e) {
                 throw new RuntimeException("Failed to alter table: " + e.getMessage(), e);
             }
-        }, executor);
+        });
     }
 
     @Override
     public CompletableFuture<Void> dropTable(String tableName) {
-        return CompletableFuture.runAsync(() -> {
+        return AsyncTaskSupport.runAsync(executor, "mysql.schema.dropTable", () -> {
             final String query = "DROP TABLE IF EXISTS " + quoteIdentifier(tableName, "table");
             try (Connection connection = dataSource.getConnection();
                  PreparedStatement stmt = connection.prepareStatement(query)) {
@@ -124,12 +125,12 @@ public class MySQLSchemaManager implements SchemaManager {
             } catch (SQLException e) {
                 throw new RuntimeException("Failed to drop table: " + e.getMessage(), e);
             }
-        }, executor);
+        });
     }
 
     @Override
     public CompletableFuture<Boolean> tableExists(String tableName) {
-        return CompletableFuture.supplyAsync(() -> {
+        return AsyncTaskSupport.supplyAsync(executor, "mysql.schema.tableExists", () -> {
             final String query = "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = DATABASE() AND table_name = ?";
             try (Connection connection = dataSource.getConnection();
                  PreparedStatement stmt = connection.prepareStatement(query)) {
@@ -144,12 +145,12 @@ public class MySQLSchemaManager implements SchemaManager {
                 throw new RuntimeException("Failed to check table existence: " + e.getMessage(), e);
             }
             return false;
-        }, executor);
+        });
     }
 
     @Override
     public CompletableFuture<Void> addIndex(String tableName, String column, boolean unique) {
-        return CompletableFuture.runAsync(() -> {
+        return AsyncTaskSupport.runAsync(executor, "mysql.schema.addIndex", () -> {
             String validatedColumn = validateIdentifier(column, "column");
             final String indexType = unique ? "UNIQUE " : "";
             final String indexName = quoteIdentifier(limitIdentifierLength("idx_" + validatedColumn), "index");
@@ -162,12 +163,12 @@ public class MySQLSchemaManager implements SchemaManager {
             } catch (SQLException e) {
                 throw new RuntimeException("Failed to add index: " + e.getMessage(), e);
             }
-        }, executor);
+        });
     }
 
     @Override
     public CompletableFuture<Void> removeIndex(String tableName, String indexName) {
-        return CompletableFuture.runAsync(() -> {
+        return AsyncTaskSupport.runAsync(executor, "mysql.schema.removeIndex", () -> {
             final String query = "DROP INDEX " + quoteIdentifier(indexName, "index")
                     + " ON " + quoteIdentifier(tableName, "table");
             try (Connection connection = dataSource.getConnection();
@@ -176,12 +177,12 @@ public class MySQLSchemaManager implements SchemaManager {
             } catch (SQLException e) {
                 throw new RuntimeException("Failed to remove index: " + e.getMessage(), e);
             }
-        }, executor);
+        });
     }
 
     @Override
     public CompletableFuture<Void> addForeignKey(String table, String column, String referenceTable, String referenceColumn) {
-        return CompletableFuture.runAsync(() -> {
+        return AsyncTaskSupport.runAsync(executor, "mysql.schema.addForeignKey", () -> {
             String tableId = validateIdentifier(table, "table");
             String columnId = validateIdentifier(column, "column");
             String referenceTableId = validateIdentifier(referenceTable, "reference table");
@@ -198,12 +199,12 @@ public class MySQLSchemaManager implements SchemaManager {
             } catch (SQLException e) {
                 throw new RuntimeException("Failed to add foreign key: " + e.getMessage(), e);
             }
-        }, executor);
+        });
     }
 
     @Override
     public CompletableFuture<Void> removeForeignKey(String table, String constraintName) {
-        return CompletableFuture.runAsync(() -> {
+        return AsyncTaskSupport.runAsync(executor, "mysql.schema.removeForeignKey", () -> {
             final String query = "ALTER TABLE " + quoteIdentifier(table, "table")
                     + " DROP FOREIGN KEY " + quoteIdentifier(constraintName, "constraint");
             try (Connection connection = dataSource.getConnection();
@@ -212,7 +213,7 @@ public class MySQLSchemaManager implements SchemaManager {
             } catch (SQLException e) {
                 throw new RuntimeException("Failed to remove foreign key: " + e.getMessage(), e);
             }
-        }, executor);
+        });
     }
 
     private static String quoteIdentifier(String identifier, String kind) {

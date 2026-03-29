@@ -48,4 +48,5 @@ public final class StackCallerClassLoaderResolver {
                 .findFirst()
                 .orElse(null));
     }
+
 }

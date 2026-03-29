@@ -58,8 +58,8 @@ class MySQLDataAccessTest {
         when(resultSet.next()).thenReturn(true);
         when(resultSet.getMetaData()).thenReturn(metaData);
         when(metaData.getColumnCount()).thenReturn(2);
-        when(metaData.getColumnName(1)).thenReturn("id");
-        when(metaData.getColumnName(2)).thenReturn("name");
+        when(metaData.getColumnLabel(1)).thenReturn("id");
+        when(metaData.getColumnLabel(2)).thenReturn("name");
         when(resultSet.getObject(1)).thenReturn(7);
         when(resultSet.getObject(2)).thenReturn("Remy");
 
@@ -99,8 +99,8 @@ class MySQLDataAccessTest {
         when(resultSet.next()).thenReturn(true, true, false);
         when(resultSet.getMetaData()).thenReturn(metaData);
         when(metaData.getColumnCount()).thenReturn(2);
-        when(metaData.getColumnName(1)).thenReturn("id");
-        when(metaData.getColumnName(2)).thenReturn("name");
+        when(metaData.getColumnLabel(1)).thenReturn("id");
+        when(metaData.getColumnLabel(2)).thenReturn("name");
         when(resultSet.getObject(1)).thenReturn(1, 2);
         when(resultSet.getObject(2)).thenReturn("a", "b");
 

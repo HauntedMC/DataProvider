@@ -4,16 +4,19 @@ import nl.hauntedmc.dataprovider.database.messaging.MessagingDataAccess;
 import nl.hauntedmc.dataprovider.database.messaging.api.EventMessage;
 import nl.hauntedmc.dataprovider.database.messaging.api.MessageRegistry;
 import nl.hauntedmc.dataprovider.database.messaging.api.Subscription;
-import nl.hauntedmc.dataprovider.platform.common.logger.ILoggerAdapter;
+import nl.hauntedmc.dataprovider.internal.concurrent.AsyncTaskSupport;
+import nl.hauntedmc.dataprovider.logging.LoggerAdapter;
 import redis.clients.jedis.Jedis;
 import redis.clients.jedis.JedisPool;
 import redis.clients.jedis.JedisPubSub;
 
+import java.util.ArrayDeque;
 import java.util.Map;
 import java.util.Objects;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
+import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Consumer;
@@ -25,10 +28,11 @@ final class RedisMessagingDataAccess implements MessagingDataAccess {
 
     private final JedisPool pool;
     private final ExecutorService workers;
-    private final ILoggerAdapter logger;
+    private final LoggerAdapter logger;
     private final MessageRegistry messageRegistry;
     private final int maxSubscriptions;
     private final int maxPayloadChars;
+    private final int maxQueuedMessagesPerHandler;
     private final Map<String, ChannelSubscription> channelSubscriptions = new ConcurrentHashMap<>();
     private final Object subscriptionLock = new Object();
     private final AtomicBoolean shuttingDown = new AtomicBoolean(false);
@@ -36,10 +40,11 @@ final class RedisMessagingDataAccess implements MessagingDataAccess {
     RedisMessagingDataAccess(
             JedisPool pool,
             ExecutorService workers,
-            ILoggerAdapter logger,
+            LoggerAdapter logger,
             MessageRegistry messageRegistry,
             int maxSubscriptions,
-            int maxPayloadChars
+            int maxPayloadChars,
+            int maxQueuedMessagesPerHandler
     ) {
         this.pool = Objects.requireNonNull(pool, "Pool cannot be null");
         this.workers = Objects.requireNonNull(workers, "Workers cannot be null");
@@ -53,6 +58,10 @@ final class RedisMessagingDataAccess implements MessagingDataAccess {
             throw new IllegalArgumentException("maxPayloadChars must be greater than zero");
         }
         this.maxPayloadChars = maxPayloadChars;
+        if (maxQueuedMessagesPerHandler < 1) {
+            throw new IllegalArgumentException("maxQueuedMessagesPerHandler must be greater than zero");
+        }
+        this.maxQueuedMessagesPerHandler = maxQueuedMessagesPerHandler;
     }
 
     @Override
@@ -69,11 +78,11 @@ final class RedisMessagingDataAccess implements MessagingDataAccess {
             return CompletableFuture.failedFuture(new IllegalArgumentException(
                     "Message payload exceeds maxPayloadChars (" + maxPayloadChars + ")"));
         }
-        return CompletableFuture.runAsync(() -> {
+        return AsyncTaskSupport.runAsync(workers, "redis.messaging.publish", () -> {
             try (Jedis j = pool.getResource()) {
                 j.publish(destination, json);
             }
-        }, workers);
+        });
     }
 
     @Override
@@ -149,7 +158,7 @@ final class RedisMessagingDataAccess implements MessagingDataAccess {
                         return;
                     }
                     for (HandlerRegistration<?> registration : handlers.values()) {
-                        registration.dispatch(channel, raw);
+                        registration.enqueue(channel, raw);
                     }
                 }
             };
@@ -163,7 +172,7 @@ final class RedisMessagingDataAccess implements MessagingDataAccess {
                     }
                 } finally {
                     channelSubscriptions.remove(destination, this);
-                    handlers.clear();
+                    closeAndClearHandlers();
                     closed.set(true);
                 }
             }, "redis-sub-" + channelThreadName);
@@ -183,7 +192,10 @@ final class RedisMessagingDataAccess implements MessagingDataAccess {
         }
 
         private CompletableFuture<Void> removeHandler(long handlerId) {
-            handlers.remove(handlerId);
+            HandlerRegistration<?> removed = handlers.remove(handlerId);
+            if (removed != null) {
+                removed.close();
+            }
             if (!handlers.isEmpty()) {
                 return CompletableFuture.completedFuture(null);
             }
@@ -195,8 +207,8 @@ final class RedisMessagingDataAccess implements MessagingDataAccess {
                 return CompletableFuture.completedFuture(null);
             }
             channelSubscriptions.remove(destination, this);
-            return CompletableFuture.runAsync(() -> {
-                handlers.clear();
+            return AsyncTaskSupport.runAsync(workers, "redis.messaging.unsubscribeChannel", () -> {
+                closeAndClearHandlers();
                 try {
                     pubSub.unsubscribe();
                 } catch (Exception ignored) {
@@ -209,7 +221,14 @@ final class RedisMessagingDataAccess implements MessagingDataAccess {
                         Thread.currentThread().interrupt();
                     }
                 }
-            }, workers);
+            });
+        }
+
+        private void closeAndClearHandlers() {
+            for (HandlerRegistration<?> registration : handlers.values()) {
+                registration.close();
+            }
+            handlers.clear();
         }
     }
 
@@ -217,10 +236,77 @@ final class RedisMessagingDataAccess implements MessagingDataAccess {
 
         private final Class<T> type;
         private final Consumer<T> handler;
+        private final Object queueLock = new Object();
+        private final ArrayDeque<QueuedMessage> queuedMessages = new ArrayDeque<>();
+        private final AtomicBoolean closed = new AtomicBoolean(false);
+        private final AtomicLong droppedMessages = new AtomicLong(0L);
+        private boolean workerScheduled;
 
         private HandlerRegistration(Class<T> type, Consumer<T> handler) {
             this.type = Objects.requireNonNull(type, "Type cannot be null");
             this.handler = Objects.requireNonNull(handler, "Handler cannot be null");
+        }
+
+        private void enqueue(String channel, String raw) {
+            if (closed.get()) {
+                return;
+            }
+
+            boolean shouldSchedule = false;
+            synchronized (queueLock) {
+                if (closed.get()) {
+                    return;
+                }
+                if (queuedMessages.size() >= maxQueuedMessagesPerHandler) {
+                    long dropped = droppedMessages.incrementAndGet();
+                    if (dropped == 1 || dropped % 100 == 0) {
+                        logger.warn("Dropped " + dropped + " queued message(s) for channel " + channel
+                                + " because handler queue reached max_queued_messages_per_handler="
+                                + maxQueuedMessagesPerHandler);
+                    }
+                    return;
+                }
+                queuedMessages.addLast(new QueuedMessage(channel, raw));
+                if (!workerScheduled) {
+                    workerScheduled = true;
+                    shouldSchedule = true;
+                }
+            }
+
+            if (shouldSchedule) {
+                scheduleDrain();
+            }
+        }
+
+        private void scheduleDrain() {
+            try {
+                workers.execute(this::drainQueue);
+            } catch (RejectedExecutionException e) {
+                synchronized (queueLock) {
+                    workerScheduled = false;
+                    queuedMessages.clear();
+                }
+                logger.warn("Dropped queued handler messages because dispatch worker pool is full.", e);
+            }
+        }
+
+        private void drainQueue() {
+            while (true) {
+                QueuedMessage queuedMessage;
+                synchronized (queueLock) {
+                    if (closed.get()) {
+                        queuedMessages.clear();
+                        workerScheduled = false;
+                        return;
+                    }
+                    queuedMessage = queuedMessages.pollFirst();
+                    if (queuedMessage == null) {
+                        workerScheduled = false;
+                        return;
+                    }
+                }
+                dispatch(queuedMessage.channel(), queuedMessage.raw());
+            }
         }
 
         private void dispatch(String channel, String raw) {
@@ -235,6 +321,17 @@ final class RedisMessagingDataAccess implements MessagingDataAccess {
                 logger.error("Error while handling message from channel " + channel, ex);
             }
         }
+
+        private void close() {
+            closed.set(true);
+            synchronized (queueLock) {
+                queuedMessages.clear();
+                workerScheduled = false;
+            }
+        }
+    }
+
+    private record QueuedMessage(String channel, String raw) {
     }
 
     private static String validateDestination(String destination) {

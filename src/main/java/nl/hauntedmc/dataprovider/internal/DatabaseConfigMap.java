@@ -1,7 +1,8 @@
 package nl.hauntedmc.dataprovider.internal;
 
 import nl.hauntedmc.dataprovider.database.DatabaseType;
-import nl.hauntedmc.dataprovider.platform.common.logger.ILoggerAdapter;
+import nl.hauntedmc.dataprovider.internal.security.FilePermissionHardening;
+import nl.hauntedmc.dataprovider.logging.LoggerAdapter;
 import org.spongepowered.configurate.CommentedConfigurationNode;
 import org.spongepowered.configurate.loader.ConfigurationLoader;
 import org.spongepowered.configurate.yaml.YamlConfigurationLoader;
@@ -21,11 +22,11 @@ import java.util.Objects;
 class DatabaseConfigMap {
 
     private final Path dataPath;
-    private final ILoggerAdapter logger;
+    private final LoggerAdapter logger;
     private final ClassLoader resourceClassLoader;
     private final Map<DatabaseType, CommentedConfigurationNode> configMap = new HashMap<>();
 
-    protected DatabaseConfigMap(Path dataPath, ILoggerAdapter logger, ClassLoader resourceClassLoader) {
+    protected DatabaseConfigMap(Path dataPath, LoggerAdapter logger, ClassLoader resourceClassLoader) {
         this.dataPath = Objects.requireNonNull(dataPath, "Data path cannot be null.");
         this.logger = Objects.requireNonNull(logger, "Logger cannot be null.");
         this.resourceClassLoader = Objects.requireNonNull(resourceClassLoader, "Resource class loader cannot be null.");
@@ -34,12 +35,14 @@ class DatabaseConfigMap {
 
     private void initialize() {
         configMap.clear();
-        File databasesFolder = new File(String.valueOf(dataPath), "databases");
+        Path databasesPath = dataPath.resolve("databases");
+        File databasesFolder = databasesPath.toFile();
         if (!databasesFolder.exists() && !databasesFolder.mkdirs()) {
             logger.warn("Failed to create databases folder at: " + databasesFolder.getAbsolutePath());
         } else {
             logger.info("Databases folder located at: " + databasesFolder.getAbsolutePath());
         }
+        FilePermissionHardening.restrictDirectoryToOwner(databasesPath, logger, "database configuration directory");
 
         for (DatabaseType type : DatabaseType.values()) {
             File configFile = new File(databasesFolder, type.getConfigFileName());
@@ -51,6 +54,7 @@ class DatabaseConfigMap {
             }
             if (configFile.exists()) {
                 Path path = configFile.toPath();
+                FilePermissionHardening.restrictFileToOwner(path, logger, type.name() + " database config");
                 ConfigurationLoader<CommentedConfigurationNode> loader = YamlConfigurationLoader.builder()
                         .path(path)
                         .build();
@@ -71,6 +75,7 @@ class DatabaseConfigMap {
                 return false;
             }
             Files.copy(in, destinationFile.toPath());
+            FilePermissionHardening.restrictFileToOwner(destinationFile.toPath(), logger, resourcePath + " default config");
             logger.info("Copied default config: " + resourcePath);
             return true;
         } catch (IOException e) {
@@ -97,15 +102,22 @@ class DatabaseConfigMap {
      * @return the corresponding CommentedConfigurationNode, or null if not found.
      */
     protected CommentedConfigurationNode getConfig(DatabaseType type, String connectionIdentifier) {
+        return getConfig(type, ConnectionIdentifier.of(connectionIdentifier));
+    }
+
+    protected CommentedConfigurationNode getConfig(DatabaseType type, ConnectionIdentifier connectionIdentifier) {
+        Objects.requireNonNull(type, "Database type cannot be null.");
+        Objects.requireNonNull(connectionIdentifier, "Connection identifier cannot be null.");
         CommentedConfigurationNode config = configMap.get(type);
         if (config == null) {
             logger.warn("No configuration loaded for database type " + type.name());
             return null;
         }
 
-        CommentedConfigurationNode section = config.node(connectionIdentifier);
+        String identifierValue = connectionIdentifier.value();
+        CommentedConfigurationNode section = config.node(identifierValue);
         if (section.virtual()) {
-            logger.warn("No configuration section found for '" + connectionIdentifier + "' in "
+            logger.warn("No configuration section found for '" + identifierValue + "' in "
                     + type.getConfigFileName() + ". Available sections: " + describeAvailableSections(config));
             return null;
         }

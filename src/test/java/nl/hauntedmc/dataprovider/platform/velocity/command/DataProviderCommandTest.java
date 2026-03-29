@@ -34,10 +34,10 @@ class DataProviderCommandTest {
         RecordingVelocitySource source = new RecordingVelocitySource();
 
         command.execute(new TestInvocation(source.source(), new String[0]));
-        assertTrue(source.hasMessageContaining("Usage: /dataprovider status"));
+        assertTrue(source.hasMessageContaining("DataProvider command help:"));
 
         command.execute(new TestInvocation(source.source(), new String[]{"status"}));
-        assertTrue(source.hasMessageContaining("do not have permission"));
+        assertTrue(source.hasMessageContaining("Missing permission: dataprovider.command.status"));
 
         command.execute(new TestInvocation(source.source(), new String[]{"unknown"}));
         assertTrue(source.hasMessageContaining("Unknown subcommand"));
@@ -62,14 +62,15 @@ class DataProviderCommandTest {
         when(handler.getActiveDatabaseReferenceCounts()).thenReturn(Map.of(key, 3));
 
         command.execute(new TestInvocation(source.source(), new String[]{"status"}));
-        assertTrue(source.hasMessageContaining("Active Database Connections:"));
-        assertTrue(source.hasMessageContaining("VelocityFeature"));
+        assertTrue(source.hasMessageContaining("DataProvider Status"));
+        assertTrue(source.hasMessageContaining("plugin=VelocityFeature"));
     }
 
     @Test
     void suggestAsyncReturnsExpectedCompletions() {
         DataProviderCommand command = new DataProviderCommand(mock(DataProviderHandler.class));
         RecordingVelocitySource source = new RecordingVelocitySource();
+        source.grantPermission("dataprovider.command.status");
         assertEquals(List.of("status"), command.suggestAsync(new TestInvocation(source.source(), new String[]{"s"})).join());
         assertEquals(List.of("help"), command.suggestAsync(new TestInvocation(source.source(), new String[]{"h"})).join());
         assertTrue(command.suggestAsync(new TestInvocation(source.source(), new String[]{"x"})).join().isEmpty());

@@ -1,7 +1,7 @@
 package nl.hauntedmc.dataprovider.api.orm;
 
 import nl.hauntedmc.dataprovider.config.ConfigHandler;
-import nl.hauntedmc.dataprovider.platform.common.logger.ILoggerAdapter;
+import nl.hauntedmc.dataprovider.logging.LoggerAdapter;
 import org.hibernate.Session;
 import org.hibernate.SessionFactory;
 import org.hibernate.Transaction;
@@ -27,7 +27,7 @@ public class ORMContext {
 
     private final DataSource dataSource;
     private final String plugin;
-    private final ILoggerAdapter logger;
+    private final LoggerAdapter logger;
     private final String schemaMode;
     private SessionFactory sessionFactory;
     private StandardServiceRegistry registry;
@@ -46,7 +46,7 @@ public class ORMContext {
             String plugin,
             DataSource dataSource,
             ConfigHandler configHandler,
-            ILoggerAdapter logger,
+            LoggerAdapter logger,
             Class<?>... entityClasses
     ) {
         this(plugin, dataSource, logger, resolveSchemaMode(configHandler), entityClasses);
@@ -64,7 +64,7 @@ public class ORMContext {
     public ORMContext(
             String plugin,
             DataSource dataSource,
-            ILoggerAdapter logger,
+            LoggerAdapter logger,
             String schemaMode,
             Class<?>... entityClasses
     ) {
@@ -128,7 +128,7 @@ public class ORMContext {
         return configHandler.getOrmSchemaMode();
     }
 
-    private static String normalizeSchemaMode(String schemaMode, ILoggerAdapter logger) {
+    private static String normalizeSchemaMode(String schemaMode, LoggerAdapter logger) {
         if (schemaMode == null || schemaMode.isBlank()) {
             return DEFAULT_SCHEMA_MODE;
         }

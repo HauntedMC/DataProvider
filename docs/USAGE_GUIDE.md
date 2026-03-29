@@ -5,16 +5,49 @@
 Velocity:
 
 ```java
-DataProviderAPI api = VelocityDataProvider.getDataProviderAPI();
+DataProviderAPI api = proxyServer.getPluginManager()
+        .getPlugin("dataprovider")
+        .flatMap(container -> container.getInstance()
+                .filter(DataProviderApiSupplier.class::isInstance)
+                .map(DataProviderApiSupplier.class::cast)
+                .map(DataProviderApiSupplier::dataProviderApi))
+        .orElseThrow(() -> new IllegalStateException("DataProvider is unavailable."));
 ```
 
 Bukkit/Paper:
 
 ```java
-DataProviderAPI api = BukkitDataProvider.getDataProviderAPI();
+RegisteredServiceProvider<DataProviderAPI> registration =
+        Bukkit.getServicesManager().getRegistration(DataProviderAPI.class);
+if (registration == null) {
+    throw new IllegalStateException("DataProvider is unavailable.");
+}
+DataProviderAPI api = registration.getProvider();
 ```
 
 Caller identity is resolved automatically from the plugin runtime context.
+
+## 1.1 API lifecycle across reloads
+
+Treat `DataProviderAPI` as runtime-scoped, not permanent.
+
+- Acquire the API during your plugin enable/start phase.
+- Do not keep API references across plugin reloads or disable/enable cycles.
+- After DataProvider shuts down, old API handles throw `IllegalStateException`; reacquire a fresh API after DataProvider is enabled again.
+
+## 1.2 Built-in admin commands
+
+`DataProvider` ships with runtime diagnostics commands for Bukkit/Paper and Velocity:
+
+- `/dataprovider status [summary|connections] [unhealthy] [plugin <name>] [type <databaseType>]`
+- `/dataprovider config`
+- `/dataprovider reload`
+
+Permission nodes:
+
+- `dataprovider.command.status`
+- `dataprovider.command.config`
+- `dataprovider.command.reload`
 
 ## 2. Register a connection
 
@@ -60,6 +93,9 @@ Identifier guidance:
 
 ## 3. Use the provider safely
 
+`DatabaseProvider` is a read-only handle. Connection lifecycle stays owned by `DataProviderAPI`,
+so acquire and release connections through `registerDatabase*` / `unregisterDatabase*`.
+
 `DatabaseProvider` has helper methods to avoid raw casts:
 
 ```java
@@ -75,11 +111,19 @@ Release a specific connection:
 api.unregisterDatabase(DatabaseType.MYSQL, "example");
 ```
 
-Release all connections for your plugin context:
+Release all connections for your default plugin/software scope:
 
 ```java
 api.unregisterAllDatabases();
 ```
+
+For full plugin/software shutdown when registrations may come from multiple classes/scopes:
+
+```java
+api.unregisterAllDatabasesForPlugin();
+```
+
+Optional advanced scoped ownership is documented in `docs/SCOPED_LIFECYCLE.md`.
 
 ## 5. ORM usage
 

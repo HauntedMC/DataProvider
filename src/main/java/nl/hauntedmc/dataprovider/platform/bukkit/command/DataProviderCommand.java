@@ -1,97 +1,38 @@
 package nl.hauntedmc.dataprovider.platform.bukkit.command;
 
-import net.kyori.adventure.text.Component;
-import net.kyori.adventure.text.format.NamedTextColor;
-import nl.hauntedmc.dataprovider.database.DatabaseConnectionKey;
-import nl.hauntedmc.dataprovider.database.DatabaseProvider;
 import nl.hauntedmc.dataprovider.internal.DataProviderHandler;
+import nl.hauntedmc.dataprovider.platform.internal.command.DataProviderCommandService;
 import org.bukkit.command.Command;
 import org.bukkit.command.CommandExecutor;
 import org.bukkit.command.CommandSender;
 import org.bukkit.command.TabCompleter;
 import org.jetbrains.annotations.NotNull;
 
-import java.util.ArrayList;
 import java.util.List;
-import java.util.Map;
-import java.util.concurrent.ConcurrentMap;
+import java.util.Objects;
 
-public class DataProviderCommand implements CommandExecutor, TabCompleter {
+public final class DataProviderCommand implements CommandExecutor, TabCompleter {
 
-    private final DataProviderHandler dataProviderHandler;
+    private final DataProviderCommandService commandService;
 
     public DataProviderCommand(DataProviderHandler dataProviderHandler) {
-        this.dataProviderHandler = dataProviderHandler;
+        this(new DataProviderCommandService(dataProviderHandler));
+    }
+
+    DataProviderCommand(DataProviderCommandService commandService) {
+        this.commandService = Objects.requireNonNull(commandService, "Command service cannot be null.");
     }
 
     @Override
     public boolean onCommand(@NotNull CommandSender sender, @NotNull Command command,
                              @NotNull String label, String @NotNull [] args) {
-        // Display usage or help message when no arguments or "help" is provided.
-        if (args.length == 0 || args[0].equalsIgnoreCase("help")) {
-            sender.sendMessage(Component.text("Usage: /dataprovider status", NamedTextColor.YELLOW));
-            return true;
-        }
-
-        // Handle the "status" subcommand.
-        if (args[0].equalsIgnoreCase("status")) {
-            // Check for the required permission before executing any subcommand.
-            if (!sender.hasPermission("dataprovider.command.status")) {
-                sender.sendMessage(Component.text("You do not have permission to use this command.", NamedTextColor.RED));
-                return true;
-            }
-
-            ConcurrentMap<DatabaseConnectionKey, DatabaseProvider> activeDatabases =
-                    dataProviderHandler.getActiveDatabases();
-            Map<DatabaseConnectionKey, Integer> referenceCounts =
-                    dataProviderHandler.getActiveDatabaseReferenceCounts();
-
-            if (activeDatabases.isEmpty()) {
-                sender.sendMessage(Component.text("No active database connections found.", NamedTextColor.YELLOW));
-                return true;
-            }
-
-            sender.sendMessage(Component.text("Active Database Connections:", NamedTextColor.GREEN));
-            for (Map.Entry<DatabaseConnectionKey, DatabaseProvider> entry : activeDatabases.entrySet()) {
-                int references = referenceCounts.getOrDefault(entry.getKey(), 1);
-                Component connectionInfo = getConnectionComponent(entry, references);
-                sender.sendMessage(connectionInfo);
-            }
-            return true;
-        }
-
-        sender.sendMessage(Component.text("Unknown subcommand. Use /dataprovider help for usage.", NamedTextColor.RED));
+        commandService.execute(args, sender::hasPermission, sender::sendMessage);
         return true;
-    }
-
-    private static @NotNull Component getConnectionComponent(Map.Entry<DatabaseConnectionKey, DatabaseProvider> entry, int references) {
-        DatabaseConnectionKey key = entry.getKey();
-
-        Component statusComponent = Component.text("Registered (" + references + " refs)", NamedTextColor.GREEN);
-
-        return Component.text("Plugin: ", NamedTextColor.YELLOW)
-                .append(Component.text(key.pluginName(), NamedTextColor.WHITE))
-                .append(Component.text(", Type: ", NamedTextColor.YELLOW))
-                .append(Component.text(key.type().name(), NamedTextColor.WHITE))
-                .append(Component.text(", Identifier: ", NamedTextColor.YELLOW))
-                .append(Component.text(key.connectionIdentifier(), NamedTextColor.WHITE))
-                .append(Component.text(" -> ", NamedTextColor.YELLOW))
-                .append(statusComponent);
     }
 
     @Override
     public List<String> onTabComplete(@NotNull CommandSender sender, @NotNull Command command,
                                       @NotNull String alias, String[] args) {
-        List<String> completions = new ArrayList<>();
-        if (args.length == 1) {
-            String partial = args[0].toLowerCase();
-            if ("status".startsWith(partial)) {
-                completions.add("status");
-            }
-            if ("help".startsWith(partial)) {
-                completions.add("help");
-            }
-        }
-        return completions;
+        return commandService.suggest(args, sender::hasPermission);
     }
 }

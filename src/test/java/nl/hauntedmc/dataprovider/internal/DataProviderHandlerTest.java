@@ -12,10 +12,12 @@ import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -24,7 +26,9 @@ class DataProviderHandlerTest {
     @Test
     void injectedConstructorValidatesArguments() {
         DataProviderRegistry registry = mock(DataProviderRegistry.class);
-        CallerContextResolver resolver = () -> new CallerContext("plugin", getClass().getClassLoader());
+        ClassLoader pluginLoader = new ClassLoader() {
+        };
+        CallerContextResolver resolver = () -> new CallerContext("plugin", pluginLoader);
         RecordingLoggerAdapter logger = new RecordingLoggerAdapter();
         ClassLoader ownClassLoader = getClass().getClassLoader();
 
@@ -37,34 +41,90 @@ class DataProviderHandlerTest {
     @Test
     void registerAndLookupDelegateUsingResolvedPluginContext() {
         DataProviderRegistry registry = mock(DataProviderRegistry.class);
-        CallerContextResolver resolver = () -> new CallerContext("feature-plugin", getClass().getClassLoader());
+        ClassLoader pluginLoader = new ClassLoader() {
+        };
+        CallerContextResolver resolver = () -> new CallerContext("feature-plugin", pluginLoader);
         RecordingLoggerAdapter logger = new RecordingLoggerAdapter();
         DataProviderHandler handler = new DataProviderHandler(registry, resolver, logger, getClass().getClassLoader());
         DatabaseProvider provider = mock(DatabaseProvider.class);
 
-        when(registry.registerDatabase("feature-plugin", DatabaseType.MYSQL, "default")).thenReturn(provider);
-        when(registry.getDatabase("feature-plugin", DatabaseType.MYSQL, "default")).thenReturn(provider);
+        when(registry.registerDatabase(
+                PluginId.of("feature-plugin"),
+                OwnerScopeId.of("feature-plugin"),
+                DatabaseType.MYSQL,
+                ConnectionIdentifier.of("default")
+        )).thenReturn(provider);
+        when(registry.registerDatabase(
+                PluginId.of("feature-plugin"),
+                OwnerScopeId.of("component.scope"),
+                DatabaseType.MYSQL,
+                ConnectionIdentifier.of("default")
+        )).thenReturn(provider);
+        when(registry.getDatabase(
+                PluginId.of("feature-plugin"),
+                DatabaseType.MYSQL,
+                ConnectionIdentifier.of("default")
+        )).thenReturn(provider);
 
         assertSame(provider, handler.registerDatabase(DatabaseType.MYSQL, "default"));
+        assertSame(provider, handler.registerDatabaseForScope("component.scope", DatabaseType.MYSQL, "default"));
         assertSame(provider, handler.getRegisteredDatabase(DatabaseType.MYSQL, "default"));
         handler.unregisterDatabase(DatabaseType.MYSQL, "default");
+        handler.unregisterDatabaseForScope("component.scope", DatabaseType.MYSQL, "default");
         handler.unregisterAllDatabases();
+        handler.unregisterAllDatabasesForScope("component.scope");
+        handler.unregisterAllDatabasesForPlugin();
 
-        verify(registry).registerDatabase("feature-plugin", DatabaseType.MYSQL, "default");
-        verify(registry).getDatabase("feature-plugin", DatabaseType.MYSQL, "default");
-        verify(registry).unregisterDatabase("feature-plugin", DatabaseType.MYSQL, "default");
-        verify(registry).unregisterAllDatabases("feature-plugin");
+        verify(registry).registerDatabase(
+                PluginId.of("feature-plugin"),
+                OwnerScopeId.of("feature-plugin"),
+                DatabaseType.MYSQL,
+                ConnectionIdentifier.of("default")
+        );
+        verify(registry).registerDatabase(
+                PluginId.of("feature-plugin"),
+                OwnerScopeId.of("component.scope"),
+                DatabaseType.MYSQL,
+                ConnectionIdentifier.of("default")
+        );
+        verify(registry).getDatabase(
+                PluginId.of("feature-plugin"),
+                DatabaseType.MYSQL,
+                ConnectionIdentifier.of("default")
+        );
+        verify(registry).unregisterDatabase(
+                PluginId.of("feature-plugin"),
+                OwnerScopeId.of("feature-plugin"),
+                DatabaseType.MYSQL,
+                ConnectionIdentifier.of("default")
+        );
+        verify(registry).unregisterDatabase(
+                PluginId.of("feature-plugin"),
+                OwnerScopeId.of("component.scope"),
+                DatabaseType.MYSQL,
+                ConnectionIdentifier.of("default")
+        );
+        verify(registry).unregisterAllDatabases(PluginId.of("feature-plugin"), OwnerScopeId.of("feature-plugin"));
+        verify(registry).unregisterAllDatabases(PluginId.of("feature-plugin"), OwnerScopeId.of("component.scope"));
+        verify(registry).unregisterAllDatabasesForPlugin(PluginId.of("feature-plugin"));
     }
 
     @Test
     void validatesDatabaseTypeAndConnectionIdentifier() {
         DataProviderRegistry registry = mock(DataProviderRegistry.class);
-        CallerContextResolver resolver = () -> new CallerContext("plugin", getClass().getClassLoader());
+        ClassLoader pluginLoader = new ClassLoader() {
+        };
+        CallerContextResolver resolver = () -> new CallerContext("plugin", pluginLoader);
         DataProviderHandler handler = new DataProviderHandler(registry, resolver, new RecordingLoggerAdapter(), getClass().getClassLoader());
 
         assertThrows(NullPointerException.class, () -> handler.registerDatabase(null, "default"));
         assertThrows(IllegalArgumentException.class, () -> handler.registerDatabase(DatabaseType.MYSQL, " "));
         assertThrows(IllegalArgumentException.class, () -> handler.registerDatabase(DatabaseType.MYSQL, "bad/identifier"));
+        assertThrows(IllegalArgumentException.class, () -> handler.registerDatabaseForScope(" ", DatabaseType.MYSQL, "default"));
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> handler.registerDatabaseForScope("bad scope", DatabaseType.MYSQL, "default")
+        );
         assertThrows(NullPointerException.class, () -> handler.getRegisteredDatabase(null, "default"));
         assertThrows(IllegalArgumentException.class, () -> handler.getRegisteredDatabase(DatabaseType.MYSQL, " "));
     }
@@ -102,7 +162,9 @@ class DataProviderHandlerTest {
     @Test
     void privilegedOperationsRejectNonInternalCallerClassLoader() {
         DataProviderRegistry registry = mock(DataProviderRegistry.class);
-        CallerContextResolver resolver = () -> new CallerContext("plugin", getClass().getClassLoader());
+        ClassLoader pluginLoader = new ClassLoader() {
+        };
+        CallerContextResolver resolver = () -> new CallerContext("plugin", pluginLoader);
         RecordingLoggerAdapter logger = new RecordingLoggerAdapter();
         ClassLoader mismatchingLoader = new ClassLoader() {
         };
@@ -111,24 +173,104 @@ class DataProviderHandlerTest {
         assertThrows(SecurityException.class, handler::shutdownAllDatabases);
         assertThrows(SecurityException.class, handler::getActiveDatabases);
         assertThrows(SecurityException.class, handler::getActiveDatabaseReferenceCounts);
+        assertThrows(SecurityException.class, handler::getConfiguredDatabaseTypeStates);
+        assertThrows(SecurityException.class, handler::getConfiguredOrmSchemaMode);
+        assertThrows(SecurityException.class, handler::reloadConfiguration);
     }
 
     @Test
     void privilegedOperationsReturnRegistrySnapshotsForInternalCaller() {
         DataProviderRegistry registry = mock(DataProviderRegistry.class);
-        CallerContextResolver resolver = () -> new CallerContext("plugin", getClass().getClassLoader());
+        ClassLoader pluginLoader = new ClassLoader() {
+        };
+        CallerContextResolver resolver = () -> new CallerContext("plugin", pluginLoader);
         RecordingLoggerAdapter logger = new RecordingLoggerAdapter();
         DataProviderHandler handler = new DataProviderHandler(registry, resolver, logger, getClass().getClassLoader());
 
         ConcurrentMap<DatabaseConnectionKey, DatabaseProvider> active = new ConcurrentHashMap<>();
         Map<DatabaseConnectionKey, Integer> refs = Map.of();
+        Map<DatabaseType, Boolean> states = Map.of(DatabaseType.MYSQL, true);
         when(registry.getActiveDatabases()).thenReturn(active);
         when(registry.getActiveDatabaseReferenceCounts()).thenReturn(refs);
+        when(registry.getConfiguredDatabaseTypeStates()).thenReturn(states);
+        when(registry.getOrmSchemaMode()).thenReturn("validate");
 
         assertSame(active, handler.getActiveDatabases());
         assertSame(refs, handler.getActiveDatabaseReferenceCounts());
+        assertSame(states, handler.getConfiguredDatabaseTypeStates());
+        assertEquals("validate", handler.getConfiguredOrmSchemaMode());
         handler.shutdownAllDatabases();
+        handler.reloadConfiguration();
 
         verify(registry).shutdownAllDatabases();
+        verify(registry).reloadConfiguration();
+    }
+
+    @Test
+    void operationsFailFastWhenRegistryIsClosed() {
+        DataProviderRegistry registry = mock(DataProviderRegistry.class);
+        when(registry.isClosed()).thenReturn(true);
+
+        ClassLoader pluginLoader = new ClassLoader() {
+        };
+        CallerContextResolver resolver = () -> new CallerContext("plugin", pluginLoader);
+        DataProviderHandler handler = new DataProviderHandler(
+                registry,
+                resolver,
+                new RecordingLoggerAdapter(),
+                getClass().getClassLoader()
+        );
+
+        assertThrows(IllegalStateException.class, () -> handler.registerDatabase(DatabaseType.MYSQL, "default"));
+        assertThrows(IllegalStateException.class, () ->
+                handler.registerDatabaseForScope("component.scope", DatabaseType.MYSQL, "default"));
+        assertThrows(IllegalStateException.class, () -> handler.getRegisteredDatabase(DatabaseType.MYSQL, "default"));
+        assertThrows(IllegalStateException.class, () -> handler.unregisterDatabase(DatabaseType.MYSQL, "default"));
+        assertThrows(IllegalStateException.class, () ->
+                handler.unregisterDatabaseForScope("component.scope", DatabaseType.MYSQL, "default"));
+        assertThrows(IllegalStateException.class, handler::unregisterAllDatabases);
+        assertThrows(IllegalStateException.class, () -> handler.unregisterAllDatabasesForScope("component.scope"));
+        assertThrows(IllegalStateException.class, handler::unregisterAllDatabasesForPlugin);
+        assertThrows(IllegalStateException.class, handler::getActiveDatabases);
+        assertThrows(IllegalStateException.class, handler::getActiveDatabaseReferenceCounts);
+        assertThrows(IllegalStateException.class, handler::getConfiguredDatabaseTypeStates);
+        assertThrows(IllegalStateException.class, handler::getConfiguredOrmSchemaMode);
+        assertThrows(IllegalStateException.class, handler::reloadConfiguration);
+
+        verify(registry, never()).registerDatabase(
+                PluginId.of("plugin"),
+                OwnerScopeId.of("plugin"),
+                DatabaseType.MYSQL,
+                ConnectionIdentifier.of("default")
+        );
+        verify(registry, never()).registerDatabase(
+                PluginId.of("plugin"),
+                OwnerScopeId.of("component.scope"),
+                DatabaseType.MYSQL,
+                ConnectionIdentifier.of("default")
+        );
+        verify(registry, never()).getDatabase(
+                PluginId.of("plugin"),
+                DatabaseType.MYSQL,
+                ConnectionIdentifier.of("default")
+        );
+        verify(registry, never()).unregisterDatabase(
+                PluginId.of("plugin"),
+                OwnerScopeId.of("plugin"),
+                DatabaseType.MYSQL,
+                ConnectionIdentifier.of("default")
+        );
+        verify(registry, never()).unregisterDatabase(
+                PluginId.of("plugin"),
+                OwnerScopeId.of("component.scope"),
+                DatabaseType.MYSQL,
+                ConnectionIdentifier.of("default")
+        );
+        verify(registry, never()).unregisterAllDatabases(PluginId.of("plugin"), OwnerScopeId.of("plugin"));
+        verify(registry, never()).unregisterAllDatabases(PluginId.of("plugin"), OwnerScopeId.of("component.scope"));
+        verify(registry, never()).unregisterAllDatabasesForPlugin(PluginId.of("plugin"));
+        verify(registry, never()).getConfiguredDatabaseTypeStates();
+        verify(registry, never()).getOrmSchemaMode();
+        verify(registry, never()).reloadConfiguration();
     }
 }

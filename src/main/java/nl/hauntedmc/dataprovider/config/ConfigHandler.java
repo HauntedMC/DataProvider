@@ -1,7 +1,8 @@
 package nl.hauntedmc.dataprovider.config;
 
 import nl.hauntedmc.dataprovider.database.DatabaseType;
-import nl.hauntedmc.dataprovider.platform.common.logger.ILoggerAdapter;
+import nl.hauntedmc.dataprovider.internal.security.FilePermissionHardening;
+import nl.hauntedmc.dataprovider.logging.LoggerAdapter;
 import org.spongepowered.configurate.CommentedConfigurationNode;
 import org.spongepowered.configurate.loader.ConfigurationLoader;
 import org.spongepowered.configurate.serialize.SerializationException;
@@ -20,7 +21,7 @@ public class ConfigHandler {
     private static final String DEFAULT_ORM_SCHEMA_MODE = "validate";
     private static final Set<String> SUPPORTED_ORM_SCHEMA_MODES = Set.of("validate", "none", "update", "create");
 
-    private final ILoggerAdapter logger;
+    private final LoggerAdapter logger;
     private CommentedConfigurationNode config;
     private final Path configFile;
     private final ConfigurationLoader<CommentedConfigurationNode> loader;
@@ -28,7 +29,7 @@ public class ConfigHandler {
     /**
      * Creates a new ConfigHandler using a default data directory and config file.
      */
-    public ConfigHandler(Path dataDir, ILoggerAdapter logger) {
+    public ConfigHandler(Path dataDir, LoggerAdapter logger) {
         this.logger = Objects.requireNonNull(logger, "Logger cannot be null.");
         Objects.requireNonNull(dataDir, "Data directory cannot be null.");
         this.configFile = dataDir.resolve("config.yml");
@@ -47,7 +48,9 @@ public class ConfigHandler {
      */
     private void ensureConfigFileExists() {
         try {
-            Files.createDirectories(configFile.getParent());
+            Path parentDirectory = configFile.getParent();
+            Files.createDirectories(parentDirectory);
+            FilePermissionHardening.restrictDirectoryToOwner(parentDirectory, logger, "DataProvider config directory");
             if (!Files.exists(configFile)) {
                 try (InputStream in = getClass().getResourceAsStream("/config.yml")) {
                     if (in != null) {
@@ -59,6 +62,7 @@ public class ConfigHandler {
                     }
                 }
             }
+            FilePermissionHardening.restrictFileToOwner(configFile, logger, "DataProvider config.yml");
         } catch (IOException e) {
             throw new IllegalStateException("Error ensuring config file exists at " + configFile, e);
         }
@@ -118,6 +122,7 @@ public class ConfigHandler {
     private void saveConfig() {
         try {
             loader.save(config);
+            FilePermissionHardening.restrictFileToOwner(configFile, logger, "DataProvider config.yml");
         } catch (IOException e) {
             throw new IllegalStateException("Error saving config file at " + configFile, e);
         }

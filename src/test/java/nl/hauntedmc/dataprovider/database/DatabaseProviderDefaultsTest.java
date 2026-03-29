@@ -128,14 +128,6 @@ class DatabaseProviderDefaultsTest {
         }
 
         @Override
-        public void connect() {
-        }
-
-        @Override
-        public void disconnect() {
-        }
-
-        @Override
         public boolean isConnected() {
             return true;
         }
