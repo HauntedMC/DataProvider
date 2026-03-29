@@ -7,7 +7,7 @@
     <groupId>nl.hauntedmc.dataprovider</groupId>
     <artifactId>dataprovider</artifactId>
     <name>DataProvider</name>
-    <version>1.21.0</version>
+    <version>2.0.0</version>
     <packaging>jar</packaging>
     <description>Plugin-scoped data access layer for Velocity and Bukkit/Paper plugins.</description>
     <url>https://github.com/HauntedMC/DataProvider</url>
