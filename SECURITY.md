@@ -2,12 +2,9 @@
 
 ## Supported Versions
 
-Security fixes are generally provided for the latest stable release line.
+Security fixes are prioritized for the latest stable release line.
+Older versions may receive fixes on a best-effort basis.
 
-| Version | Supported |
-| --- | --- |
-| Latest stable release | Yes |
-| Older releases | Best effort / No guarantee |
 
 ## Reporting a Vulnerability
 
@@ -25,11 +22,13 @@ Include:
 - Impact assessment
 - Any proposed mitigation
 
-## Response Expectations
 
-- Initial triage acknowledgement: target within 72 hours
-- Severity assessment and fix planning: as soon as reproducible
-- Patch release timing: based on severity and exploitability
+## What to Expect
+
+- We acknowledge reports as quickly as practical.
+- We validate impact, prioritize by severity, and prepare a fix.
+- We coordinate disclosure after a fix or mitigation is available.
+
 
 ## Disclosure
 
