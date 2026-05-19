@@ -2,7 +2,7 @@ name: ${project.name}
 main: ${project.groupId}.platform.bukkit.Bukkit${project.name}
 version: ${project.version}
 author: HauntedMC
-api-version: 1.19
+api-version: 1.21
 commands:
   dataprovider:
     description: DataProvider diagnostics and runtime administration commands.

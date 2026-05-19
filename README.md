@@ -4,7 +4,7 @@
 [![CI Lint](https://github.com/HauntedMC/DataProvider/actions/workflows/ci-lint.yml/badge.svg?branch=main)](https://github.com/HauntedMC/DataProvider/actions/workflows/ci-lint.yml)
 [![Release](https://img.shields.io/github/v/release/HauntedMC/DataProvider)](https://github.com/HauntedMC/DataProvider/releases)
 [![License](https://img.shields.io/github/license/HauntedMC/dataprovider)](LICENSE)
-[![Java 21](https://img.shields.io/badge/Java-21-007396)](https://adoptium.net/)
+[![Java 25](https://img.shields.io/badge/Java-25-007396)](https://adoptium.net/)
 
 Build plugins and services, not database plumbing.
 
@@ -27,8 +27,8 @@ It gives you one clean API for MySQL, MongoDB, Redis, and Redis messaging so you
 
 ## Requirements
 
-- Java 21
-- Velocity `3.5.0-SNAPSHOT` and/or Paper API `1.21.11-R0.1-SNAPSHOT` (compile targets)
+- Java 25
+- Velocity `3.5.0-SNAPSHOT` and/or Paper API `26.1.2+` (compile targets)
 - MySQL, MongoDB, and/or Redis for the backends you enable
 
 ## Quick Start

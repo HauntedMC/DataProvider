@@ -4,7 +4,7 @@ Thanks for contributing.
 
 ## Prerequisites
 
-- Java 21
+- Java 25
 - Maven 3.9+
 - Local Velocity and/or Bukkit/Paper environment for manual validation
 - Optional local MySQL, MongoDB, and Redis instances for integration checks

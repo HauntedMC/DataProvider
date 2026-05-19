@@ -47,9 +47,9 @@
 
     <properties>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
-        <maven.compiler.release>21</maven.compiler.release>
+        <maven.compiler.release>25</maven.compiler.release>
 
-        <paper.version>1.21.11-R0.1-SNAPSHOT</paper.version>
+        <paper.version>[26.1.2.build,)</paper.version>
         <velocity.version>3.5.0-SNAPSHOT</velocity.version>
         <mysql.version>9.2.0</mysql.version>
         <hikari.version>5.1.0</hikari.version>
@@ -66,7 +66,7 @@
 
         <maven.compiler.plugin.version>3.13.0</maven.compiler.plugin.version>
         <maven.surefire.version>3.2.5</maven.surefire.version>
-        <jacoco.version>0.8.12</jacoco.version>
+        <jacoco.version>0.8.14</jacoco.version>
         <checkstyle.version>9.3</checkstyle.version>
         <maven.checkstyle.plugin.version>3.3.0</maven.checkstyle.plugin.version>
         <maven.shade.version>3.6.0</maven.shade.version>
@@ -114,7 +114,7 @@
                                     <version>[3.8.1,)</version>
                                 </requireMavenVersion>
                                 <requireJavaVersion>
-                                    <version>[21,)</version>
+                                    <version>[25,)</version>
                                 </requireJavaVersion>
                                 <requirePluginVersions/>
                             </rules>
