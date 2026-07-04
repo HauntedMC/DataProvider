@@ -129,6 +129,17 @@
                 <version>${maven.compiler.plugin.version}</version>
                 <configuration>
                     <release>${maven.compiler.release}</release>
+                    <proc>full</proc>
+                    <annotationProcessors>
+                        <annotationProcessor>com.velocitypowered.api.plugin.ap.PluginAnnotationProcessor</annotationProcessor>
+                    </annotationProcessors>
+                    <annotationProcessorPaths>
+                        <path>
+                            <groupId>com.velocitypowered</groupId>
+                            <artifactId>velocity-api</artifactId>
+                            <version>${velocity.version}</version>
+                        </path>
+                    </annotationProcessorPaths>
                 </configuration>
             </plugin>
 
