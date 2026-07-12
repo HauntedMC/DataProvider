@@ -29,4 +29,4 @@ jobs:
           cache: maven
 
       - name: Run Checkstyle
-        run: mvn -B -ntp -DskipTests checkstyle:check
+        run: mvn -U -B -ntp -DskipTests checkstyle:check

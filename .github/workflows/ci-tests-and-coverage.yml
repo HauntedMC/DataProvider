@@ -30,7 +30,7 @@ jobs:
           cache: maven
 
       - name: Run Maven Verify
-        run: mvn -B -ntp verify
+        run: mvn -U -B -ntp verify
 
       - name: Upload JaCoCo Report
         if: always()

@@ -28,7 +28,7 @@ It gives you one clean API for MySQL, MongoDB, Redis, and Redis messaging so you
 ## Requirements
 
 - Java 25
-- Velocity `3.5.0-SNAPSHOT` and/or Paper API `26.1.2+` (compile targets)
+- Velocity `4.0.0-SNAPSHOT` and/or Paper API `26.1.2+` (compile targets)
 - MySQL, MongoDB, and/or Redis for the backends you enable
 
 ## Quick Start

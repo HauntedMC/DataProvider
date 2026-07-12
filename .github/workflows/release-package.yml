@@ -29,7 +29,7 @@ jobs:
           settings-path: ${{ github.workspace }}
 
       - name: Verify build
-        run: mvn -B -ntp verify
+        run: mvn -U -B -ntp verify
 
       - name: Resolve artifact name
         run: echo "TARGET_NAME=$(mvn -q -DforceStdout help:evaluate -Dexpression=project.build.finalName)" >> "$GITHUB_ENV"
@@ -41,7 +41,7 @@ jobs:
           path: target/${{ env.TARGET_NAME }}.jar
 
       - name: Publish to GitHub Packages (Maven)
-        run: mvn -B -ntp -DskipTests deploy -s "$GITHUB_WORKSPACE/settings.xml"
+        run: mvn -U -B -ntp -DskipTests deploy -s "$GITHUB_WORKSPACE/settings.xml"
         env:
           GITHUB_TOKEN: ${{ github.token }}
 
