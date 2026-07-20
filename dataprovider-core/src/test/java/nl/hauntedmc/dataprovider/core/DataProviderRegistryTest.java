@@ -103,6 +103,32 @@ class DataProviderRegistryTest {
     }
 
     @Test
+    void scopedLookupRequiresAnActiveReferenceForThatScope() {
+        DatabaseFactory factory = mock(DatabaseFactory.class);
+        ConfigHandler configHandler = mock(ConfigHandler.class);
+        when(configHandler.isDatabaseTypeEnabled(DatabaseType.MYSQL)).thenReturn(true);
+        DataProviderRegistry registry = new DataProviderRegistry(factory, configHandler, new RecordingLoggerAdapter());
+        RecordingProvider provider = new RecordingProvider(true);
+        when(factory.createDatabaseProvider(DatabaseType.MYSQL, ConnectionIdentifier.of("default")))
+                .thenReturn(provider);
+
+        registry.registerDatabase("plugin", "feature-a", DatabaseType.MYSQL, "default");
+
+        assertSame(provider, registry.getDatabase(
+                PluginId.of("plugin"),
+                OwnerScopeId.of("feature-a"),
+                DatabaseType.MYSQL,
+                ConnectionIdentifier.of("default")
+        ));
+        assertNull(registry.getDatabase(
+                PluginId.of("plugin"),
+                OwnerScopeId.of("feature-b"),
+                DatabaseType.MYSQL,
+                ConnectionIdentifier.of("default")
+        ));
+    }
+
+    @Test
     void unregisterAllReleasesOnlyCallerScopeReferencesWithinPlugin() {
         DatabaseFactory factory = mock(DatabaseFactory.class);
         ConfigHandler configHandler = mock(ConfigHandler.class);

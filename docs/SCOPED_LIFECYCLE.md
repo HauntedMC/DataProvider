@@ -28,6 +28,18 @@ Optional<MessagingDataAccess> bus = chatScope.registerDataAccess(
 );
 ```
 
+Look up a provider that is owned by the same scope:
+
+```java
+Optional<MessagingDataAccess> bus = chatScope.getRegisteredDataAccess(
+        DatabaseType.REDIS_MESSAGING,
+        "hauntedmc",
+        MessagingDataAccess.class
+);
+```
+
+Scoped lookups do not expose a connection that is registered only by another owner scope.
+
 ## Release Only That Scope
 
 ```java
@@ -41,6 +53,14 @@ try (DataProviderScope tempScope = api.scope("component.temp")) {
     tempScope.registerDatabase(DatabaseType.MYSQL, "default");
 }
 ```
+
+Closing a DataProvider-provided scope is thread-safe and terminal. Its state transitions from
+`OPEN`, through `CLOSING`, to `CLOSED`; closing it more than once is safe. Registration, lookup,
+and unregistration operations are rejected after closure, so create a new scope if the component
+is started again.
+
+Scopes with the same owner name continue to share ownership for the current release. Closing one
+therefore releases all registrations held under that owner name.
 
 ## Full Plugin/Process Shutdown
 

@@ -221,6 +221,42 @@ class DataProviderRegistry {
         }
     }
 
+    DatabaseProvider getDatabase(
+            PluginId pluginId,
+            OwnerScopeId ownerScope,
+            DatabaseType databaseType,
+            ConnectionIdentifier connectionIdentifier
+    ) {
+        Objects.requireNonNull(pluginId, "Plugin id cannot be null.");
+        Objects.requireNonNull(ownerScope, "Owner scope cannot be null.");
+        Objects.requireNonNull(databaseType, "Database type cannot be null.");
+        Objects.requireNonNull(connectionIdentifier, "Connection identifier cannot be null.");
+        RegistrationKey key = new RegistrationKey(pluginId, databaseType, connectionIdentifier);
+        Lock readLock = lifecycleLock.readLock();
+        readLock.lock();
+        try {
+            ensureOpen();
+            ActiveDatabaseRegistration registration = activeDatabases.get(key);
+            if (registration == null || !registration.hasReference(ownerScope)) {
+                return null;
+            }
+
+            ManagedDatabaseProvider provider = registration.provider();
+            if (isProviderHealthy(provider, key)) {
+                return provider;
+            }
+
+            if (activeDatabases.remove(key, registration)) {
+                disconnectQuietly(provider, key, "stale connection during scoped lookup");
+                logger.warn("Removed stale " + databaseType.name() + " connection for " + pluginId.value()
+                        + " (" + connectionIdentifier.value() + ") while retrieving the scoped provider.");
+            }
+            return null;
+        } finally {
+            readLock.unlock();
+        }
+    }
+
     protected void unregisterDatabase(
             String pluginName,
             String ownerScope,
@@ -541,6 +577,10 @@ class DataProviderRegistry {
 
         private synchronized int referenceCount() {
             return Math.max(referenceCount, 0);
+        }
+
+        private synchronized boolean hasReference(OwnerScopeId ownerScope) {
+            return ownerReferenceCounts.getOrDefault(ownerScope, 0) > 0;
         }
 
         private synchronized void forceReleaseAll() {

@@ -130,6 +130,40 @@ class DataProviderHandlerTest {
     }
 
     @Test
+    void scopedLookupDelegatesUsingResolvedPluginAndOwnerScope() {
+        DataProviderRegistry registry = mock(DataProviderRegistry.class);
+        ClassLoader pluginLoader = new ClassLoader() {
+        };
+        CallerContextResolver resolver = () -> new CallerContext("feature-plugin", pluginLoader);
+        DataProviderHandler handler = new DataProviderHandler(
+                registry,
+                resolver,
+                new RecordingLoggerAdapter(),
+                getClass().getClassLoader()
+        );
+        DatabaseProvider provider = mock(DatabaseProvider.class);
+        when(registry.getDatabase(
+                PluginId.of("feature-plugin"),
+                OwnerScopeId.of("component.scope"),
+                DatabaseType.MYSQL,
+                ConnectionIdentifier.of("default")
+        )).thenReturn(provider);
+
+        assertSame(provider, handler.getRegisteredDatabaseForScope(
+                nl.hauntedmc.dataprovider.api.OwnerScope.of("component.scope"),
+                DatabaseType.MYSQL,
+                "default"
+        ));
+
+        verify(registry).getDatabase(
+                PluginId.of("feature-plugin"),
+                OwnerScopeId.of("component.scope"),
+                DatabaseType.MYSQL,
+                ConnectionIdentifier.of("default")
+        );
+    }
+
+    @Test
     void rejectsNullResolvedCallerContext() {
         DataProviderRegistry registry = mock(DataProviderRegistry.class);
         RecordingLoggerAdapter logger = new RecordingLoggerAdapter();

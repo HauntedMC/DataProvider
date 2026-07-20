@@ -230,6 +230,26 @@ public class DataProviderHandler {
     }
 
     /**
+     * Retrieves a registered database connection owned by an explicit scope.
+     */
+    public DatabaseProvider getRegisteredDatabaseForScope(
+            OwnerScope ownerScope,
+            DatabaseType databaseType,
+            String connectionIdentifier
+    ) {
+        requireOpen();
+        Objects.requireNonNull(ownerScope, "Owner scope cannot be null.");
+        Objects.requireNonNull(databaseType, "Database type cannot be null");
+        CallerContext caller = resolveCallerContext();
+        return registry.getDatabase(
+                PluginId.of(caller.pluginId()),
+                OwnerScopeId.from(ownerScope),
+                databaseType,
+                ConnectionIdentifier.of(connectionIdentifier)
+        );
+    }
+
+    /**
      * Returns a snapshot of active database connections.
      */
     public ConcurrentMap<DatabaseConnectionKey, DatabaseProvider> getActiveDatabases() {
