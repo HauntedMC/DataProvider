@@ -19,9 +19,10 @@ mvn -q -DskipTests compile
 
 ## Project Layout
 
-- `src/main/java`: implementation
-- `src/main/resources`: default plugin/database configuration
-- `src/test/java`: unit tests (mirrors runtime packages)
+- `dataprovider-api`: public contracts for consuming plugins
+- `dataprovider-core`: configuration, lifecycle, drivers, and ORM implementation
+- `dataprovider-platform-*`: shared and host-specific runtime adapters
+- Each module owns its own `src/main`, `src/test`, and resources
 - `docs/`: developer and operational documentation
 - `.github/`: CI workflows, issue templates, PR template
 

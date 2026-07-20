@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0">
+    <modelVersion>4.0.0</modelVersion>
+    <parent>
+        <groupId>nl.hauntedmc.dataprovider</groupId>
+        <artifactId>dataprovider-parent</artifactId>
+        <version>${revision}</version>
+    </parent>
+    <artifactId>dataprovider-platform-common</artifactId>
+    <name>DataProvider Platform Common</name>
+    <dependencies>
+        <dependency><groupId>${project.groupId}</groupId><artifactId>dataprovider-core</artifactId><version>${project.version}</version></dependency>
+        <dependency><groupId>net.kyori</groupId><artifactId>adventure-api</artifactId></dependency>
+        <dependency><groupId>net.kyori</groupId><artifactId>adventure-text-serializer-plain</artifactId><scope>test</scope></dependency>
+        <dependency><groupId>org.slf4j</groupId><artifactId>slf4j-api</artifactId><version>${slf4j.version}</version></dependency>
+        <dependency><groupId>org.junit.jupiter</groupId><artifactId>junit-jupiter</artifactId><version>${junit.version}</version><scope>test</scope></dependency>
+        <dependency><groupId>org.mockito</groupId><artifactId>mockito-core</artifactId><version>${mockito.version}</version><scope>test</scope></dependency>
+    </dependencies>
+</project>

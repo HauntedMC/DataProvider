@@ -20,13 +20,11 @@ mvn -B package
 
 ## Project Structure
 
-- `src/main/java/nl/hauntedmc/dataprovider/api`: public API contracts
-- `src/main/java/nl/hauntedmc/dataprovider/internal`: registry/factory/config internals
-- `src/main/java/nl/hauntedmc/dataprovider/database`: backend implementations
-- `src/main/java/nl/hauntedmc/dataprovider/logging`: backend-agnostic logging contracts + adapters
-- `src/main/java/nl/hauntedmc/dataprovider/platform/internal`: shared platform lifecycle + command behavior
-- `src/main/java/nl/hauntedmc/dataprovider/platform`: Bukkit/Velocity adapters
-- `src/test/java`: unit tests by package
+- `dataprovider-api`: public contracts and API-facing dependency types only; it must never depend on core, platforms, or storage drivers.
+- `dataprovider-core`: registry/factory/configuration, database drivers, and the Hibernate implementation behind `api.orm`.
+- `dataprovider-platform-common`: shared lifecycle, commands, and platform logger adapters.
+- `dataprovider-platform-paper` / `dataprovider-platform-velocity`: host adapters and shaded server artifacts.
+- Every module keeps tests in its own `src/test/java` tree.
 
 ## Coding Guidelines
 
@@ -34,7 +32,7 @@ mvn -B package
 - Keep connection registration in startup lifecycle paths, not request hot paths.
 - Handle external IO failures as non-fatal where possible and log actionable context.
 - Keep platform-specific integration (`platform.bukkit`, `platform.velocity`) thin and isolated.
-- Put cross-platform wrapper behavior in `platform.internal` before adding platform-local duplication.
+- Put cross-platform wrapper behavior in `platform.common` before adding platform-local duplication.
 - Avoid leaking plugin context across module boundaries.
 
 ## Manual Validation Checklist

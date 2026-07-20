@@ -21,8 +21,8 @@ Use `update_version.sh` to bump `major`, `minor`, or `patch`:
 
 The script updates:
 
-- `pom.xml` (via Maven `versions:set`; source of truth)
-- `src/main/java/nl/hauntedmc/dataprovider/platform/velocity/VelocityDataProvider.java`
+- `pom.xml` (`revision` via Maven `versions:set-property`; source of truth for every module)
+- `dataprovider-platform-velocity/src/main/java/nl/hauntedmc/dataprovider/platform/velocity/VelocityDataProvider.java`
 
 Manual step:
 
@@ -45,14 +45,14 @@ Trigger:
 
 What it does:
 
-1. Builds the jar.
-2. Uploads the distributable artifact.
-3. Deploys Maven package to GitHub Packages.
-4. Creates a GitHub Release with generated notes and attached jar.
+1. Verifies the full reactor and checks that the tag matches `revision`.
+2. Uploads the Paper and Velocity bundled jars.
+3. Deploys every Maven module to GitHub Packages.
+4. Creates a GitHub Release with generated notes and both platform jars.
 
 ## 4.  Artifacts
 
 - Repository: `https://maven.pkg.github.com/HauntedMC/DataProvider`
 - GroupId: `nl.hauntedmc.dataprovider`
-- ArtifactId: `dataprovider`
+- ArtifactIds: `dataprovider-api`, `dataprovider-core`, `dataprovider-platform-common`, `dataprovider-platform-paper`, and `dataprovider-platform-velocity`
 - Version: release version (without leading `v`)

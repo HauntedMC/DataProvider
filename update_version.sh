@@ -2,7 +2,9 @@
 set -euo pipefail
 
 readonly POM_FILE="pom.xml"
-readonly VELOCITY_FILE="src/main/java/nl/hauntedmc/dataprovider/platform/velocity/VelocityDataProvider.java"
+readonly API_POM_FILE="dataprovider-api/pom.xml"
+readonly VELOCITY_FILE="dataprovider-platform-velocity/src/main/java/nl/hauntedmc/dataprovider/platform/velocity/VelocityDataProvider.java"
+readonly VERSION_PROPERTY="revision"
 
 die() {
   echo "Error: $*" >&2
@@ -117,6 +119,7 @@ repo_root="$(git rev-parse --show-toplevel)"
 cd "$repo_root"
 
 require_file "$POM_FILE"
+require_file "$API_POM_FILE"
 require_file "$VELOCITY_FILE"
 require_clean_worktree
 
@@ -137,8 +140,8 @@ fi
 echo "Current version: ${current_version}"
 echo "Bumping to: ${new_version}"
 
-# Use Maven's versions plugin so pom.xml remains the single source of truth.
-mvn -B -ntp versions:set -DnewVersion="${new_version}" -DgenerateBackupPoms=false -DprocessAllModules=true
+# The root POM's revision property is the single source of truth for every module.
+mvn -B -ntp versions:set-property -Dproperty="${VERSION_PROPERTY}" -DnewVersion="${new_version}" -DgenerateBackupPoms=false
 
 resolved_after_bump="$(resolve_maven_version)"
 [[ "$resolved_after_bump" == "$new_version" ]] || {

@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0">
+    <modelVersion>4.0.0</modelVersion>
+    <parent>
+        <groupId>nl.hauntedmc.dataprovider</groupId>
+        <artifactId>dataprovider-parent</artifactId>
+        <version>${revision}</version>
+    </parent>
+    <artifactId>dataprovider-api</artifactId>
+    <name>DataProvider API</name>
+    <dependencies>
+        <dependency><groupId>com.google.code.gson</groupId><artifactId>gson</artifactId><version>${gson.version}</version></dependency>
+        <dependency><groupId>org.hibernate.orm</groupId><artifactId>hibernate-core</artifactId><version>${hibernate.version}</version></dependency>
+        <dependency><groupId>org.junit.jupiter</groupId><artifactId>junit-jupiter</artifactId><version>${junit.version}</version><scope>test</scope></dependency>
+    </dependencies>
+</project>

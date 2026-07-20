@@ -5,13 +5,14 @@
 `DataProvider` exposes one API (`DataProviderAPI`) over a shared registry.
 Plugins register by backend type + identifier and get typed access interfaces back.
 
-Main modules:
+Maven modules define the architecture boundary:
 
-- `api`: public registration/lookup surface
-- `internal`: registry, factory, config mapping, identity, and lifecycle logic
-- `database.*`: backend implementations and typed data-access contracts
-- `platform.internal`: shared platform runtime lifecycle and command behavior
-- `platform.bukkit` / `platform.velocity`: platform adapters (bootstrap, command wiring, caller context resolution)
+- `dataprovider-api`: public registration/lookup contracts, data-access interfaces, models, logging abstraction, and ORM contract/factory.
+- `dataprovider-core`: registry, configuration, caller identity, storage implementations, and ORM implementation.
+- `dataprovider-platform-common`: shared runtime lifecycle, command service, and host logger adapters.
+- `dataprovider-platform-paper` / `dataprovider-platform-velocity`: host-specific bootstrap, command wiring, and caller resolution.
+
+Public packages stay under `nl.hauntedmc.dataprovider.api` and `nl.hauntedmc.dataprovider.database`; implementation packages are explicitly rooted at `nl.hauntedmc.dataprovider.core` or `nl.hauntedmc.dataprovider.platform`.
 
 ## Registration Model
 
@@ -50,8 +51,9 @@ Main modules:
 
 ## ORM Integration
 
-`ORMContext` is an optional layer for relational providers.
-Schema mode is controlled through `config.yml` (`orm.schema_mode`).
+`ORMContext` is a public API contract for relational providers (`api.orm`). Create it through
+`DataProviderAPI.createOrmContext(...)`; the Core module supplies the Hibernate implementation.
+Schema mode is selected explicitly by the consuming plugin.
 
 ## Security Expectations
 

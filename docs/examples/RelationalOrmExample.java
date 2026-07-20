@@ -25,7 +25,7 @@ public final class RelationalOrmExample {
             return;
         }
 
-        ormContext = new ORMContext(
+        ormContext = api.createOrmContext(
                 "my-plugin",
                 relational.get().getDataSource(),
                 logger,

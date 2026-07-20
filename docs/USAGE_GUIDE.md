@@ -130,7 +130,7 @@ Optional advanced scoped ownership is documented in `docs/SCOPED_LIFECYCLE.md`.
 For relational providers:
 
 ```java
-ORMContext orm = new ORMContext(
+ORMContext orm = api.createOrmContext(
         "my-plugin",
         dataSource,
         loggerAdapter,
@@ -138,3 +138,7 @@ ORMContext orm = new ORMContext(
         PlayerEntity.class
 );
 ```
+
+`ORMContext` is part of the public API. Add only `dataprovider-api` as `compileOnly`, import
+`nl.hauntedmc.dataprovider.api.orm.ORMContext`, and create contexts with
+`DataProviderAPI.createOrmContext(...)`.

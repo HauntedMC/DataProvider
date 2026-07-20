@@ -1,0 +1,19 @@
+name: DataProvider
+main: nl.hauntedmc.dataprovider.platform.bukkit.BukkitDataProvider
+version: ${project.version}
+author: HauntedMC
+api-version: 1.21
+commands:
+  dataprovider:
+    description: DataProvider diagnostics and runtime administration commands.
+    usage: /dataprovider <help|status|config|reload>
+permissions:
+  dataprovider.command.status:
+    description: View active DataProvider connection diagnostics.
+    default: op
+  dataprovider.command.config:
+    description: Inspect DataProvider runtime configuration values.
+    default: op
+  dataprovider.command.reload:
+    description: Reload DataProvider configuration from disk.
+    default: op

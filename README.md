@@ -23,7 +23,7 @@ It gives you one clean API for MySQL, MongoDB, Redis, and Redis messaging so you
 
 - Following data backends are implemented: `MYSQL`, `MONGODB`, `REDIS`, `REDIS_MESSAGING`
 - Platform support: Velocity + Bukkit/Paper
-- Optional ORM (through hibernate) support for relational workflows (`ORMContext`)
+- Optional Hibernate ORM support for relational workflows (`nl.hauntedmc.dataprovider.api.orm.ORMContext`)
 
 ## Requirements
 
@@ -90,18 +90,19 @@ Permissions:
 
 ## Install DataProvider (Server)
 
-1. Build or download `DataProvider.jar`.
+1. Build or download the bundled platform jar for your server:
+   `dataprovider-platform-paper-*-bundled.jar` or `dataprovider-platform-velocity-*-bundled.jar`.
 2. Put it in your server `plugins/` directory.
 3. Start once to generate default configuration.
 4. Configure `plugins/DataProvider/config.yml` and `plugins/DataProvider/databases/*.yml`.
 
 ## Add It to Your Plugin Project
 
-Coordinates:
+Use the API artifact in plugins that consume DataProvider. Platform bundles provide it at runtime.
 
-- `groupId`: `nl.hauntedmc.dataprovider`
-- `artifactId`: `dataprovider`
-- `version`: current release
+- `dataprovider-api`: public integration contracts, including the ORM context contract and factory; use this for all consumers.
+- `dataprovider-core`: internal registry, configuration, storage-driver, and ORM implementation details.
+- `dataprovider-platform-paper` / `dataprovider-platform-velocity`: server plugin distributions.
 
 Repository:
 
@@ -119,8 +120,8 @@ Maven:
 ```xml
 <dependency>
   <groupId>nl.hauntedmc.dataprovider</groupId>
-  <artifactId>dataprovider</artifactId>
-  <version>2.0.0</version>
+  <artifactId>dataprovider-api</artifactId>
+  <version>3.0.0</version>
   <scope>provided</scope>
 </dependency>
 ```
@@ -128,7 +129,7 @@ Maven:
 Gradle (Groovy):
 
 ```groovy
-compileOnly "nl.hauntedmc.dataprovider:dataprovider:2.0.0"
+compileOnly "nl.hauntedmc.dataprovider:dataprovider-api:3.0.0"
 ```
 
 GitHub Packages authentication details are in the docs.
@@ -143,9 +144,17 @@ mvn -B -DskipTests checkstyle:check
 mvn -B package
 ```
 
-Build output:
+Build outputs:
 
-- `target/DataProvider.jar`
+- `dataprovider-platform-paper/target/dataprovider-platform-paper-*-bundled.jar`
+- `dataprovider-platform-velocity/target/dataprovider-platform-velocity-*-bundled.jar`
+
+## Repository Layout
+
+- `dataprovider-api`: stable, platform-neutral contracts, data-access types, and ORM integration surface.
+- `dataprovider-core`: registry, configuration, storage drivers, and ORM implementation.
+- `dataprovider-platform-common`: shared lifecycle, command, and logging adapters.
+- `dataprovider-platform-paper` / `dataprovider-platform-velocity`: thin platform bootstraps and distributable bundles.
 
 ## Documentation
 
