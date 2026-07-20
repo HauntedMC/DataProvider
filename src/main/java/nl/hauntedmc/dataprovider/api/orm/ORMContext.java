@@ -78,6 +78,14 @@ public class ORMContext {
         initialize(entityClasses);
     }
 
+    ORMContext(String plugin, LoggerAdapter logger, SessionFactory sessionFactory) {
+        this.plugin = Objects.requireNonNull(plugin, "Plugin cannot be null");
+        this.dataSource = null;
+        this.logger = Objects.requireNonNull(logger, "Logger cannot be null");
+        this.schemaMode = DEFAULT_SCHEMA_MODE;
+        this.sessionFactory = Objects.requireNonNull(sessionFactory, "SessionFactory cannot be null");
+    }
+
     /**
      * Initializes Hibernate using the provided DataSource and entity classes.
      *
@@ -171,18 +179,33 @@ public class ORMContext {
      * @throws RuntimeException if the transaction fails.
      */
     public <T> T runInTransaction(TransactionCallback<T> callback) {
-        Transaction tx = null;
         try (Session session = openSession()) {
-            tx = session.beginTransaction();
-            T result = callback.execute(session);
-            tx.commit();
-            return result;
-        } catch (Exception e) {
-            if (tx != null && tx.isActive()) {
-                tx.rollback();
+            Transaction tx = session.beginTransaction();
+            try {
+                T result = callback.execute(session);
+                tx.commit();
+                return result;
+            } catch (Exception e) {
+                rollback(tx, e);
+                throw e;
             }
+        } catch (Exception e) {
             logger.error("Transaction failed in plugin: " + plugin + " - " + e.getMessage(), e);
             throw new RuntimeException("Transaction failed", e);
+        }
+    }
+
+    private void rollback(Transaction tx, Exception transactionException) {
+        try {
+            if (tx.isActive()) {
+                tx.rollback();
+            }
+        } catch (Exception rollbackException) {
+            transactionException.addSuppressed(rollbackException);
+            logger.error(
+                    "Transaction rollback failed in plugin: " + plugin + " - " + rollbackException.getMessage(),
+                    rollbackException
+            );
         }
     }
 
