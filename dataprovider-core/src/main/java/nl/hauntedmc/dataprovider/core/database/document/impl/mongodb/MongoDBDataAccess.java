@@ -14,6 +14,7 @@ import org.bson.Document;
 import org.bson.conversions.Bson;
 
 import java.util.ArrayList;
+import java.util.Date;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -21,6 +22,12 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.TimeUnit;
 import java.util.Objects;
+import java.util.UUID;
+import java.util.regex.Pattern;
+
+import org.bson.types.Binary;
+import org.bson.types.Decimal128;
+import org.bson.types.ObjectId;
 
 /**
  * MongoDBDataAccess converts our custom DSL objects into MongoDB Bson objects
@@ -50,31 +57,31 @@ public class MongoDBDataAccess implements DocumentDataAccess {
     }
 
     private Bson toBsonQuery(DocumentQuery query) {
-        return new Document(query.toMap());
+        return toMongoDocument(query.toMap());
     }
 
     private Bson toBsonUpdate(DocumentUpdate update) {
-        return new Document(update.toMap());
+        return toMongoDocument(update.toMap());
     }
 
     private UpdateOptions toMongoUpdateOptions(DocumentUpdateOptions opts) {
         return new UpdateOptions().upsert(opts.isUpsert());
     }
 
-    private Document toMongoDocument(Map<String, Object> doc) {
-        return new Document(doc);
+    private Document toMongoDocument(Map<?, ?> document) {
+        return copyDocument(document, "document");
     }
 
     private Map<String, Object> documentToMap(Document doc) {
-        return new LinkedHashMap<>(doc);
+        return new LinkedHashMap<>(copyDocument(doc, "document"));
     }
 
     @Override
     public CompletableFuture<Void> insertOne(String collection, Map<String, Object> document) {
         Objects.requireNonNull(document, "Document cannot be null.");
-        Map<String, Object> safeDocument = Map.copyOf(document);
+        Document safeDocument = toMongoDocument(document);
         return AsyncTaskSupport.runAsync(executor, "mongodb.insertOne", () ->
-                getCollection(collection).insertOne(toMongoDocument(safeDocument)));
+                getCollection(collection).insertOne(safeDocument));
     }
 
     @Override
@@ -137,12 +144,11 @@ public class MongoDBDataAccess implements DocumentDataAccess {
     @Override
     public CompletableFuture<Void> createIndex(String collection, Map<String, Object> indexSpec, Map<String, Object> indexOptions) {
         Objects.requireNonNull(indexSpec, "Index specification cannot be null.");
-        Map<String, Object> safeSpec = Map.copyOf(indexSpec);
-        Map<String, Object> safeOptions = indexOptions == null ? null : Map.copyOf(indexOptions);
+        Document safeSpec = toMongoDocument(indexSpec);
+        Document safeOptions = indexOptions == null ? null : toMongoDocument(indexOptions);
         return AsyncTaskSupport.runAsync(executor, "mongodb.createIndex", () -> {
-            Document idxSpecDoc = new Document(safeSpec);
             IndexOptions options = mapToIndexOptions(safeOptions);
-            getCollection(collection).createIndex(idxSpecDoc, options);
+            getCollection(collection).createIndex(safeSpec, options);
         });
     }
 
@@ -185,11 +191,7 @@ public class MongoDBDataAccess implements DocumentDataAccess {
             if (indexOptionsMap.containsKey("partialFilterExpression")) {
                 Object partialFilterExpression = indexOptionsMap.get("partialFilterExpression");
                 if (partialFilterExpression instanceof Map<?, ?> mapValue) {
-                    Document partialDocument = new Document();
-                    for (Map.Entry<?, ?> entry : mapValue.entrySet()) {
-                        partialDocument.put(String.valueOf(entry.getKey()), entry.getValue());
-                    }
-                    indexOptions.partialFilterExpression(partialDocument);
+                    indexOptions.partialFilterExpression(toMongoDocument(mapValue));
                 } else if (partialFilterExpression instanceof Document documentValue) {
                     indexOptions.partialFilterExpression(documentValue);
                 } else {
@@ -200,6 +202,50 @@ public class MongoDBDataAccess implements DocumentDataAccess {
             }
         }
         return indexOptions;
+    }
+
+    private static Document copyDocument(Map<?, ?> source, String path) {
+        Document copy = new Document();
+        for (Map.Entry<?, ?> entry : source.entrySet()) {
+            if (!(entry.getKey() instanceof String fieldName)) {
+                throw new IllegalArgumentException("BSON document field names must be strings at " + path + ".");
+            }
+            if (fieldName.indexOf('\0') >= 0) {
+                throw new IllegalArgumentException("BSON document field names cannot contain null characters at " + path + ".");
+            }
+            copy.put(fieldName, copyBsonValue(entry.getValue(), path + "." + fieldName));
+        }
+        return copy;
+    }
+
+    private static Object copyBsonValue(Object value, String path) {
+        if (value == null || value instanceof String || value instanceof Boolean || value instanceof Integer
+                || value instanceof Long || value instanceof Double || value instanceof Decimal128
+                || value instanceof ObjectId || value instanceof UUID || value instanceof Pattern) {
+            return value;
+        }
+        if (value instanceof Date date) {
+            return new Date(date.getTime());
+        }
+        if (value instanceof byte[] bytes) {
+            return bytes.clone();
+        }
+        if (value instanceof Binary binary) {
+            return new Binary(binary.getType(), binary.getData());
+        }
+        if (value instanceof Map<?, ?> map) {
+            return copyDocument(map, path);
+        }
+        if (value instanceof List<?> list) {
+            List<Object> copy = new ArrayList<>(list.size());
+            for (int index = 0; index < list.size(); index++) {
+                copy.add(copyBsonValue(list.get(index), path + "[" + index + "]"));
+            }
+            return copy;
+        }
+        throw new IllegalArgumentException(
+                "Unsupported BSON value at " + path + ": " + value.getClass().getName() + "."
+        );
     }
 
     private static String requireCollection(String collection) {
