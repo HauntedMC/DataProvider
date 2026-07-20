@@ -3,7 +3,6 @@ package nl.hauntedmc.dataprovider.platform.bukkit;
 import nl.hauntedmc.dataprovider.core.DataProvider;
 import nl.hauntedmc.dataprovider.api.DataProviderAPI;
 import nl.hauntedmc.dataprovider.core.api.DefaultDataProviderApi;
-import nl.hauntedmc.dataprovider.core.api.DefaultDataProviderApi;
 import nl.hauntedmc.dataprovider.core.DataProviderHandler;
 import nl.hauntedmc.dataprovider.platform.bukkit.command.DataProviderCommand;
 import nl.hauntedmc.dataprovider.platform.bukkit.identity.BukkitCallerContextResolver;
@@ -33,14 +32,14 @@ public final class BukkitDataProvider extends JavaPlugin {
                 loggerAdapter
         );
 
-        getLogger().info("Enabled (v" + getDescription().getVersion() + ").");
+        getLogger().info("DataProvider enabled (v" + getDescription().getVersion() + ").");
     }
 
     @Override
     public void onDisable() {
         getServer().getServicesManager().unregisterAll(this);
         runtime.stop(new JulLoggerAdapter(getLogger()));
-        getLogger().info("Disabled.");
+        getLogger().info("DataProvider disabled.");
     }
 
     private void initializeBindings(DataProvider provider) {

@@ -116,7 +116,7 @@ public class MongoDBDatabase implements DocumentDatabaseProvider, ManagedDatabas
                 logger.warn("[MongoDBDatabase] MongoDB connection is running without TLS.");
             } else if (trustAllCertificates || allowInvalidHostnames) {
                 throw new IllegalStateException(
-                        "MongoDB tls.allow_invalid_hostnames must be false and tls.trust_all_certificates must be false in DataProvider 2.0."
+                        "MongoDB tls.allow_invalid_hostnames must be false and tls.trust_all_certificates must be false in DataProvider 3.0."
                 );
             }
             if (user.isBlank() != password.isBlank()) {

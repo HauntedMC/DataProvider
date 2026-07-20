@@ -120,7 +120,7 @@ databases:
 
 - Identifier mismatch between code and config section names
 - Enabling TLS flags without server-side TLS support
-- Setting insecure TLS flags (`trust_all_certificates`, `allow_invalid_hostnames`, or `verify_hostname=false`) which now fail startup in 2.0
+- Setting insecure TLS flags (`trust_all_certificates`, `allow_invalid_hostnames`, or `verify_hostname=false`) which now fail startup in 3.0
 - Using `queue_capacity` at the root of `redis.yml` instead of `pool.queue_capacity`
 
 ## Operational Notes

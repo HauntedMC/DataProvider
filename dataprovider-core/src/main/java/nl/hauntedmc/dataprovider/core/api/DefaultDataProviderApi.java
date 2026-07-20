@@ -21,7 +21,6 @@ import nl.hauntedmc.dataprovider.core.DataProviderHandler;
 
 import javax.sql.DataSource;
 import java.util.Objects;
-import java.util.Optional;
 
 /**
  * DataProviderAPI is the public facade that exposes safe, read-only database handles
@@ -77,49 +76,10 @@ public final class DefaultDataProviderApi implements DataProviderAPI {
     }
 
     /**
-     * Creates an optional scoped lifecycle facade.
-     * Default integrations usually do not need this.
-     */
-    public DataProviderScope scope(String ownerScope) {
-        return scope(OwnerScope.of(ownerScope));
-    }
-
-    /**
      * Creates an optional scoped lifecycle facade using a typed owner scope.
      */
     public DataProviderScope scope(OwnerScope ownerScope) {
         return new DefaultDataProviderScope(handler, ownerScope);
-    }
-
-    /**
-     * Registers a database connection and returns the result as Optional.
-     */
-    public Optional<DatabaseProvider> registerDatabaseOptional(DatabaseType databaseType, String connectionIdentifier) {
-        return Optional.ofNullable(registerDatabase(databaseType, connectionIdentifier));
-    }
-
-    /**
-     * Registers a database connection and casts it to an expected provider subtype.
-     */
-    public <T extends DatabaseProvider> Optional<T> registerDatabaseAs(
-            DatabaseType databaseType,
-            String connectionIdentifier,
-            Class<T> expectedProviderType
-    ) {
-        return castProvider(registerDatabase(databaseType, connectionIdentifier), expectedProviderType);
-    }
-
-    /**
-     * Registers a database connection and returns a typed data access view.
-     */
-    public <T extends DataAccess> Optional<T> registerDataAccess(
-            DatabaseType databaseType,
-            String connectionIdentifier,
-            Class<T> expectedDataAccessType
-    ) {
-        Objects.requireNonNull(expectedDataAccessType, "Expected data access type cannot be null.");
-        return registerDatabaseOptional(databaseType, connectionIdentifier)
-                .flatMap(provider -> provider.getDataAccessOptional(expectedDataAccessType));
     }
 
     /**
@@ -157,48 +117,6 @@ public final class DefaultDataProviderApi implements DataProviderAPI {
      */
     public DatabaseProvider getRegisteredDatabase(DatabaseType databaseType, String connectionIdentifier) {
         return wrapProvider(handler.getRegisteredDatabase(databaseType, connectionIdentifier));
-    }
-
-    /**
-     * Retrieves a registered database connection as Optional.
-     */
-    public Optional<DatabaseProvider> getRegisteredDatabaseOptional(DatabaseType databaseType, String connectionIdentifier) {
-        return Optional.ofNullable(getRegisteredDatabase(databaseType, connectionIdentifier));
-    }
-
-    /**
-     * Retrieves a registered database connection cast to an expected provider subtype.
-     */
-    public <T extends DatabaseProvider> Optional<T> getRegisteredDatabaseAs(
-            DatabaseType databaseType,
-            String connectionIdentifier,
-            Class<T> expectedProviderType
-    ) {
-        return castProvider(getRegisteredDatabase(databaseType, connectionIdentifier), expectedProviderType);
-    }
-
-    /**
-     * Retrieves a typed data access view from a registered database connection.
-     */
-    public <T extends DataAccess> Optional<T> getRegisteredDataAccess(
-            DatabaseType databaseType,
-            String connectionIdentifier,
-            Class<T> expectedDataAccessType
-    ) {
-        Objects.requireNonNull(expectedDataAccessType, "Expected data access type cannot be null.");
-        return getRegisteredDatabaseOptional(databaseType, connectionIdentifier)
-                .flatMap(provider -> provider.getDataAccessOptional(expectedDataAccessType));
-    }
-
-    static <T extends DatabaseProvider> Optional<T> castProvider(
-            DatabaseProvider provider,
-            Class<T> expectedProviderType
-    ) {
-        Objects.requireNonNull(expectedProviderType, "Expected provider type cannot be null.");
-        if (provider == null || !expectedProviderType.isInstance(provider)) {
-            return Optional.empty();
-        }
-        return Optional.of(expectedProviderType.cast(provider));
     }
 
     static DatabaseProvider wrapProvider(DatabaseProvider provider) {

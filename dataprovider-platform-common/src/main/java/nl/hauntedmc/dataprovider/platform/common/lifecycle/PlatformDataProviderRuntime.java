@@ -3,7 +3,6 @@ package nl.hauntedmc.dataprovider.platform.common.lifecycle;
 import nl.hauntedmc.dataprovider.core.DataProvider;
 import nl.hauntedmc.dataprovider.api.DataProviderAPI;
 import nl.hauntedmc.dataprovider.core.api.DefaultDataProviderApi;
-import nl.hauntedmc.dataprovider.core.api.DefaultDataProviderApi;
 import nl.hauntedmc.dataprovider.logging.LoggerAdapter;
 
 import java.util.Objects;

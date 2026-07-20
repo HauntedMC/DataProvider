@@ -121,7 +121,7 @@ Maven:
 <dependency>
   <groupId>nl.hauntedmc.dataprovider</groupId>
   <artifactId>dataprovider-api</artifactId>
-  <version>3.0.0</version>
+  <version>3.0.1</version>
   <scope>provided</scope>
 </dependency>
 ```
@@ -129,7 +129,7 @@ Maven:
 Gradle (Groovy):
 
 ```groovy
-compileOnly "nl.hauntedmc.dataprovider:dataprovider-api:3.0.0"
+compileOnly "nl.hauntedmc.dataprovider:dataprovider-api:3.0.1"
 ```
 
 GitHub Packages authentication details are in the docs.

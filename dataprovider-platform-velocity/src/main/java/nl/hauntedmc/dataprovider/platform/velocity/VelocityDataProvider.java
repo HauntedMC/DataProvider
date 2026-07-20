@@ -64,14 +64,14 @@ public final class VelocityDataProvider implements DataProviderApiSupplier {
         );
 
         String pluginVersion = resolvePluginVersion(proxyServer, this);
-        logger.info("DataProvider plugin enabled on Velocity (v{}).", pluginVersion);
+        logger.info("DataProvider enabled (v{}).", pluginVersion);
     }
 
     @Subscribe(priority = SHUTDOWN_EVENT_PRIORITY)
     public void onProxyShutdown(ProxyShutdownEvent event) {
         dataProviderApi = null;
         runtime.stop(new Slf4jLoggerAdapter(logger));
-        logger.info("DataProvider plugin disabled on Velocity.");
+        logger.info("DataProvider disabled.");
     }
 
     @Override

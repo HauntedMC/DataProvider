@@ -4,13 +4,11 @@ import nl.hauntedmc.dataprovider.api.DataProviderAPI;
 import nl.hauntedmc.dataprovider.api.DataProviderScope;
 import nl.hauntedmc.dataprovider.api.OwnerScope;
 
-import nl.hauntedmc.dataprovider.database.DataAccess;
 import nl.hauntedmc.dataprovider.database.DatabaseProvider;
 import nl.hauntedmc.dataprovider.database.DatabaseType;
 import nl.hauntedmc.dataprovider.core.DataProviderHandler;
 
 import java.util.Objects;
-import java.util.Optional;
 
 /**
  * Optional scoped lifecycle helper for advanced integrations that need isolated ownership domains
@@ -46,37 +44,6 @@ public final class DefaultDataProviderScope implements DataProviderScope {
     }
 
     /**
-     * Registers a database connection under this scope and returns Optional.
-     */
-    public Optional<DatabaseProvider> registerDatabaseOptional(DatabaseType databaseType, String connectionIdentifier) {
-        return Optional.ofNullable(registerDatabase(databaseType, connectionIdentifier));
-    }
-
-    /**
-     * Registers and casts the scoped provider to the expected type.
-     */
-    public <T extends DatabaseProvider> Optional<T> registerDatabaseAs(
-            DatabaseType databaseType,
-            String connectionIdentifier,
-            Class<T> expectedProviderType
-    ) {
-        return DefaultDataProviderApi.castProvider(registerDatabase(databaseType, connectionIdentifier), expectedProviderType);
-    }
-
-    /**
-     * Registers and resolves typed data access from the scoped provider.
-     */
-    public <T extends DataAccess> Optional<T> registerDataAccess(
-            DatabaseType databaseType,
-            String connectionIdentifier,
-            Class<T> expectedDataAccessType
-    ) {
-        Objects.requireNonNull(expectedDataAccessType, "Expected data access type cannot be null.");
-        return registerDatabaseOptional(databaseType, connectionIdentifier)
-                .flatMap(provider -> provider.getDataAccessOptional(expectedDataAccessType));
-    }
-
-    /**
      * Releases one scoped registration reference.
      */
     public void unregisterDatabase(DatabaseType databaseType, String connectionIdentifier) {
@@ -90,8 +57,4 @@ public final class DefaultDataProviderScope implements DataProviderScope {
         handler.unregisterAllDatabasesForScope(ownerScope);
     }
 
-    @Override
-    public void close() {
-        unregisterAllDatabases();
-    }
 }

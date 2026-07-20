@@ -106,7 +106,7 @@ public final class RedisMessagingDatabase implements MessagingDatabaseProvider, 
             logger.warn("[RedisMessagingDatabase] Redis messaging is running without TLS.");
         } else if (!verifyHostname || trustAllCertificates) {
             throw new IllegalStateException(
-                    "Redis messaging tls.verify_hostname must be true and tls.trust_all_certificates must be false in DataProvider 2.0."
+                    "Redis messaging tls.verify_hostname must be true and tls.trust_all_certificates must be false in DataProvider 3.0."
             );
         }
         if (!user.isBlank() && pass.isBlank()) {
