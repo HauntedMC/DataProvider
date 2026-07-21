@@ -4,40 +4,92 @@ DataProvider writes defaults on first startup inside the plugin data folder.
 
 ## File Layout
 
-- `config.yml`: global backend toggles + ORM settings
+- `config.yml`: global backend toggles, ORM settings and shared execution limits
 - `databases/mysql.yml`
 - `databases/mongodb.yml`
 - `databases/redis.yml`
 - `databases/redis_messaging.yml`
 
-Each backend file supports named sections (`default`, `analytics`, etc.).
-Use the same identifier in code when calling `registerDatabase*`.
+Each backend file supports named sections (`default`, `analytics`, etc.). Use the same identifier in code when calling `registerDatabase*`.
 
 ## Reloading Configuration
 
-`/dataprovider reload` loads and validates `config.yml` and every file in `databases/` as one snapshot.
-If any file is missing, malformed, or invalid, the reload is rejected and the active configuration is unchanged.
-The command reports global and database-file changes. Existing connections retain their current settings;
-explicitly reconnect them to use the new database configuration.
+`/dataprovider reload` loads and validates `config.yml` and every file in `databases/` as one snapshot. If any file is missing, malformed or invalid, the reload is rejected and the active configuration remains unchanged.
+
+Existing database connections retain their current client and pool settings until explicitly reconnected. Shared execution lanes are runtime-owned and are created once during DataProvider startup; changes below `execution` require a DataProvider/server restart.
 
 ## Global Keys (`config.yml`)
 
-- `orm.schema_mode`: Hibernate schema mode (for example `validate`, `update`)
-- `databases.mysql.enabled`
-- `databases.mongodb.enabled`
-- `databases.redis.enabled`
-- `databases.redis_messaging.enabled`
+- `orm.schema_mode`: Hibernate schema mode, such as `validate` or `update`
+- `databases.<type>.enabled`: enable or disable each backend type
+- `execution.scope_shutdown_grace_ms`: time allowed for active work in one closing connection scope
+- `execution.runtime_shutdown_grace_ms`: total graceful shutdown window for shared execution lanes
+- `execution.messaging_subscriptions.global`
+- `execution.messaging_subscriptions.per_plugin`
+- `execution.messaging_subscriptions.per_connection`
+
+Each execution lane (`relational`, `document`, `redis`, `messaging`) supports:
+
+- `workers`: shared worker count for the lane
+- `queue_capacity`: total queued-task limit for the lane
+- `per_plugin_active`: maximum simultaneously active tasks for one plugin
+- `per_plugin_queue`: maximum queued tasks for one plugin
+- `per_connection_active`: maximum simultaneously active tasks for one connection
+- `per_connection_queue`: maximum queued tasks for one connection
+
+Scheduling is fair between plugins first and between each plugin's connections second. A plugin opening many connections therefore does not gain extra dispatch turns.
 
 Example:
 
 ```yaml
 orm:
   schema_mode: validate
+
+execution:
+  scope_shutdown_grace_ms: 2000
+  runtime_shutdown_grace_ms: 5000
+  messaging_subscriptions:
+    global: 256
+    per_plugin: 64
+    per_connection: 32
+  lanes:
+    relational:
+      workers: 8
+      queue_capacity: 2048
+      per_plugin_active: 4
+      per_plugin_queue: 512
+      per_connection_active: 2
+      per_connection_queue: 128
+
+    document:
+      workers: 8
+      queue_capacity: 2048
+      per_plugin_active: 4
+      per_plugin_queue: 512
+      per_connection_active: 2
+      per_connection_queue: 128
+
+    redis:
+      workers: 8
+      queue_capacity: 2048
+      per_plugin_active: 4
+      per_plugin_queue: 512
+      per_connection_active: 2
+      per_connection_queue: 128
+
+    messaging:
+      workers: 8
+      queue_capacity: 4096
+      per_plugin_active: 4
+      per_plugin_queue: 1024
+      per_connection_active: 2
+      per_connection_queue: 256
+
 databases:
   mysql:
     enabled: true
   mongodb:
-    enabled: false
+    enabled: true
   redis:
     enabled: true
   redis_messaging:
@@ -52,7 +104,6 @@ databases:
 - `allow_public_key_retrieval`
 - `pool_size`
 - `min_idle`
-- `queue_capacity`
 - `connection_timeout_ms`
 - `validation_timeout_ms`
 - `idle_timeout_ms`
@@ -66,74 +117,73 @@ databases:
 - `prepared_statement_cache_size`
 - `prepared_statement_cache_sql_limit`
 
+`pool_size` controls physical Hikari connections only. Asynchronous worker and queue capacity comes from the relational execution lane.
+
 ## MongoDB Keys (`databases/mongodb.yml`)
 
 - `host`, `port`, `database`, `username`, `password`
-- `authSource` (note exact casing)
+- `authSource` (exact casing)
 - `require_secure_transport`
 - `tls.enabled`
-- `tls.allow_invalid_hostnames` (must remain `false`; startup fails otherwise)
-- `tls.trust_all_certificates` (must remain `false`; startup fails otherwise)
-- `tls.trust_store_path` (optional JKS/PKCS12 path for private CA/self-managed trust)
-- `tls.trust_store_password` (optional trust store password)
-- `tls.trust_store_type` (optional, defaults to JVM `KeyStore.getDefaultType()`)
-- `pool_size`
-- `queue_capacity`
+- `tls.allow_invalid_hostnames` (must remain `false`)
+- `tls.trust_all_certificates` (must remain `false`)
+- `tls.trust_store_path`
+- `tls.trust_store_password`
+- `tls.trust_store_type`
 - `max_connection_pool_size`
 - `min_connection_pool_size`
 - `connect_timeout_ms`
 - `socket_timeout_ms`
 - `server_selection_timeout_ms`
 
+MongoDB client-pool settings remain connection-specific. Worker and queue capacity comes from the document execution lane.
+
 ## Redis Keys (`databases/redis.yml`)
 
 - `host`, `port`, `user`, `password`, `database`
 - `require_secure_transport`
 - `tls.enabled`
-- `tls.verify_hostname` (must remain `true`; startup fails otherwise)
-- `tls.trust_all_certificates` (must remain `false`; startup fails otherwise)
-- `tls.trust_store_path` (optional JKS/PKCS12 path for private CA/self-managed trust)
-- `tls.trust_store_password` (optional trust store password)
-- `tls.trust_store_type` (optional, defaults to JVM `KeyStore.getDefaultType()`)
+- `tls.verify_hostname` (must remain `true`)
+- `tls.trust_all_certificates` (must remain `false`)
+- `tls.trust_store_path`
+- `tls.trust_store_password`
+- `tls.trust_store_type`
 - `pool.connections`
-- `pool.threads`
 - `pool.min_idle`
 - `pool.max_idle`
 - `pool.test_on_borrow`
 - `pool.test_while_idle`
-- `pool.queue_capacity`
 - `connection_timeout_ms`
 - `socket_timeout_ms`
 - `scan_count`
 - `security.max_scan_results`
 
+Jedis connection-pool settings remain connection-specific. Worker and queue capacity comes from the Redis execution lane.
+
 ## Redis Messaging Keys (`databases/redis_messaging.yml`)
 
-- Same network + TLS fields as Redis key-value
-- `pool.connections`
-- `pool.threads`
+- Same network and TLS fields as Redis key-value
+- `pool.connections`: command capacity reserved for publish and control operations
 - `pool.min_idle`
 - `pool.max_idle`
 - `pool.test_on_borrow`
 - `pool.test_while_idle`
-- `pool.queue_capacity`
-- `pool.max_subscriptions`
+- `pool.max_subscriptions`: local provider subscription cap
+- `pool.handler_batch_size`: messages processed before a hot handler yields shared capacity
 - `connection_timeout_ms`
 - `socket_timeout_ms`
 - `security.max_payload_chars`
-- `security.max_queued_messages_per_handler` (per-subscriber queue cap to isolate slow handlers)
+- `security.max_queued_messages_per_handler`
 
-## Common Mistakes
-
-- Identifier mismatch between code and config section names
-- Enabling TLS flags without server-side TLS support
-- Setting insecure TLS flags (`trust_all_certificates`, `allow_invalid_hostnames`, or `verify_hostname=false`) which now fail startup in 3.0
-- Using `queue_capacity` at the root of `redis.yml` instead of `pool.queue_capacity`
+Each active Redis subscription owns a long-lived physical connection. DataProvider adds subscription capacity on top of `pool.connections`, so subscriptions cannot consume command connections reserved for publishing and shutdown.
 
 ## Operational Notes
 
-- Use `default` for single-backend setups.
-- Use explicit identifiers (for example `rw`, `ro`, `analytics`) for multi-backend setups.
-- Validate trust store configuration in staging before production rollout.
+- Capacity rejection completes the returned future exceptionally; it does not silently drop database work.
+- Rejections retain a stable reason such as lane queue full, plugin queue limit, connection queue limit, closed scope or runtime shutdown.
+- Closing a connection rejects queued work, waits for active work up to the configured grace period, then completes remaining futures exceptionally and interrupts the worker.
+- Shared workers clear interrupt state before serving another plugin.
+- Messaging handler queues drop excess messages rather than allowing unbounded growth; drop counts are included in execution metrics.
+- Use `default` for single-backend setups and explicit identifiers such as `rw`, `ro` or `analytics` for multi-backend setups.
 - Never commit production credentials.
-- During plugin shutdown across many classes/scopes, pair cleanup with `unregisterAllDatabasesForPlugin()`.
+- During full plugin shutdown, pair cleanup with `unregisterAllDatabasesForPlugin()`.
