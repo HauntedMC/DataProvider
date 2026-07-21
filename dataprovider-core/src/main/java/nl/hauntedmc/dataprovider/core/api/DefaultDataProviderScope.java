@@ -2,23 +2,17 @@ package nl.hauntedmc.dataprovider.core.api;
 
 import nl.hauntedmc.dataprovider.api.DataProviderScope;
 import nl.hauntedmc.dataprovider.api.OwnerScope;
-
+import nl.hauntedmc.dataprovider.core.DataProviderHandler;
 import nl.hauntedmc.dataprovider.database.DatabaseProvider;
 import nl.hauntedmc.dataprovider.database.DatabaseType;
-import nl.hauntedmc.dataprovider.core.DataProviderHandler;
+import nl.hauntedmc.dataprovider.exception.DataProviderFailureContext;
+import nl.hauntedmc.dataprovider.exception.ExecutionOutcome;
+import nl.hauntedmc.dataprovider.exception.ProviderClosedException;
+import nl.hauntedmc.dataprovider.exception.RetryAdvice;
 
 import java.util.Objects;
 
-/**
- * Optional scoped lifecycle helper for advanced integrations that need isolated ownership domains
- * inside one plugin/software process.
- *
- * Typical use:
- * - create one scope per logical component
- * - register and use connections through this scope
- * - release the scope's registrations via {@link #unregisterAllDatabases()} or terminate the
- * scope via {@link #close()}
- */
+/** Optional scoped lifecycle helper for independently managed plugin components. */
 public final class DefaultDataProviderScope implements DataProviderScope {
 
     private static final String CLOSED_MESSAGE = "DataProvider scope is closed.";
@@ -33,9 +27,7 @@ public final class DefaultDataProviderScope implements DataProviderScope {
         this.ownerScope = Objects.requireNonNull(ownerScope, "Owner scope cannot be null.");
     }
 
-    /**
-     * Returns the normalized scope identifier used for ownership tracking.
-     */
+    @Override
     public OwnerScope ownerScope() {
         return ownerScope;
     }
@@ -45,21 +37,25 @@ public final class DefaultDataProviderScope implements DataProviderScope {
         return lifecycleState;
     }
 
-    /**
-     * Registers a database connection under this scope.
-     */
+    @Override
     public DatabaseProvider registerDatabase(DatabaseType databaseType, String connectionIdentifier) {
         synchronized (lifecycleMonitor) {
             requireOpen();
             return DefaultDataProviderApi.wrapProvider(
-                    handler.registerDatabaseForScope(ownerScope, databaseType, connectionIdentifier)
-            );
+                    handler.registerDatabaseForScope(ownerScope, databaseType, connectionIdentifier));
         }
     }
 
-    /**
-     * Releases one scoped registration reference.
-     */
+    @Override
+    public DatabaseProvider registerDatabaseOrThrow(DatabaseType databaseType, String connectionIdentifier) {
+        synchronized (lifecycleMonitor) {
+            requireOpen();
+            return DefaultDataProviderApi.wrapProvider(
+                    handler.registerDatabaseForScopeOrThrow(ownerScope, databaseType, connectionIdentifier));
+        }
+    }
+
+    @Override
     public void unregisterDatabase(DatabaseType databaseType, String connectionIdentifier) {
         synchronized (lifecycleMonitor) {
             requireOpen();
@@ -67,9 +63,7 @@ public final class DefaultDataProviderScope implements DataProviderScope {
         }
     }
 
-    /**
-     * Releases all registrations held by this scope.
-     */
+    @Override
     public void unregisterAllDatabases() {
         synchronized (lifecycleMonitor) {
             requireOpen();
@@ -82,8 +76,16 @@ public final class DefaultDataProviderScope implements DataProviderScope {
         synchronized (lifecycleMonitor) {
             requireOpen();
             return DefaultDataProviderApi.wrapProvider(
-                    handler.getRegisteredDatabaseForScope(ownerScope, databaseType, connectionIdentifier)
-            );
+                    handler.getRegisteredDatabaseForScope(ownerScope, databaseType, connectionIdentifier));
+        }
+    }
+
+    @Override
+    public DatabaseProvider requireRegisteredDatabase(DatabaseType databaseType, String connectionIdentifier) {
+        synchronized (lifecycleMonitor) {
+            requireOpen();
+            return DefaultDataProviderApi.wrapProvider(
+                    handler.requireRegisteredDatabaseForScope(ownerScope, databaseType, connectionIdentifier));
         }
     }
 
@@ -104,7 +106,13 @@ public final class DefaultDataProviderScope implements DataProviderScope {
 
     private void requireOpen() {
         if (lifecycleState != LifecycleState.OPEN) {
-            throw new IllegalStateException(CLOSED_MESSAGE);
+            throw new ProviderClosedException(
+                    CLOSED_MESSAGE,
+                    DataProviderFailureContext.of(null, null, "scope", RetryAdvice.NEVER,
+                            ExecutionOutcome.NOT_STARTED)
+                            .withDiagnostics(java.util.Map.of("ownerScope", ownerScope.value())),
+                    null
+            );
         }
     }
 }
