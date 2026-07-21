@@ -18,10 +18,7 @@ import java.util.Objects;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentMap;
 
-/**
- * Public entry point for plugin-scoped database operations.
- * Caller identity is always derived server-side from the active platform.
- */
+/** Public entry point for plugin-scoped database operations. */
 public class DataProviderHandler {
 
     private static final String INTERNAL_PACKAGE_PREFIX = "nl.hauntedmc.dataprovider.core";
@@ -32,6 +29,7 @@ public class DataProviderHandler {
     private final CallerContextResolver callerContextResolver;
     private final LoggerAdapter logger;
     private final ClassLoader ownClassLoader;
+    private final DataProviderExecutionRuntime executionRuntime;
 
     public DataProviderHandler(
             Path dataPath,
@@ -44,15 +42,13 @@ public class DataProviderHandler {
         Objects.requireNonNull(resourceClassLoader, "Resource class loader cannot be null.");
         Objects.requireNonNull(configHandler, "Config handler cannot be null.");
         this.logger = Objects.requireNonNull(logger, "Logger cannot be null.");
-        this.callerContextResolver = Objects.requireNonNull(callerContextResolver, "Caller context resolver cannot be null.");
-        this.ownClassLoader = resourceClassLoader;
-
+        this.callerContextResolver = Objects.requireNonNull(callerContextResolver,
+                "Caller context resolver cannot be null.");
+        ownClassLoader = resourceClassLoader;
         DatabaseConfigMap configMap = new DatabaseConfigMap(dataPath, this.logger, resourceClassLoader);
-        DataProviderExecutionRuntime executionRuntime = new DataProviderExecutionRuntime(
-                ExecutionRuntimeConfig.from(configHandler.getConfig())
-        );
+        executionRuntime = new DataProviderExecutionRuntime(ExecutionRuntimeConfig.from(configHandler.getConfig()));
         DatabaseFactory factory = new DatabaseFactory(configMap, this.logger, executionRuntime);
-        this.registry = new DataProviderRegistry(factory, configHandler, this.logger);
+        registry = new DataProviderRegistry(factory, configHandler, this.logger);
     }
 
     DataProviderHandler(
@@ -63,20 +59,26 @@ public class DataProviderHandler {
     ) {
         this.logger = Objects.requireNonNull(logger, "Logger cannot be null.");
         this.registry = Objects.requireNonNull(registry, "Registry cannot be null.");
-        this.callerContextResolver = Objects.requireNonNull(callerContextResolver, "Caller context resolver cannot be null.");
+        this.callerContextResolver = Objects.requireNonNull(callerContextResolver,
+                "Caller context resolver cannot be null.");
         this.ownClassLoader = Objects.requireNonNull(ownClassLoader, "Own class loader cannot be null.");
+        executionRuntime = null;
     }
 
     public DatabaseProvider registerDatabase(DatabaseType databaseType, String connectionIdentifier) {
         requireOpen();
         Objects.requireNonNull(databaseType, "Database type cannot be null");
-        CallerContext caller = resolveCallerContext();
-        PluginId pluginId = PluginId.of(caller.pluginId());
-        return registry.registerDatabase(pluginId, OwnerScopeId.of(pluginId.value()), databaseType,
-                ConnectionIdentifier.of(connectionIdentifier));
+        PluginId pluginId = PluginId.of(resolveCallerContext().pluginId());
+        ConnectionIdentifier identifier = ConnectionIdentifier.of(connectionIdentifier);
+        return DatabaseFactory.withCreationPlugin(pluginId, () -> registry.registerDatabase(
+                pluginId, OwnerScopeId.of(pluginId.value()), databaseType, identifier));
     }
 
-    public DatabaseProvider registerDatabaseForScope(String ownerScope, DatabaseType databaseType, String connectionIdentifier) {
+    public DatabaseProvider registerDatabaseForScope(
+            String ownerScope,
+            DatabaseType databaseType,
+            String connectionIdentifier
+    ) {
         return registerDatabaseForScope(OwnerScope.of(ownerScope), databaseType, connectionIdentifier);
     }
 
@@ -88,21 +90,25 @@ public class DataProviderHandler {
         requireOpen();
         Objects.requireNonNull(databaseType, "Database type cannot be null");
         Objects.requireNonNull(ownerScope, "Owner scope cannot be null.");
-        CallerContext caller = resolveCallerContext();
-        return registry.registerDatabase(PluginId.of(caller.pluginId()), OwnerScopeId.from(ownerScope), databaseType,
-                ConnectionIdentifier.of(connectionIdentifier));
+        PluginId pluginId = PluginId.of(resolveCallerContext().pluginId());
+        ConnectionIdentifier identifier = ConnectionIdentifier.of(connectionIdentifier);
+        return DatabaseFactory.withCreationPlugin(pluginId, () -> registry.registerDatabase(
+                pluginId, OwnerScopeId.from(ownerScope), databaseType, identifier));
     }
 
     public void unregisterDatabase(DatabaseType databaseType, String connectionIdentifier) {
         requireOpen();
         Objects.requireNonNull(databaseType, "Database type cannot be null");
-        CallerContext caller = resolveCallerContext();
-        PluginId pluginId = PluginId.of(caller.pluginId());
+        PluginId pluginId = PluginId.of(resolveCallerContext().pluginId());
         registry.unregisterDatabase(pluginId, OwnerScopeId.of(pluginId.value()), databaseType,
                 ConnectionIdentifier.of(connectionIdentifier));
     }
 
-    public void unregisterDatabaseForScope(String ownerScope, DatabaseType databaseType, String connectionIdentifier) {
+    public void unregisterDatabaseForScope(
+            String ownerScope,
+            DatabaseType databaseType,
+            String connectionIdentifier
+    ) {
         unregisterDatabaseForScope(OwnerScope.of(ownerScope), databaseType, connectionIdentifier);
     }
 
@@ -114,15 +120,14 @@ public class DataProviderHandler {
         requireOpen();
         Objects.requireNonNull(databaseType, "Database type cannot be null");
         Objects.requireNonNull(ownerScope, "Owner scope cannot be null.");
-        CallerContext caller = resolveCallerContext();
-        registry.unregisterDatabase(PluginId.of(caller.pluginId()), OwnerScopeId.from(ownerScope), databaseType,
+        PluginId pluginId = PluginId.of(resolveCallerContext().pluginId());
+        registry.unregisterDatabase(pluginId, OwnerScopeId.from(ownerScope), databaseType,
                 ConnectionIdentifier.of(connectionIdentifier));
     }
 
     public void unregisterAllDatabases() {
         requireOpen();
-        CallerContext caller = resolveCallerContext();
-        PluginId pluginId = PluginId.of(caller.pluginId());
+        PluginId pluginId = PluginId.of(resolveCallerContext().pluginId());
         registry.unregisterAllDatabases(pluginId, OwnerScopeId.of(pluginId.value()));
     }
 
@@ -133,26 +138,30 @@ public class DataProviderHandler {
     public void unregisterAllDatabasesForScope(OwnerScope ownerScope) {
         requireOpen();
         Objects.requireNonNull(ownerScope, "Owner scope cannot be null.");
-        CallerContext caller = resolveCallerContext();
-        registry.unregisterAllDatabases(PluginId.of(caller.pluginId()), OwnerScopeId.from(ownerScope));
+        PluginId pluginId = PluginId.of(resolveCallerContext().pluginId());
+        registry.unregisterAllDatabases(pluginId, OwnerScopeId.from(ownerScope));
     }
 
     public void unregisterAllDatabasesForPlugin() {
         requireOpen();
-        CallerContext caller = resolveCallerContext();
-        registry.unregisterAllDatabasesForPlugin(PluginId.of(caller.pluginId()));
+        registry.unregisterAllDatabasesForPlugin(PluginId.of(resolveCallerContext().pluginId()));
     }
 
     public void shutdownAllDatabases() {
         requireInternalCaller();
-        registry.shutdownAllDatabases();
+        try {
+            registry.shutdownAllDatabases();
+        } finally {
+            if (executionRuntime != null) {
+                executionRuntime.close();
+            }
+        }
     }
 
     public DatabaseProvider getRegisteredDatabase(DatabaseType databaseType, String connectionIdentifier) {
         requireOpen();
         Objects.requireNonNull(databaseType, "Database type cannot be null");
-        CallerContext caller = resolveCallerContext();
-        return registry.getDatabase(PluginId.of(caller.pluginId()), databaseType,
+        return registry.getDatabase(PluginId.of(resolveCallerContext().pluginId()), databaseType,
                 ConnectionIdentifier.of(connectionIdentifier));
     }
 
@@ -164,9 +173,8 @@ public class DataProviderHandler {
         requireOpen();
         Objects.requireNonNull(ownerScope, "Owner scope cannot be null.");
         Objects.requireNonNull(databaseType, "Database type cannot be null");
-        CallerContext caller = resolveCallerContext();
-        return registry.getDatabase(PluginId.of(caller.pluginId()), OwnerScopeId.from(ownerScope), databaseType,
-                ConnectionIdentifier.of(connectionIdentifier));
+        return registry.getDatabase(PluginId.of(resolveCallerContext().pluginId()), OwnerScopeId.from(ownerScope),
+                databaseType, ConnectionIdentifier.of(connectionIdentifier));
     }
 
     public ConcurrentMap<DatabaseConnectionKey, DatabaseProvider> getActiveDatabases() {
@@ -221,7 +229,8 @@ public class DataProviderHandler {
     }
 
     private void requireInternalCaller() {
-        ClassLoader callerLoader = StackCallerClassLoaderResolver.resolveNearestCallerOutsidePackage(INTERNAL_PACKAGE_PREFIX);
+        ClassLoader callerLoader = StackCallerClassLoaderResolver.resolveNearestCallerOutsidePackage(
+                INTERNAL_PACKAGE_PREFIX);
         if (callerLoader == null || callerLoader != ownClassLoader) {
             logger.error("Rejected privileged operation from non-internal caller.");
             throw new SecurityException("Privileged DataProvider operation is restricted to internal callers.");
