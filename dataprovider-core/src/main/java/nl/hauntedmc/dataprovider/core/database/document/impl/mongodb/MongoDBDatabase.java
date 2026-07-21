@@ -4,27 +4,23 @@ import com.mongodb.ConnectionString;
 import com.mongodb.MongoClientSettings;
 import com.mongodb.client.MongoClient;
 import com.mongodb.client.MongoClients;
-import nl.hauntedmc.dataprovider.core.concurrent.BoundedExecutorFactory;
 import nl.hauntedmc.dataprovider.core.ManagedDatabaseProvider;
+import nl.hauntedmc.dataprovider.core.concurrent.ExecutionHandle;
+import nl.hauntedmc.dataprovider.core.database.security.TlsSupport;
 import nl.hauntedmc.dataprovider.database.document.DocumentDataAccess;
 import nl.hauntedmc.dataprovider.database.document.DocumentDatabaseProvider;
-import nl.hauntedmc.dataprovider.core.database.security.TlsSupport;
 import nl.hauntedmc.dataprovider.logging.LoggerAdapter;
-import org.spongepowered.configurate.CommentedConfigurationNode;
 import org.bson.Document;
+import org.spongepowered.configurate.CommentedConfigurationNode;
 
 import javax.net.ssl.SSLContext;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.util.Objects;
-import java.util.concurrent.ExecutorService;
 import java.util.concurrent.TimeUnit;
 import java.util.regex.Pattern;
 
-/**
- * MongoDBDatabase implements DocumentDatabaseProvider for MongoDB.
- * This version uses Configurate to load configuration values from a YAML file.
- */
+/** MongoDB provider backed by the shared document execution lane. */
 public class MongoDBDatabase implements DocumentDatabaseProvider, ManagedDatabaseProvider {
 
     private static final Pattern HOST_PATTERN = Pattern.compile("[A-Za-z0-9._:\\-\\[\\]]+");
@@ -32,82 +28,59 @@ public class MongoDBDatabase implements DocumentDatabaseProvider, ManagedDatabas
 
     private final CommentedConfigurationNode config;
     private final LoggerAdapter logger;
+    private final ExecutionHandle execution;
     private volatile MongoClient mongoClient;
-    private volatile ExecutorService executor;
     private volatile MongoDBDataAccess dataAccess;
     private volatile boolean connected;
     private volatile String databaseName;
+    private volatile Throwable lifecycleFailure;
 
     public MongoDBDatabase(CommentedConfigurationNode config, LoggerAdapter logger) {
-        this.config = config;
+        this(config, logger, ExecutionHandle.direct());
+    }
+
+    public MongoDBDatabase(CommentedConfigurationNode config, LoggerAdapter logger, ExecutionHandle execution) {
+        this.config = Objects.requireNonNull(config, "Config cannot be null.");
         this.logger = Objects.requireNonNull(logger, "Logger cannot be null.");
+        this.execution = Objects.requireNonNull(execution, "Execution handle cannot be null.");
     }
 
     @Override
     public synchronized void connect() {
         if (connected && mongoClient != null) {
-            logger.info("[MongoDBDatabase] Already connected; skipping re–initialization.");
+            logger.info("[MongoDBDatabase] Already connected; skipping re-initialization.");
             return;
         }
         MongoClient createdClient = null;
-        ExecutorService createdExecutor = null;
         try {
-            final String host = requireHost(config.node("host").getString("localhost"));
-            final int port = requireInRange(config.node("port").getInt(27017), 1, 65_535, "port");
-            final String configuredDatabaseName = requireDatabaseName(
-                    config.node("database").getString("minecraft"),
-                    "database"
-            );
-            final String user = config.node("username").getString("");
-            final String password = config.node("password").getString("");
-            final String authSource = requireDatabaseName(
-                    config.node("authSource").getString(configuredDatabaseName),
-                    "authSource"
-            );
-            final boolean tlsEnabled = config.node("tls", "enabled").getBoolean(false);
-            final boolean allowInvalidHostnames = config.node("tls", "allow_invalid_hostnames").getBoolean(false);
-            final boolean trustAllCertificates = config.node("tls", "trust_all_certificates").getBoolean(false);
-            final String trustStorePath = config.node("tls", "trust_store_path").getString("");
-            final String trustStorePassword = config.node("tls", "trust_store_password").getString("");
-            final String trustStoreType = config.node("tls", "trust_store_type").getString("");
-            final boolean requireSecureTransport = config.node("require_secure_transport").getBoolean(false);
-            final int workerPoolSize = requireInRange(config.node("pool_size").getInt(8), 1, 256, "pool_size");
-            final int queueCapacity = requireInRange(
-                    config.node("queue_capacity").getInt(workerPoolSize * 200),
-                    workerPoolSize,
-                    1_000_000,
-                    "queue_capacity"
-            );
-            final int clientMaxPoolSize = requireInRange(
-                    config.node("max_connection_pool_size").getInt(Math.max(16, workerPoolSize)),
-                    1,
-                    1_000,
-                    "max_connection_pool_size"
-            );
-            final int clientMinPoolSize = requireInRange(
-                    config.node("min_connection_pool_size").getInt(0),
-                    0,
-                    clientMaxPoolSize,
-                    "min_connection_pool_size"
-            );
-            final long connectTimeoutMs = requireInRange(
-                    config.node("connect_timeout_ms").getLong(5_000L),
-                    250L,
-                    300_000L,
-                    "connect_timeout_ms"
-            );
-            final long socketTimeoutMs = requireInRange(
-                    config.node("socket_timeout_ms").getLong(5_000L),
-                    250L,
-                    300_000L,
-                    "socket_timeout_ms"
-            );
-            final long serverSelectionTimeoutMs = requireInRange(
+            String host = requireHost(config.node("host").getString("localhost"));
+            int port = requireInRange(config.node("port").getInt(27017), 1, 65_535, "port");
+            String configuredDatabaseName = requireDatabaseName(
+                    config.node("database").getString("minecraft"), "database");
+            String user = config.node("username").getString("");
+            String password = config.node("password").getString("");
+            String authSource = requireDatabaseName(
+                    config.node("authSource").getString(configuredDatabaseName), "authSource");
+            boolean tlsEnabled = config.node("tls", "enabled").getBoolean(false);
+            boolean allowInvalidHostnames = config.node("tls", "allow_invalid_hostnames").getBoolean(false);
+            boolean trustAllCertificates = config.node("tls", "trust_all_certificates").getBoolean(false);
+            String trustStorePath = config.node("tls", "trust_store_path").getString("");
+            String trustStorePassword = config.node("tls", "trust_store_password").getString("");
+            String trustStoreType = config.node("tls", "trust_store_type").getString("");
+            boolean requireSecureTransport = config.node("require_secure_transport").getBoolean(false);
+            int configuredWorkerPoolSize = requireInRange(config.node("pool_size").getInt(8), 1, 256, "pool_size");
+            int clientMaxPoolSize = requireInRange(
+                    config.node("max_connection_pool_size").getInt(Math.max(16, configuredWorkerPoolSize)),
+                    1, 1_000, "max_connection_pool_size");
+            int clientMinPoolSize = requireInRange(config.node("min_connection_pool_size").getInt(0),
+                    0, clientMaxPoolSize, "min_connection_pool_size");
+            long connectTimeoutMs = requireInRange(config.node("connect_timeout_ms").getLong(5_000L),
+                    250L, 300_000L, "connect_timeout_ms");
+            long socketTimeoutMs = requireInRange(config.node("socket_timeout_ms").getLong(5_000L),
+                    250L, 300_000L, "socket_timeout_ms");
+            long serverSelectionTimeoutMs = requireInRange(
                     config.node("server_selection_timeout_ms").getLong(5_000L),
-                    250L,
-                    300_000L,
-                    "server_selection_timeout_ms"
-            );
+                    250L, 300_000L, "server_selection_timeout_ms");
 
             if (requireSecureTransport && !tlsEnabled) {
                 throw new IllegalStateException("MongoDB require_secure_transport=true but tls.enabled=false");
@@ -116,8 +89,7 @@ public class MongoDBDatabase implements DocumentDatabaseProvider, ManagedDatabas
                 logger.warn("[MongoDBDatabase] MongoDB connection is running without TLS.");
             } else if (trustAllCertificates || allowInvalidHostnames) {
                 throw new IllegalStateException(
-                        "MongoDB tls.allow_invalid_hostnames must be false and tls.trust_all_certificates must be false in DataProvider 3.0."
-                );
+                        "MongoDB TLS hostname and certificate verification cannot be disabled.");
             }
             if (user.isBlank() != password.isBlank()) {
                 throw new IllegalStateException("MongoDB username/password must either both be set or both be empty.");
@@ -126,31 +98,16 @@ public class MongoDBDatabase implements DocumentDatabaseProvider, ManagedDatabas
                 logger.warn("[MongoDBDatabase] MongoDB credentials are not configured; using unauthenticated connection.");
             }
 
-            final String connectionString;
-            if (!user.isEmpty() && !password.isEmpty()) {
-                connectionString = String.format("mongodb://%s:%s@%s:%d/%s?authSource=%s",
-                        encodeCredential(user), encodeCredential(password), host, port, configuredDatabaseName, authSource);
-            } else {
-                connectionString = String.format("mongodb://%s:%d/%s", host, port, configuredDatabaseName);
-            }
+            String connectionString = !user.isEmpty() && !password.isEmpty()
+                    ? String.format("mongodb://%s:%s@%s:%d/%s?authSource=%s",
+                    encodeCredential(user), encodeCredential(password), host, port, configuredDatabaseName, authSource)
+                    : String.format("mongodb://%s:%d/%s", host, port, configuredDatabaseName);
 
-            logger.info(String.format(
-                    "[MongoDBDatabase] Connecting to Mongo at %s:%d (database=%s, auth=%s, tls=%s)",
-                    host,
-                    port,
-                    configuredDatabaseName,
-                    (!user.isEmpty() && !password.isEmpty()) ? "enabled" : "disabled",
-                    tlsEnabled ? "enabled" : "disabled"
-            ));
-
-            ConnectionString connString = new ConnectionString(connectionString);
             MongoClientSettings.Builder settingsBuilder = MongoClientSettings.builder()
-                    .applyConnectionString(connString)
+                    .applyConnectionString(new ConnectionString(connectionString))
                     .retryWrites(true)
                     .retryReads(true)
-                    .applyToConnectionPoolSettings(pool -> pool
-                            .maxSize(clientMaxPoolSize)
-                            .minSize(clientMinPoolSize))
+                    .applyToConnectionPoolSettings(pool -> pool.maxSize(clientMaxPoolSize).minSize(clientMinPoolSize))
                     .applyToSocketSettings(socket -> socket
                             .connectTimeout((int) connectTimeoutMs, TimeUnit.MILLISECONDS)
                             .readTimeout((int) socketTimeoutMs, TimeUnit.MILLISECONDS))
@@ -165,32 +122,18 @@ public class MongoDBDatabase implements DocumentDatabaseProvider, ManagedDatabas
                 });
             }
 
-            MongoClientSettings settings = settingsBuilder.build();
-
-            createdClient = MongoClients.create(settings);
+            createdClient = MongoClients.create(settingsBuilder.build());
             createdClient.getDatabase(configuredDatabaseName).runCommand(new Document("ping", 1));
-
-            createdExecutor = BoundedExecutorFactory.create("dataprovider-mongodb", workerPoolSize, queueCapacity);
-
             mongoClient = createdClient;
-            executor = createdExecutor;
             databaseName = configuredDatabaseName;
-            dataAccess = new MongoDBDataAccess(mongoClient, databaseName, executor);
-
+            dataAccess = new MongoDBDataAccess(mongoClient, databaseName, execution);
             connected = true;
+            lifecycleFailure = null;
             logger.info(String.format(
-                    "[MongoDBDatabase] Connected successfully to Mongo at %s:%d (tls=%s, clientPool=%d, workerPool=%d, queueCapacity=%d)",
-                    host,
-                    port,
-                    tlsEnabled ? "enabled" : "disabled",
-                    clientMaxPoolSize,
-                    workerPoolSize,
-                    queueCapacity
-            ));
+                    "[MongoDBDatabase] Connected successfully to Mongo at %s:%d (tls=%s, clientPool=%d)",
+                    host, port, tlsEnabled ? "enabled" : "disabled", clientMaxPoolSize));
         } catch (Exception e) {
-            if (createdExecutor != null) {
-                createdExecutor.shutdownNow();
-            }
+            lifecycleFailure = e;
             if (createdClient != null) {
                 createdClient.close();
             }
@@ -203,23 +146,11 @@ public class MongoDBDatabase implements DocumentDatabaseProvider, ManagedDatabas
 
     @Override
     public synchronized void disconnect() {
-        if (executor != null && !executor.isShutdown()) {
-            executor.shutdown();
-            try {
-                if (!executor.awaitTermination(2, TimeUnit.SECONDS)) {
-                    executor.shutdownNow();
-                }
-            } catch (InterruptedException e) {
-                executor.shutdownNow();
-                Thread.currentThread().interrupt();
-            }
-            logger.info("[MongoDBDatabase] ExecutorService shut down.");
-        }
+        execution.close();
         if (mongoClient != null) {
             mongoClient.close();
             logger.info("[MongoDBDatabase] MongoClient closed.");
         }
-        executor = null;
         mongoClient = null;
         dataAccess = null;
         databaseName = null;
@@ -231,6 +162,11 @@ public class MongoDBDatabase implements DocumentDatabaseProvider, ManagedDatabas
         MongoClient clientSnapshot = mongoClient;
         String databaseSnapshot = databaseName;
         return connected && clientSnapshot != null && databaseSnapshot != null && !databaseSnapshot.isBlank();
+    }
+
+    @Override
+    public Throwable lifecycleFailure() {
+        return lifecycleFailure;
     }
 
     @Override
@@ -276,8 +212,7 @@ public class MongoDBDatabase implements DocumentDatabaseProvider, ManagedDatabas
         String normalized = requireNonBlank(value, fieldName);
         if (!DATABASE_PATTERN.matcher(normalized).matches()) {
             throw new IllegalArgumentException(
-                    "MongoDB config '" + fieldName + "' contains unsupported characters: " + normalized
-            );
+                    "MongoDB config '" + fieldName + "' contains unsupported characters: " + normalized);
         }
         return normalized;
     }
