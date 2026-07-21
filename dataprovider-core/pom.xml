@@ -8,6 +8,12 @@
     </parent>
     <artifactId>dataprovider-core</artifactId>
     <name>DataProvider Core</name>
+
+    <properties>
+        <testcontainers.version>1.20.6</testcontainers.version>
+        <maven.failsafe.version>3.2.5</maven.failsafe.version>
+    </properties>
+
     <dependencies>
         <dependency><groupId>${project.groupId}</groupId><artifactId>dataprovider-api</artifactId><version>${project.version}</version></dependency>
         <dependency><groupId>org.spongepowered</groupId><artifactId>configurate-yaml</artifactId><version>${configurate.version}</version></dependency>
@@ -22,5 +28,31 @@
         <dependency><groupId>org.jspecify</groupId><artifactId>jspecify</artifactId><version>${jspecify.version}</version></dependency>
         <dependency><groupId>org.junit.jupiter</groupId><artifactId>junit-jupiter</artifactId><version>${junit.version}</version><scope>test</scope></dependency>
         <dependency><groupId>org.mockito</groupId><artifactId>mockito-core</artifactId><version>${mockito.version}</version><scope>test</scope></dependency>
+        <dependency><groupId>org.testcontainers</groupId><artifactId>junit-jupiter</artifactId><version>${testcontainers.version}</version><scope>test</scope></dependency>
+        <dependency><groupId>org.testcontainers</groupId><artifactId>mysql</artifactId><version>${testcontainers.version}</version><scope>test</scope></dependency>
+        <dependency><groupId>org.testcontainers</groupId><artifactId>mongodb</artifactId><version>${testcontainers.version}</version><scope>test</scope></dependency>
     </dependencies>
+
+    <profiles>
+        <profile>
+            <id>integration-tests</id>
+            <build>
+                <plugins>
+                    <plugin>
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-failsafe-plugin</artifactId>
+                        <version>${maven.failsafe.version}</version>
+                        <executions>
+                            <execution>
+                                <goals>
+                                    <goal>integration-test</goal>
+                                    <goal>verify</goal>
+                                </goals>
+                            </execution>
+                        </executions>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
+    </profiles>
 </project>
