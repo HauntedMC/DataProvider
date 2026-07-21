@@ -18,6 +18,14 @@ public interface ManagedDatabaseProvider extends DatabaseProvider {
     }
 
     /**
+     * Returns the most recent retained local lifecycle failure, when the provider exposes one.
+     * Registry-level lifecycle failures are retained independently.
+     */
+    default Throwable lifecycleFailure() {
+        return null;
+    }
+
+    /**
      * Establish a connection to the database.
      */
     void connect();
