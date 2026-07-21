@@ -4,12 +4,18 @@ import nl.hauntedmc.dataprovider.api.OwnerScope;
 import nl.hauntedmc.dataprovider.core.concurrent.DataProviderExecutionRuntime;
 import nl.hauntedmc.dataprovider.core.concurrent.ExecutionRuntimeConfig;
 import nl.hauntedmc.dataprovider.core.config.ConfigHandler;
+import nl.hauntedmc.dataprovider.core.exception.DataProviderExceptionMapper;
 import nl.hauntedmc.dataprovider.core.identity.CallerContext;
 import nl.hauntedmc.dataprovider.core.identity.CallerContextResolver;
 import nl.hauntedmc.dataprovider.core.identity.StackCallerClassLoaderResolver;
 import nl.hauntedmc.dataprovider.database.DatabaseConnectionKey;
 import nl.hauntedmc.dataprovider.database.DatabaseProvider;
 import nl.hauntedmc.dataprovider.database.DatabaseType;
+import nl.hauntedmc.dataprovider.exception.DataProviderFailureContext;
+import nl.hauntedmc.dataprovider.exception.DataProviderRegistrationException;
+import nl.hauntedmc.dataprovider.exception.ExecutionOutcome;
+import nl.hauntedmc.dataprovider.exception.ProviderClosedException;
+import nl.hauntedmc.dataprovider.exception.RetryAdvice;
 import nl.hauntedmc.dataprovider.logging.LoggerAdapter;
 
 import java.nio.file.Path;
@@ -70,8 +76,16 @@ public class DataProviderHandler {
         Objects.requireNonNull(databaseType, "Database type cannot be null");
         PluginId pluginId = PluginId.of(resolveCallerContext().pluginId());
         ConnectionIdentifier identifier = ConnectionIdentifier.of(connectionIdentifier);
-        return DatabaseFactory.withCreationPlugin(pluginId, () -> registry.registerDatabase(
-                pluginId, OwnerScopeId.of(pluginId.value()), databaseType, identifier));
+        return registerLegacy(pluginId, OwnerScopeId.of(pluginId.value()), databaseType, identifier);
+    }
+
+    public DatabaseProvider registerDatabaseOrThrow(DatabaseType databaseType, String connectionIdentifier) {
+        requireOpen();
+        Objects.requireNonNull(databaseType, "Database type cannot be null");
+        PluginId pluginId = PluginId.of(resolveCallerContext().pluginId());
+        ConnectionIdentifier identifier = ConnectionIdentifier.of(connectionIdentifier);
+        return registerStrict(pluginId, OwnerScopeId.of(pluginId.value()), databaseType, identifier,
+                "registerDatabase");
     }
 
     public DatabaseProvider registerDatabaseForScope(
@@ -91,9 +105,51 @@ public class DataProviderHandler {
         Objects.requireNonNull(databaseType, "Database type cannot be null");
         Objects.requireNonNull(ownerScope, "Owner scope cannot be null.");
         PluginId pluginId = PluginId.of(resolveCallerContext().pluginId());
-        ConnectionIdentifier identifier = ConnectionIdentifier.of(connectionIdentifier);
-        return DatabaseFactory.withCreationPlugin(pluginId, () -> registry.registerDatabase(
-                pluginId, OwnerScopeId.from(ownerScope), databaseType, identifier));
+        return registerLegacy(pluginId, OwnerScopeId.from(ownerScope), databaseType,
+                ConnectionIdentifier.of(connectionIdentifier));
+    }
+
+    public DatabaseProvider registerDatabaseForScopeOrThrow(
+            OwnerScope ownerScope,
+            DatabaseType databaseType,
+            String connectionIdentifier
+    ) {
+        requireOpen();
+        Objects.requireNonNull(databaseType, "Database type cannot be null");
+        Objects.requireNonNull(ownerScope, "Owner scope cannot be null.");
+        PluginId pluginId = PluginId.of(resolveCallerContext().pluginId());
+        return registerStrict(pluginId, OwnerScopeId.from(ownerScope), databaseType,
+                ConnectionIdentifier.of(connectionIdentifier), "scope.registerDatabase");
+    }
+
+    private DatabaseProvider registerLegacy(
+            PluginId pluginId,
+            OwnerScopeId ownerScope,
+            DatabaseType type,
+            ConnectionIdentifier identifier
+    ) {
+        return DatabaseFactory.withCreationPlugin(pluginId,
+                () -> registry.registerDatabase(pluginId, ownerScope, type, identifier));
+    }
+
+    private DatabaseProvider registerStrict(
+            PluginId pluginId,
+            OwnerScopeId ownerScope,
+            DatabaseType type,
+            ConnectionIdentifier identifier,
+            String operation
+    ) {
+        DatabaseProvider provider = registerLegacy(pluginId, ownerScope, type, identifier);
+        if (provider != null) {
+            return provider;
+        }
+        if (!registry.getConfiguredDatabaseTypeStates().getOrDefault(type, true)) {
+            throw DataProviderExceptionMapper.backendDisabled(type, identifier.value());
+        }
+        DatabaseConnectionKey key = new DatabaseConnectionKey(pluginId.value(), type, identifier.value());
+        ProviderLifecycleSnapshot snapshot = registry.getProviderLifecycleSnapshots().get(key);
+        Throwable failure = snapshot == null ? null : snapshot.failure();
+        throw DataProviderExceptionMapper.registrationFailure(failure, type, identifier.value(), operation);
     }
 
     public void unregisterDatabase(DatabaseType databaseType, String connectionIdentifier) {
@@ -104,11 +160,7 @@ public class DataProviderHandler {
                 ConnectionIdentifier.of(connectionIdentifier));
     }
 
-    public void unregisterDatabaseForScope(
-            String ownerScope,
-            DatabaseType databaseType,
-            String connectionIdentifier
-    ) {
+    public void unregisterDatabaseForScope(String ownerScope, DatabaseType databaseType, String connectionIdentifier) {
         unregisterDatabaseForScope(OwnerScope.of(ownerScope), databaseType, connectionIdentifier);
     }
 
@@ -165,6 +217,14 @@ public class DataProviderHandler {
                 ConnectionIdentifier.of(connectionIdentifier));
     }
 
+    public DatabaseProvider requireRegisteredDatabase(DatabaseType databaseType, String connectionIdentifier) {
+        DatabaseProvider provider = getRegisteredDatabase(databaseType, connectionIdentifier);
+        if (provider != null) {
+            return provider;
+        }
+        throw missingRegistration(databaseType, connectionIdentifier, "requireRegisteredDatabase");
+    }
+
     public DatabaseProvider getRegisteredDatabaseForScope(
             OwnerScope ownerScope,
             DatabaseType databaseType,
@@ -175,6 +235,26 @@ public class DataProviderHandler {
         Objects.requireNonNull(databaseType, "Database type cannot be null");
         return registry.getDatabase(PluginId.of(resolveCallerContext().pluginId()), OwnerScopeId.from(ownerScope),
                 databaseType, ConnectionIdentifier.of(connectionIdentifier));
+    }
+
+    public DatabaseProvider requireRegisteredDatabaseForScope(
+            OwnerScope ownerScope,
+            DatabaseType databaseType,
+            String connectionIdentifier
+    ) {
+        DatabaseProvider provider = getRegisteredDatabaseForScope(ownerScope, databaseType, connectionIdentifier);
+        if (provider != null) {
+            return provider;
+        }
+        throw missingRegistration(databaseType, connectionIdentifier, "scope.requireRegisteredDatabase");
+    }
+
+    private DataProviderRegistrationException missingRegistration(
+            DatabaseType type, String identifier, String operation) {
+        return new DataProviderRegistrationException(
+                "No active database registration exists for the requested connection.",
+                DataProviderFailureContext.of(type, identifier, operation, RetryAdvice.NEVER,
+                        ExecutionOutcome.NOT_STARTED), null);
     }
 
     public ConcurrentMap<DatabaseConnectionKey, DatabaseProvider> getActiveDatabases() {
@@ -216,7 +296,11 @@ public class DataProviderHandler {
     public void reloadConfiguration() {
         requireOpen();
         requireInternalCaller();
-        registry.reloadConfiguration();
+        try {
+            registry.reloadConfiguration();
+        } catch (RuntimeException failure) {
+            throw DataProviderExceptionMapper.configurationFailure(failure, "reloadConfiguration");
+        }
     }
 
     private CallerContext resolveCallerContext() {
@@ -239,7 +323,10 @@ public class DataProviderHandler {
 
     private void requireOpen() {
         if (registry.isClosed()) {
-            throw new IllegalStateException(CLOSED_MESSAGE);
+            throw new ProviderClosedException(
+                    CLOSED_MESSAGE,
+                    DataProviderFailureContext.of(null, null, "api", RetryAdvice.NEVER,
+                            ExecutionOutcome.NOT_STARTED), null);
         }
     }
 }
