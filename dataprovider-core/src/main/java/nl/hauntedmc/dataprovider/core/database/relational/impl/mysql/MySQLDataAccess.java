@@ -147,8 +147,10 @@ public class MySQLDataAccess implements RelationalDataAccess {
 
     private <T> T executeTransaction(TransactionCallback<T> callback) {
         Connection connection;
+        boolean oldAutoCommit;
         try {
             connection = dataSource.getConnection();
+            oldAutoCommit = connection.getAutoCommit();
             connection.setAutoCommit(false);
         } catch (Throwable beginFailure) {
             throw DataProviderExceptionMapper.transactionFailure(
@@ -161,17 +163,29 @@ public class MySQLDataAccess implements RelationalDataAccess {
             try {
                 result = callback.doInTransaction(connection);
             } catch (Throwable callbackFailure) {
-                throw rollbackAfterFailure(connection, callbackFailure, TransactionPhase.CALLBACK,
-                        ExecutionOutcome.NOT_APPLIED);
+                DataTransactionException structured = rollbackAfterFailure(
+                        connection, callbackFailure, TransactionPhase.CALLBACK, ExecutionOutcome.NOT_APPLIED);
+                restoreAutoCommit(connection, oldAutoCommit, structured);
+                throw structured;
             }
 
             try {
                 connection.commit();
-                return result;
             } catch (Throwable commitFailure) {
-                throw rollbackAfterFailure(connection, commitFailure, TransactionPhase.COMMIT,
-                        ExecutionOutcome.MAY_HAVE_APPLIED);
+                DataTransactionException structured = rollbackAfterFailure(
+                        connection, commitFailure, TransactionPhase.COMMIT, ExecutionOutcome.MAY_HAVE_APPLIED);
+                restoreAutoCommit(connection, oldAutoCommit, structured);
+                throw structured;
             }
+
+            try {
+                connection.setAutoCommit(oldAutoCommit);
+            } catch (Throwable restoreFailure) {
+                throw DataProviderExceptionMapper.transactionFailure(
+                        restoreFailure, executor, TRANSACTION_OPERATION, TransactionPhase.ROLLBACK,
+                        ExecutionOutcome.UNKNOWN);
+            }
+            return result;
         } catch (DataTransactionException structured) {
             throw structured;
         } catch (Throwable closeFailure) {
@@ -197,6 +211,20 @@ public class MySQLDataAccess implements RelationalDataAccess {
                     ExecutionOutcome.UNKNOWN));
         }
         return structured;
+    }
+
+    private void restoreAutoCommit(
+            Connection connection,
+            boolean oldAutoCommit,
+            DataTransactionException primary
+    ) {
+        try {
+            connection.setAutoCommit(oldAutoCommit);
+        } catch (Throwable restoreFailure) {
+            primary.addSuppressed(DataProviderExceptionMapper.transactionFailure(
+                    restoreFailure, executor, TRANSACTION_OPERATION, TransactionPhase.ROLLBACK,
+                    ExecutionOutcome.UNKNOWN));
+        }
     }
 
     @Override
