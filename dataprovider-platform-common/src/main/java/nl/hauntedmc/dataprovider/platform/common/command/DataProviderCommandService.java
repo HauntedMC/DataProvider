@@ -231,8 +231,11 @@ public final class DataProviderCommandService {
             return;
         }
 
-        messageSink.accept(Component.text("Reloaded DataProvider configuration from disk.", NamedTextColor.GREEN));
-        messageSink.accept(Component.text("Use /dataprovider config to inspect the new values.", NamedTextColor.YELLOW));
+        messageSink.accept(Component.text("Reloaded validated DataProvider configuration snapshot.", NamedTextColor.GREEN));
+        messageSink.accept(Component.text(
+                "Existing connections retain prior settings until explicitly reconnected.",
+                NamedTextColor.YELLOW
+        ));
     }
 
     private void sendHelp(Consumer<Component> messageSink) {
@@ -249,7 +252,7 @@ public final class DataProviderCommandService {
                 .append(Component.text(" - Show runtime config state.", NamedTextColor.GRAY))
                 .append(Component.text(" (" + CONFIG_PERMISSION + ")", NamedTextColor.DARK_GRAY)));
         messageSink.accept(Component.text("/dataprovider reload", NamedTextColor.YELLOW)
-                .append(Component.text(" - Reload config.yml from disk.", NamedTextColor.GRAY))
+                .append(Component.text(" - Atomically reload config.yml and databases/*.yml.", NamedTextColor.GRAY))
                 .append(Component.text(" (" + RELOAD_PERMISSION + ")", NamedTextColor.DARK_GRAY)));
     }
 

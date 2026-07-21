@@ -193,7 +193,8 @@ class DataProviderCommandServiceTest {
         );
 
         verify(handler).reloadConfiguration();
-        assertTrue(output.hasMessageContaining("Reloaded DataProvider configuration from disk."));
+        assertTrue(output.hasMessageContaining("Reloaded validated DataProvider configuration snapshot."));
+        assertTrue(output.hasMessageContaining("Existing connections retain prior settings until explicitly reconnected."));
     }
 
     @Test

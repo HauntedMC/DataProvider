@@ -36,7 +36,7 @@ class ConfigHandlerTest {
     }
 
     @Test
-    void respectsConfiguredDatabaseFlagsAndFallsBackForInvalidOrmMode() throws IOException {
+    void rejectsInvalidOrmModeDuringSnapshotValidation() throws IOException {
         writeConfig("""
                 databases:
                   mysql:
@@ -45,13 +45,7 @@ class ConfigHandlerTest {
                   schema_mode: bad-mode
                 """);
 
-        RecordingLoggerAdapter logger = new RecordingLoggerAdapter();
-        ConfigHandler handler = new ConfigHandler(tempDir, logger);
-
-        assertFalse(handler.isDatabaseTypeEnabled(DatabaseType.MYSQL));
-        assertTrue(handler.isDatabaseTypeEnabled(DatabaseType.MONGODB));
-        assertEquals("validate", handler.getOrmSchemaMode());
-        assertTrue(logger.warnMessages().stream().anyMatch(m -> m.contains("Invalid orm.schema_mode")));
+        assertThrows(IllegalArgumentException.class, () -> new ConfigHandler(tempDir, new RecordingLoggerAdapter()));
     }
 
     @Test
@@ -94,6 +88,28 @@ class ConfigHandlerTest {
 
         assertTrue(handler.isDatabaseTypeEnabled(DatabaseType.MYSQL));
         assertEquals("none", handler.getOrmSchemaMode());
+    }
+
+    @Test
+    void rejectedReloadKeepsPreviouslyActiveSnapshot() throws IOException {
+        writeConfig("""
+                databases:
+                  mysql:
+                    enabled: false
+                """);
+        ConfigHandler handler = new ConfigHandler(tempDir, new RecordingLoggerAdapter());
+
+        writeConfig("""
+                databases:
+                  mysql:
+                    enabled: true
+                orm:
+                  schema_mode: invalid
+                """);
+
+        assertThrows(IllegalArgumentException.class, handler::reloadConfig);
+        assertFalse(handler.isDatabaseTypeEnabled(DatabaseType.MYSQL));
+        assertEquals("validate", handler.getOrmSchemaMode());
     }
 
     private void writeConfig(String content) throws IOException {

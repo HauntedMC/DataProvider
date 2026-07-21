@@ -481,11 +481,36 @@ class DataProviderRegistry {
         writeLock.lock();
         try {
             ensureOpen();
-            configHandler.reloadConfig();
-            logger.info("Reloaded DataProvider configuration from disk.");
+            ConfigHandler.ConfigSnapshot previousMainSnapshot = configHandler.currentSnapshot();
+            DatabaseConfigMap.DatabaseConfigSnapshot previousDatabaseSnapshot = factory.currentConfigurationSnapshot();
+            ConfigHandler.ConfigSnapshot mainSnapshot = configHandler.loadSnapshot();
+            DatabaseConfigMap.DatabaseConfigSnapshot databaseSnapshot = factory.loadConfigurationSnapshot();
+            configHandler.applySnapshot(mainSnapshot);
+            factory.applyConfigurationSnapshot(databaseSnapshot);
+            logger.info("Reloaded DataProvider configuration snapshot from disk: "
+                    + describeMainConfigurationChanges(previousMainSnapshot, mainSnapshot)
+                    + ", changed database files=" + previousDatabaseSnapshot.changedTypeCount(databaseSnapshot)
+                    + ". Existing connections retain their previous settings until reconnected.");
+        } catch (RuntimeException e) {
+            logger.error("Rejected DataProvider configuration reload; active configuration remains unchanged.", e);
+            throw e;
         } finally {
             writeLock.unlock();
         }
+    }
+
+    private static String describeMainConfigurationChanges(
+            ConfigHandler.ConfigSnapshot previous,
+            ConfigHandler.ConfigSnapshot current
+    ) {
+        int changedBackendCount = 0;
+        for (DatabaseType type : DatabaseType.values()) {
+            if (!previous.enabledTypes().get(type).equals(current.enabledTypes().get(type))) {
+                changedBackendCount++;
+            }
+        }
+        boolean schemaModeChanged = !previous.ormSchemaMode().equals(current.ormSchemaMode());
+        return "changed backends=" + changedBackendCount + ", orm.schema_mode changed=" + schemaModeChanged;
     }
 
     protected boolean isClosed() {

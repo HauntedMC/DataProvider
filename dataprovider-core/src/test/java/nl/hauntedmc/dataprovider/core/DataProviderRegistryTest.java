@@ -8,6 +8,7 @@ import nl.hauntedmc.dataprovider.database.DatabaseType;
 import nl.hauntedmc.dataprovider.core.ManagedDatabaseProvider;
 import nl.hauntedmc.dataprovider.core.testutil.RecordingLoggerAdapter;
 import org.junit.jupiter.api.Test;
+import org.spongepowered.configurate.CommentedConfigurationNode;
 
 import javax.sql.DataSource;
 import java.util.Map;
@@ -403,6 +404,28 @@ class DataProviderRegistryTest {
             when(configHandler.isDatabaseTypeEnabled(type)).thenReturn(type != DatabaseType.REDIS);
         }
         when(configHandler.getOrmSchemaMode()).thenReturn("update");
+        ConfigHandler.ConfigSnapshot mainSnapshot = new ConfigHandler.ConfigSnapshot(
+                CommentedConfigurationNode.root(),
+                Map.of(
+                        DatabaseType.MYSQL, true,
+                        DatabaseType.MONGODB, true,
+                        DatabaseType.REDIS, false,
+                        DatabaseType.REDIS_MESSAGING, true
+                ),
+                "update"
+        );
+        DatabaseConfigMap.DatabaseConfigSnapshot databaseSnapshot = new DatabaseConfigMap.DatabaseConfigSnapshot(
+                Map.of(
+                        DatabaseType.MYSQL, CommentedConfigurationNode.root(),
+                        DatabaseType.MONGODB, CommentedConfigurationNode.root(),
+                        DatabaseType.REDIS, CommentedConfigurationNode.root(),
+                        DatabaseType.REDIS_MESSAGING, CommentedConfigurationNode.root()
+                )
+        );
+        when(configHandler.currentSnapshot()).thenReturn(mainSnapshot);
+        when(configHandler.loadSnapshot()).thenReturn(mainSnapshot);
+        when(factory.currentConfigurationSnapshot()).thenReturn(databaseSnapshot);
+        when(factory.loadConfigurationSnapshot()).thenReturn(databaseSnapshot);
         RecordingLoggerAdapter logger = new RecordingLoggerAdapter();
         DataProviderRegistry registry = new DataProviderRegistry(factory, configHandler, logger);
 
@@ -412,7 +435,42 @@ class DataProviderRegistryTest {
         assertEquals("update", registry.getOrmSchemaMode());
 
         registry.reloadConfiguration();
-        verify(configHandler).reloadConfig();
+        verify(configHandler).applySnapshot(mainSnapshot);
+        verify(factory).applyConfigurationSnapshot(databaseSnapshot);
+    }
+
+    @Test
+    void reloadRejectsAllSnapshotsWhenAnyDatabaseConfigurationFailsValidation() {
+        DatabaseFactory factory = mock(DatabaseFactory.class);
+        ConfigHandler configHandler = mock(ConfigHandler.class);
+        ConfigHandler.ConfigSnapshot activeMainSnapshot = new ConfigHandler.ConfigSnapshot(
+                CommentedConfigurationNode.root(),
+                Map.of(
+                        DatabaseType.MYSQL, true,
+                        DatabaseType.MONGODB, true,
+                        DatabaseType.REDIS, true,
+                        DatabaseType.REDIS_MESSAGING, true
+                ),
+                "validate"
+        );
+        DatabaseConfigMap.DatabaseConfigSnapshot activeDatabaseSnapshot = new DatabaseConfigMap.DatabaseConfigSnapshot(
+                Map.of(
+                        DatabaseType.MYSQL, CommentedConfigurationNode.root(),
+                        DatabaseType.MONGODB, CommentedConfigurationNode.root(),
+                        DatabaseType.REDIS, CommentedConfigurationNode.root(),
+                        DatabaseType.REDIS_MESSAGING, CommentedConfigurationNode.root()
+                )
+        );
+        when(configHandler.currentSnapshot()).thenReturn(activeMainSnapshot);
+        when(configHandler.loadSnapshot()).thenReturn(activeMainSnapshot);
+        when(factory.currentConfigurationSnapshot()).thenReturn(activeDatabaseSnapshot);
+        when(factory.loadConfigurationSnapshot()).thenThrow(new IllegalArgumentException("Broken redis.yml"));
+        DataProviderRegistry registry = new DataProviderRegistry(factory, configHandler, new RecordingLoggerAdapter());
+
+        assertThrows(IllegalArgumentException.class, registry::reloadConfiguration);
+
+        verify(configHandler, org.mockito.Mockito.never()).applySnapshot(activeMainSnapshot);
+        verify(factory, org.mockito.Mockito.never()).applyConfigurationSnapshot(activeDatabaseSnapshot);
     }
 
     private static final class RecordingProvider implements ManagedDatabaseProvider {

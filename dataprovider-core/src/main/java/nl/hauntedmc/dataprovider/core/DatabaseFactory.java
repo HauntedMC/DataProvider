@@ -42,4 +42,16 @@ class DatabaseFactory {
             case REDIS_MESSAGING -> new RedisMessagingDatabase(connectionConfig, logger);
         };
     }
+
+    protected DatabaseConfigMap.DatabaseConfigSnapshot loadConfigurationSnapshot() {
+        return configMap.loadSnapshot();
+    }
+
+    protected void applyConfigurationSnapshot(DatabaseConfigMap.DatabaseConfigSnapshot snapshot) {
+        configMap.applySnapshot(snapshot);
+    }
+
+    protected DatabaseConfigMap.DatabaseConfigSnapshot currentConfigurationSnapshot() {
+        return configMap.currentSnapshot();
+    }
 }
