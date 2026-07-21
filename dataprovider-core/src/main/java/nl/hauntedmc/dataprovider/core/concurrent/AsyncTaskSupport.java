@@ -23,6 +23,10 @@ public final class AsyncTaskSupport {
         T get() throws Exception;
     }
 
+    interface RejectionAwareRunnable extends Runnable {
+        void reject(RejectedExecutionException rejection);
+    }
+
     public static CompletableFuture<Void> runAsync(Executor executor, String operationName, CheckedRunnable runnable) {
         Objects.requireNonNull(runnable, "Runnable cannot be null.");
         return supplyAsync(executor, operationName, () -> {
@@ -43,17 +47,29 @@ public final class AsyncTaskSupport {
         Objects.requireNonNull(supplier, "Supplier cannot be null.");
 
         CompletableFuture<T> future = new CompletableFuture<>();
-        try {
-            executor.execute(() -> {
+        RejectionAwareRunnable task = new RejectionAwareRunnable() {
+            @Override
+            public void run() {
+                if (future.isDone()) {
+                    return;
+                }
                 try {
                     future.complete(supplier.get());
                 } catch (Throwable throwable) {
                     future.completeExceptionally(throwable);
                 }
-            });
+            }
+
+            @Override
+            public void reject(RejectedExecutionException rejection) {
+                future.completeExceptionally(rejection);
+            }
+        };
+        try {
+            executor.execute(task);
         } catch (RejectedExecutionException e) {
             future.completeExceptionally(new RejectedExecutionException(
-                    "Rejected async operation '" + operationName + "' because the worker queue is full or shutting down.",
+                    "Rejected async operation '" + operationName + "' because capacity is exhausted or shutting down.",
                     e
             ));
         } catch (RuntimeException e) {
