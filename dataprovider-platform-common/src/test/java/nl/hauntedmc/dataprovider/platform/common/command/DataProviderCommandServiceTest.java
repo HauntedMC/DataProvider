@@ -5,6 +5,7 @@ import net.kyori.adventure.text.serializer.plain.PlainTextComponentSerializer;
 import nl.hauntedmc.dataprovider.database.DatabaseConnectionKey;
 import nl.hauntedmc.dataprovider.database.DatabaseProvider;
 import nl.hauntedmc.dataprovider.database.DatabaseType;
+import nl.hauntedmc.dataprovider.core.ConnectionHealthSnapshot;
 import nl.hauntedmc.dataprovider.core.DataProviderHandler;
 import org.junit.jupiter.api.Test;
 
@@ -65,6 +66,10 @@ class DataProviderCommandServiceTest {
         activeDatabases.put(keyB, disconnectedProvider());
         when(handler.getActiveDatabases()).thenReturn(activeDatabases);
         when(handler.getActiveDatabaseReferenceCounts()).thenReturn(Map.of(keyA, 2, keyB, 3));
+        when(handler.getCachedDatabaseHealth()).thenReturn(Map.of(
+                keyA, healthySnapshot(),
+                keyB, unhealthySnapshot()
+        ));
 
         service.execute(new String[]{"status"}, permissions("dataprovider.command.status"), output::record);
 
@@ -74,8 +79,9 @@ class DataProviderCommandServiceTest {
         assertTrue(output.hasMessageContaining("By backend:"));
         assertTrue(output.hasMessageContaining("Connections:"));
         assertTrue(output.hasMessageContaining("plugin=APlugin"));
-        assertTrue(output.hasMessageContaining("state=CONNECTED"));
-        assertTrue(output.hasMessageContaining("state=DISCONNECTED"));
+        assertTrue(output.hasMessageContaining("health=healthy"));
+        assertTrue(output.hasMessageContaining("health=unhealthy"));
+        assertTrue(output.hasMessageContaining("health_age=never"));
     }
 
     @Test
@@ -91,6 +97,7 @@ class DataProviderCommandServiceTest {
         activeDatabases.put(keyB, connectedProvider());
         when(handler.getActiveDatabases()).thenReturn(activeDatabases);
         when(handler.getActiveDatabaseReferenceCounts()).thenReturn(Map.of(keyA, 1, keyB, 1));
+        when(handler.getCachedDatabaseHealth()).thenReturn(Map.of(keyA, healthySnapshot(), keyB, healthySnapshot()));
 
         service.execute(
                 new String[]{"status", "summary", "plugin", "FeatureA", "type", "redis"},
@@ -118,6 +125,10 @@ class DataProviderCommandServiceTest {
         activeDatabases.put(unhealthyKey, disconnectedProvider());
         when(handler.getActiveDatabases()).thenReturn(activeDatabases);
         when(handler.getActiveDatabaseReferenceCounts()).thenReturn(Map.of(healthyKey, 1, unhealthyKey, 1));
+        when(handler.getCachedDatabaseHealth()).thenReturn(Map.of(
+                healthyKey, healthySnapshot(),
+                unhealthyKey, unhealthySnapshot()
+        ));
 
         service.execute(
                 new String[]{"status", "unhealthy"},
@@ -237,6 +248,22 @@ class DataProviderCommandServiceTest {
         DatabaseProvider provider = mock(DatabaseProvider.class);
         when(provider.isConnected()).thenReturn(true);
         return provider;
+    }
+
+    private static ConnectionHealthSnapshot healthySnapshot() {
+        return new ConnectionHealthSnapshot(
+                ConnectionHealthSnapshot.LocalConnectionState.CONNECTED,
+                ConnectionHealthSnapshot.RemoteHealth.HEALTHY,
+                null
+        );
+    }
+
+    private static ConnectionHealthSnapshot unhealthySnapshot() {
+        return new ConnectionHealthSnapshot(
+                ConnectionHealthSnapshot.LocalConnectionState.DISCONNECTED,
+                ConnectionHealthSnapshot.RemoteHealth.UNHEALTHY,
+                null
+        );
     }
 
     private static DatabaseProvider disconnectedProvider() {

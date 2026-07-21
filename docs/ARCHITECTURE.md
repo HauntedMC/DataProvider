@@ -45,7 +45,7 @@ Public packages stay under `nl.hauntedmc.dataprovider.api` and `nl.hauntedmc.dat
 
 - `PlatformDataProviderRuntime` centralizes bootstrap shutdown behavior and startup rollback handling.
 - Platform command adapters delegate to a shared `DataProviderCommandService` so Bukkit and Velocity command behavior stays identical.
-- Command service exposes diagnostics-focused admin commands (`status`, `config`, `reload`) with permission-gated filtering and runtime health summaries.
+- Command service exposes diagnostics-focused admin commands (`status`, `config`, `reload`) with permission-gated filtering. Status reads cached remote health and triggers refresh probes asynchronously, so platform server threads never perform remote health checks.
 - API discovery is platform-native: Bukkit registers `DataProviderAPI` in `ServicesManager`; Velocity exposes `DataProviderApiSupplier` on plugin instance.
 - Platform-specific wrappers only map host APIs to shared internals (logger, command registration, event/plugin lifecycle hooks).
 

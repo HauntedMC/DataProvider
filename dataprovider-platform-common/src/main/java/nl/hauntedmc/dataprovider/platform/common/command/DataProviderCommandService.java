@@ -5,6 +5,7 @@ import net.kyori.adventure.text.format.NamedTextColor;
 import nl.hauntedmc.dataprovider.database.DatabaseConnectionKey;
 import nl.hauntedmc.dataprovider.database.DatabaseProvider;
 import nl.hauntedmc.dataprovider.database.DatabaseType;
+import nl.hauntedmc.dataprovider.core.ConnectionHealthSnapshot;
 import nl.hauntedmc.dataprovider.core.DataProviderHandler;
 
 import java.util.ArrayList;
@@ -156,7 +157,7 @@ public final class DataProviderCommandService {
                 .filter(status -> statusOptions.typeFilter() == null
                         || status.key().type() == statusOptions.typeFilter())
                 .filter(status -> !statusOptions.unhealthyOnly()
-                        || status.health() != ConnectionHealth.CONNECTED)
+                        || status.health().remoteHealth() != ConnectionHealthSnapshot.RemoteHealth.HEALTHY)
                 .toList();
 
         if (filteredConnections.isEmpty()) {
@@ -355,21 +356,27 @@ public final class DataProviderCommandService {
 
     private List<ConnectionStatus> listConnectionStatuses(Consumer<Component> messageSink) {
         ConcurrentMap<DatabaseConnectionKey, DatabaseProvider> activeDatabases;
+        Map<DatabaseConnectionKey, ConnectionHealthSnapshot> healthSnapshots;
         Map<DatabaseConnectionKey, Integer> referenceCounts;
         try {
             activeDatabases = dataProviderHandler.getActiveDatabases();
+            healthSnapshots = dataProviderHandler.getCachedDatabaseHealth();
             referenceCounts = dataProviderHandler.getActiveDatabaseReferenceCounts();
+            dataProviderHandler.probeDatabaseHealthAsync();
         } catch (RuntimeException exception) {
             messageSink.accept(failedOperationMessage("Failed to inspect active connections", exception));
             return null;
         }
 
-        return activeDatabases.entrySet().stream()
-                .sorted(Map.Entry.comparingByKey(CONNECTION_KEY_COMPARATOR))
-                .map(entry -> {
-                    DatabaseConnectionKey key = entry.getKey();
+        return activeDatabases.keySet().stream()
+                .sorted(CONNECTION_KEY_COMPARATOR)
+                .map(key -> {
                     int references = Math.max(1, referenceCounts.getOrDefault(key, 1));
-                    return new ConnectionStatus(key, references, probeHealth(entry.getValue()));
+                    ConnectionHealthSnapshot health = healthSnapshots.getOrDefault(
+                            key,
+                            ConnectionHealthSnapshot.unprobed(false)
+                    );
+                    return new ConnectionStatus(key, references, health);
                 })
                 .toList();
     }
@@ -380,7 +387,7 @@ public final class DataProviderCommandService {
             Consumer<Component> messageSink
     ) {
         long unhealthyCount = filteredConnections.stream()
-                .filter(status -> status.health() != ConnectionHealth.CONNECTED)
+                .filter(status -> status.health().remoteHealth() != ConnectionHealthSnapshot.RemoteHealth.HEALTHY)
                 .count();
         int totalReferences = filteredConnections.stream().mapToInt(ConnectionStatus::references).sum();
         long uniquePluginCount = filteredConnections.stream().map(status -> status.key().pluginName()).distinct().count();
@@ -465,8 +472,12 @@ public final class DataProviderCommandService {
                     .append(Component.text(key.connectionIdentifier(), NamedTextColor.WHITE))
                     .append(Component.text(", refs=", NamedTextColor.YELLOW))
                     .append(Component.text(status.references(), NamedTextColor.WHITE))
-                    .append(Component.text(", state=", NamedTextColor.YELLOW))
-                    .append(status.health().asComponent()));
+                    .append(Component.text(", local=", NamedTextColor.YELLOW))
+                    .append(Component.text(status.health().localState().name().toLowerCase(Locale.ROOT), NamedTextColor.WHITE))
+                    .append(Component.text(", health=", NamedTextColor.YELLOW))
+                    .append(Component.text(status.health().remoteHealth().name().toLowerCase(Locale.ROOT), NamedTextColor.WHITE))
+                    .append(Component.text(", health_age=", NamedTextColor.YELLOW))
+                    .append(Component.text(formatHealthAge(status.health()), NamedTextColor.WHITE)));
         }
     }
 
@@ -497,15 +508,11 @@ public final class DataProviderCommandService {
         }
     }
 
-    private static ConnectionHealth probeHealth(DatabaseProvider provider) {
-        if (provider == null) {
-            return ConnectionHealth.ERROR;
+    private static String formatHealthAge(ConnectionHealthSnapshot health) {
+        if (health.checkedAt() == null) {
+            return "never";
         }
-        try {
-            return provider.isConnected() ? ConnectionHealth.CONNECTED : ConnectionHealth.DISCONNECTED;
-        } catch (RuntimeException exception) {
-            return ConnectionHealth.ERROR;
-        }
+        return Math.max(0, java.time.Duration.between(health.checkedAt(), java.time.Instant.now()).toSeconds()) + "s";
     }
 
     private static boolean isRootSubcommandVisible(String subcommand, Predicate<String> permissionChecker) {
@@ -546,7 +553,7 @@ public final class DataProviderCommandService {
         return Component.text(operation + " (" + reason + ").", NamedTextColor.RED);
     }
 
-    private record ConnectionStatus(DatabaseConnectionKey key, int references, ConnectionHealth health) {
+    private record ConnectionStatus(DatabaseConnectionKey key, int references, ConnectionHealthSnapshot health) {
     }
 
     private record StatusOptions(
@@ -557,31 +564,15 @@ public final class DataProviderCommandService {
     ) {
     }
 
-    private enum ConnectionHealth {
-        CONNECTED(NamedTextColor.GREEN),
-        DISCONNECTED(NamedTextColor.YELLOW),
-        ERROR(NamedTextColor.RED);
-
-        private final NamedTextColor color;
-
-        ConnectionHealth(NamedTextColor color) {
-            this.color = color;
-        }
-
-        private Component asComponent() {
-            return Component.text(name(), color);
-        }
-    }
-
     private static final class AggregateCounters {
         private int connectionCount;
         private int referenceCount;
         private int unhealthyCount;
 
-        private void increment(int references, ConnectionHealth health) {
+        private void increment(int references, ConnectionHealthSnapshot health) {
             connectionCount++;
             referenceCount += references;
-            if (health != ConnectionHealth.CONNECTED) {
+            if (health.remoteHealth() != ConnectionHealthSnapshot.RemoteHealth.HEALTHY) {
                 unhealthyCount++;
             }
         }

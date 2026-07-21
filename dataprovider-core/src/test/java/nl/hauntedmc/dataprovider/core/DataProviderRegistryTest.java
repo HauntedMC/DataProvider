@@ -15,6 +15,7 @@ import java.util.Map;
 import java.util.concurrent.ConcurrentMap;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -206,7 +207,7 @@ class DataProviderRegistryTest {
     }
 
     @Test
-    void providerHealthCheckExceptionsAreTreatedAsStaleConnections() {
+    void remoteHealthFailuresDoNotBlockLocalProviderLookup() {
         DatabaseFactory factory = mock(DatabaseFactory.class);
         ConfigHandler configHandler = mock(ConfigHandler.class);
         when(configHandler.isDatabaseTypeEnabled(DatabaseType.MYSQL)).thenReturn(true);
@@ -219,8 +220,29 @@ class DataProviderRegistryTest {
         registry.registerDatabase("plugin", "feature-a", DatabaseType.MYSQL, "default");
 
         provider.healthFailure = new RuntimeException("health check failed");
-        assertNull(registry.getDatabase("plugin", DatabaseType.MYSQL, "default"));
-        assertTrue(logger.warnMessages().stream().anyMatch(m -> m.contains("Provider health check failed")));
+        assertSame(provider, registry.getDatabase("plugin", DatabaseType.MYSQL, "default"));
+        assertTrue(logger.warnMessages().isEmpty());
+    }
+
+    @Test
+    void remoteHealthProbeCachesFailuresWithoutRemovingLocallyConnectedProvider() {
+        DatabaseFactory factory = mock(DatabaseFactory.class);
+        ConfigHandler configHandler = mock(ConfigHandler.class);
+        when(configHandler.isDatabaseTypeEnabled(DatabaseType.MYSQL)).thenReturn(true);
+        DataProviderRegistry registry = new DataProviderRegistry(factory, configHandler, new RecordingLoggerAdapter());
+        RecordingProvider provider = new RecordingProvider(true);
+        provider.healthFailure = new RuntimeException("network unavailable");
+        when(factory.createDatabaseProvider(DatabaseType.MYSQL, ConnectionIdentifier.of("default"))).thenReturn(provider);
+
+        registry.registerDatabase("plugin", "feature", DatabaseType.MYSQL, "default");
+        registry.probeRemoteHealthAsync().join();
+
+        ConnectionHealthSnapshot snapshot = registry.getCachedHealthSnapshots().get(
+                new DatabaseConnectionKey("plugin", DatabaseType.MYSQL, "default")
+        );
+        assertEquals(ConnectionHealthSnapshot.RemoteHealth.ERROR, snapshot.remoteHealth());
+        assertNotNull(snapshot.checkedAt());
+        assertSame(provider, registry.getDatabase("plugin", DatabaseType.MYSQL, "default"));
     }
 
     @Test
@@ -504,6 +526,11 @@ class DataProviderRegistryTest {
             if (healthFailure != null) {
                 throw healthFailure;
             }
+            return connected;
+        }
+
+        @Override
+        public boolean isLocallyConnected() {
             return connected;
         }
 

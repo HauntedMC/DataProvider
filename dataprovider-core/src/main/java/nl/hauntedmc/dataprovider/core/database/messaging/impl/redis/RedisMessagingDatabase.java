@@ -194,6 +194,12 @@ public final class RedisMessagingDatabase implements MessagingDatabaseProvider, 
     @Override
     public boolean isConnected() {
         JedisPool snapshot = pool;
+        return connected && snapshot != null && !snapshot.isClosed();
+    }
+
+    @Override
+    public boolean probeRemoteHealth() {
+        JedisPool snapshot = pool;
         if (!connected || snapshot == null || snapshot.isClosed()) {
             return false;
         }
