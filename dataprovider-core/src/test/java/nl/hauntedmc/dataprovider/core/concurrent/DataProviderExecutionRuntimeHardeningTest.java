@@ -128,7 +128,7 @@ class DataProviderExecutionRuntimeHardeningTest {
             CompletableFuture<Boolean> next = AsyncTaskSupport.supplyAsync(
                     second,
                     "check-interrupt",
-                    Thread.currentThread()::isInterrupted
+                    () -> Thread.currentThread().isInterrupted()
             );
             assertFalse(next.get(2, TimeUnit.SECONDS));
         }
