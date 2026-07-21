@@ -14,6 +14,7 @@ import java.nio.file.Path;
 
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class DatabaseConfigMapTest {
@@ -113,6 +114,24 @@ class DatabaseConfigMapTest {
         CommentedConfigurationNode node = configMap.getConfig(DatabaseType.MYSQL, "default");
         assertNull(node);
         assertTrue(logger.errorMessages().stream().anyMatch(message -> message.contains("Failed to load config for MYSQL")));
+    }
+
+    @Test
+    void rejectsCandidateSnapshotWhenAnyDatabaseFileIsMalformed() throws IOException {
+        writeMySqlConfig("""
+                default:
+                  host: active-host
+                """);
+        RecordingLoggerAdapter logger = new RecordingLoggerAdapter();
+        DatabaseConfigMap configMap = new DatabaseConfigMap(tempDir, logger, getClass().getClassLoader());
+        Path redisConfig = tempDir.resolve("databases").resolve(DatabaseType.REDIS.getConfigFileName());
+        Files.writeString(redisConfig, "invalid: [yaml", StandardCharsets.UTF_8);
+
+        assertThrows(IllegalStateException.class, configMap::loadSnapshot);
+
+        CommentedConfigurationNode activeConfig = configMap.getConfig(DatabaseType.MYSQL, "default");
+        assertNotNull(activeConfig);
+        assertTrue("active-host".equals(activeConfig.node("host").getString()));
     }
 
     private void writeMySqlConfig(String content) throws IOException {

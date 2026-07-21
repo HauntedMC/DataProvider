@@ -78,9 +78,9 @@ If you maintain multiple plugins, this gives your team one standard integration 
 ## Admin Commands
 
 - `/dataprovider help` shows command usage.
-- `/dataprovider status [summary|connections] [unhealthy] [plugin <name>] [type <databaseType>]` shows active connection diagnostics.
+- `/dataprovider status [summary|connections] [unhealthy] [plugin <name>] [type <databaseType>]` shows local state plus cached remote health and its age; it never blocks on remote checks.
 - `/dataprovider config` prints current runtime config state (`orm.schema_mode` + backend enablement).
-- `/dataprovider reload` reloads `config.yml` from disk.
+- `/dataprovider reload` validates and atomically reloads `config.yml` plus every `databases/*.yml` file.
 
 Permissions:
 

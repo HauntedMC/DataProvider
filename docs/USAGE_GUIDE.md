@@ -39,7 +39,7 @@ Treat `DataProviderAPI` as runtime-scoped, not permanent.
 
 `DataProvider` ships with runtime diagnostics commands for Bukkit/Paper and Velocity:
 
-- `/dataprovider status [summary|connections] [unhealthy] [plugin <name>] [type <databaseType>]`
+- `/dataprovider status [summary|connections] [unhealthy] [plugin <name>] [type <databaseType>]` displays cached remote health and age without blocking the server thread; it starts refreshed probes asynchronously.
 - `/dataprovider config`
 - `/dataprovider reload`
 

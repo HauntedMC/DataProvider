@@ -230,6 +230,13 @@ public class MongoDBDatabase implements DocumentDatabaseProvider, ManagedDatabas
     public boolean isConnected() {
         MongoClient clientSnapshot = mongoClient;
         String databaseSnapshot = databaseName;
+        return connected && clientSnapshot != null && databaseSnapshot != null && !databaseSnapshot.isBlank();
+    }
+
+    @Override
+    public boolean probeRemoteHealth() {
+        MongoClient clientSnapshot = mongoClient;
+        String databaseSnapshot = databaseName;
         if (!connected || clientSnapshot == null || databaseSnapshot == null || databaseSnapshot.isBlank()) {
             return false;
         }

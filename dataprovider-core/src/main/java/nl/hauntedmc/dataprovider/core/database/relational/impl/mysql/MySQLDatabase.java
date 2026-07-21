@@ -251,6 +251,12 @@ public class MySQLDatabase implements RelationalDatabaseProvider, ManagedDatabas
     @Override
     public boolean isConnected() {
         HikariDataSource snapshot = dataSource;
+        return snapshot != null && !snapshot.isClosed();
+    }
+
+    @Override
+    public boolean probeRemoteHealth() {
+        HikariDataSource snapshot = dataSource;
         if (snapshot == null || snapshot.isClosed()) {
             return false;
         }

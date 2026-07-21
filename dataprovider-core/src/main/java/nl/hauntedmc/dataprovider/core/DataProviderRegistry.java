@@ -12,6 +12,7 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReadWriteLock;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
@@ -25,6 +26,7 @@ class DataProviderRegistry {
      * Active registrations keyed by typed plugin/type/identifier identity.
      */
     private final ConcurrentMap<RegistrationKey, ActiveDatabaseRegistration> activeDatabases = new ConcurrentHashMap<>();
+    private final ConcurrentMap<RegistrationKey, ConnectionHealthSnapshot> healthSnapshots = new ConcurrentHashMap<>();
     /**
      * Guards lifecycle transitions (shutdown / bulk unregister) while allowing concurrent
      * register/get/unregister operations through the read lock.
@@ -77,7 +79,7 @@ class DataProviderRegistry {
                 ActiveDatabaseRegistration existingRegistration = activeDatabases.get(key);
                 if (existingRegistration != null) {
                     ManagedDatabaseProvider existingProvider = existingRegistration.provider();
-                    if (isProviderHealthy(existingProvider, key) && existingRegistration.tryAcquireReference(ownerScope)) {
+                    if (isProviderLocallyConnected(existingProvider, key) && existingRegistration.tryAcquireReference(ownerScope)) {
                         int references = existingRegistration.referenceCount();
                         logger.info(pluginName + " reused " + databaseType.name() + " connection (" + identifierValue
                                 + "), active references=" + references);
@@ -104,7 +106,7 @@ class DataProviderRegistry {
                         return null;
                     }
                     createdProvider.connect();
-                    if (!createdProvider.isConnected()) {
+                    if (!createdProvider.isLocallyConnected()) {
                         try {
                             createdProvider.disconnect();
                         } catch (Exception e) {
@@ -121,6 +123,7 @@ class DataProviderRegistry {
                     );
                     ActiveDatabaseRegistration raceWinner = activeDatabases.putIfAbsent(key, createdRegistration);
                     if (raceWinner == null) {
+                        healthSnapshots.put(key, ConnectionHealthSnapshot.unprobed(true));
                         logger.info(pluginName + " registered " + databaseType.name() + " connection (" + identifierValue
                                 + "), active references=1");
                         return createdProvider;
@@ -133,7 +136,7 @@ class DataProviderRegistry {
                     }
 
                     ManagedDatabaseProvider raceWinnerProvider = raceWinner.provider();
-                    if (isProviderHealthy(raceWinnerProvider, key) && raceWinner.tryAcquireReference(ownerScope)) {
+                    if (isProviderLocallyConnected(raceWinnerProvider, key) && raceWinner.tryAcquireReference(ownerScope)) {
                         int references = raceWinner.referenceCount();
                         logger.info(pluginName + " already has " + databaseType.name() + " connection (" + identifierValue
                                 + "), active references=" + references);
@@ -160,11 +163,11 @@ class DataProviderRegistry {
         }
     }
 
-    private boolean isProviderHealthy(DatabaseProvider provider, RegistrationKey key) {
+    private boolean isProviderLocallyConnected(ManagedDatabaseProvider provider, RegistrationKey key) {
         try {
-            return provider.isConnected();
+            return provider.isLocallyConnected();
         } catch (Exception e) {
-            logger.warn("Provider health check failed for " + key + ". Treating connection as stale.");
+            logger.warn("Provider local connection-state check failed for " + key + ". Treating connection as stale.");
             return false;
         }
     }
@@ -206,12 +209,13 @@ class DataProviderRegistry {
             }
 
             ManagedDatabaseProvider provider = registration.provider();
-            if (isProviderHealthy(provider, key)) {
+            if (isProviderLocallyConnected(provider, key)) {
                 return provider;
             }
 
             if (activeDatabases.remove(key, registration)) {
                 disconnectQuietly(provider, key, "stale connection during lookup");
+                healthSnapshots.remove(key);
                 logger.warn("Removed stale " + databaseType.name() + " connection for " + pluginName
                         + " (" + identifierValue + ") while retrieving the provider.");
             }
@@ -242,12 +246,13 @@ class DataProviderRegistry {
             }
 
             ManagedDatabaseProvider provider = registration.provider();
-            if (isProviderHealthy(provider, key)) {
+            if (isProviderLocallyConnected(provider, key)) {
                 return provider;
             }
 
             if (activeDatabases.remove(key, registration)) {
                 disconnectQuietly(provider, key, "stale connection during scoped lookup");
+                healthSnapshots.remove(key);
                 logger.warn("Removed stale " + databaseType.name() + " connection for " + pluginId.value()
                         + " (" + connectionIdentifier.value() + ") while retrieving the scoped provider.");
             }
@@ -315,6 +320,7 @@ class DataProviderRegistry {
             } catch (Exception e) {
                 logger.error("Error disconnecting " + key, e);
             }
+            healthSnapshots.remove(key);
             logger.info(pluginName + " unregistered " + databaseType.name() + " connection (" + identifierValue + ")");
         } finally {
             readLock.unlock();
@@ -355,6 +361,7 @@ class DataProviderRegistry {
                 } catch (Exception e) {
                     logger.error("Error disconnecting " + key, e);
                 }
+                healthSnapshots.remove(key);
             }
         } finally {
             writeLock.unlock();
@@ -392,6 +399,7 @@ class DataProviderRegistry {
                 } catch (Exception e) {
                     logger.error("Error disconnecting " + key, e);
                 }
+                healthSnapshots.remove(key);
             }
         } finally {
             writeLock.unlock();
@@ -414,6 +422,7 @@ class DataProviderRegistry {
                 }
             }
             activeDatabases.clear();
+            healthSnapshots.clear();
             logger.info("All database connections have been closed.");
         } finally {
             writeLock.unlock();
@@ -433,6 +442,61 @@ class DataProviderRegistry {
         } finally {
             readLock.unlock();
         }
+    }
+
+    protected Map<DatabaseConnectionKey, ConnectionHealthSnapshot> getCachedHealthSnapshots() {
+        Lock readLock = lifecycleLock.readLock();
+        readLock.lock();
+        try {
+            ensureOpen();
+            Map<DatabaseConnectionKey, ConnectionHealthSnapshot> snapshots = new HashMap<>();
+            for (Map.Entry<RegistrationKey, ActiveDatabaseRegistration> entry : activeDatabases.entrySet()) {
+                RegistrationKey key = entry.getKey();
+                boolean locallyConnected = isProviderLocallyConnected(entry.getValue().provider(), key);
+                ConnectionHealthSnapshot cached = healthSnapshots.getOrDefault(
+                        key,
+                        ConnectionHealthSnapshot.unprobed(locallyConnected)
+                );
+                snapshots.put(
+                        key.toExternalKey(),
+                        new ConnectionHealthSnapshot(
+                                locallyConnected
+                                        ? ConnectionHealthSnapshot.LocalConnectionState.CONNECTED
+                                        : ConnectionHealthSnapshot.LocalConnectionState.DISCONNECTED,
+                                cached.remoteHealth(),
+                                cached.checkedAt()
+                        )
+                );
+            }
+            return Map.copyOf(snapshots);
+        } finally {
+            readLock.unlock();
+        }
+    }
+
+    protected CompletableFuture<Void> probeRemoteHealthAsync() {
+        Map<RegistrationKey, ActiveDatabaseRegistration> registrations = new HashMap<>(activeDatabases);
+        return CompletableFuture.runAsync(() -> registrations.forEach((key, registration) -> {
+            ManagedDatabaseProvider provider = registration.provider();
+            ConnectionHealthSnapshot.RemoteHealth health;
+            try {
+                health = provider.probeRemoteHealth()
+                        ? ConnectionHealthSnapshot.RemoteHealth.HEALTHY
+                        : ConnectionHealthSnapshot.RemoteHealth.UNHEALTHY;
+            } catch (RuntimeException e) {
+                health = ConnectionHealthSnapshot.RemoteHealth.ERROR;
+                logger.warn("Remote health probe failed for " + key + ": " + e.getMessage());
+            }
+            if (activeDatabases.get(key) == registration) {
+                healthSnapshots.put(key, new ConnectionHealthSnapshot(
+                        provider.isLocallyConnected()
+                                ? ConnectionHealthSnapshot.LocalConnectionState.CONNECTED
+                                : ConnectionHealthSnapshot.LocalConnectionState.DISCONNECTED,
+                        health,
+                        java.time.Instant.now()
+                ));
+            }
+        }));
     }
 
     protected Map<DatabaseConnectionKey, Integer> getActiveDatabaseReferenceCounts() {
@@ -481,11 +545,36 @@ class DataProviderRegistry {
         writeLock.lock();
         try {
             ensureOpen();
-            configHandler.reloadConfig();
-            logger.info("Reloaded DataProvider configuration from disk.");
+            ConfigHandler.ConfigSnapshot previousMainSnapshot = configHandler.currentSnapshot();
+            DatabaseConfigMap.DatabaseConfigSnapshot previousDatabaseSnapshot = factory.currentConfigurationSnapshot();
+            ConfigHandler.ConfigSnapshot mainSnapshot = configHandler.loadSnapshot();
+            DatabaseConfigMap.DatabaseConfigSnapshot databaseSnapshot = factory.loadConfigurationSnapshot();
+            configHandler.applySnapshot(mainSnapshot);
+            factory.applyConfigurationSnapshot(databaseSnapshot);
+            logger.info("Reloaded DataProvider configuration snapshot from disk: "
+                    + describeMainConfigurationChanges(previousMainSnapshot, mainSnapshot)
+                    + ", changed database files=" + previousDatabaseSnapshot.changedTypeCount(databaseSnapshot)
+                    + ". Existing connections retain their previous settings until reconnected.");
+        } catch (RuntimeException e) {
+            logger.error("Rejected DataProvider configuration reload; active configuration remains unchanged.", e);
+            throw e;
         } finally {
             writeLock.unlock();
         }
+    }
+
+    private static String describeMainConfigurationChanges(
+            ConfigHandler.ConfigSnapshot previous,
+            ConfigHandler.ConfigSnapshot current
+    ) {
+        int changedBackendCount = 0;
+        for (DatabaseType type : DatabaseType.values()) {
+            if (!previous.enabledTypes().get(type).equals(current.enabledTypes().get(type))) {
+                changedBackendCount++;
+            }
+        }
+        boolean schemaModeChanged = !previous.ormSchemaMode().equals(current.ormSchemaMode());
+        return "changed backends=" + changedBackendCount + ", orm.schema_mode changed=" + schemaModeChanged;
     }
 
     protected boolean isClosed() {

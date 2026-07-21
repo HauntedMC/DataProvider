@@ -210,6 +210,12 @@ public class RedisDatabase implements KeyValueDatabaseProvider, ManagedDatabaseP
     @Override
     public boolean isConnected() {
         JedisPool snapshot = jedisPool;
+        return connected && snapshot != null && !snapshot.isClosed();
+    }
+
+    @Override
+    public boolean probeRemoteHealth() {
+        JedisPool snapshot = jedisPool;
         if (!connected || snapshot == null || snapshot.isClosed()) {
             return false;
         }

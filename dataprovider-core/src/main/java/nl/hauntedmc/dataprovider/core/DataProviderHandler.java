@@ -14,6 +14,7 @@ import java.util.Objects;
 import java.nio.file.Path;
 import java.util.Map;
 import java.util.concurrent.ConcurrentMap;
+import java.util.concurrent.CompletableFuture;
 
 /**
  * Public entry point for plugin-scoped database operations.
@@ -265,6 +266,20 @@ public class DataProviderHandler {
         requireOpen();
         requireInternalCaller();
         return registry.getActiveDatabaseReferenceCounts();
+    }
+
+    /** Returns cached asynchronous remote-health results without performing network I/O. */
+    public Map<DatabaseConnectionKey, ConnectionHealthSnapshot> getCachedDatabaseHealth() {
+        requireOpen();
+        requireInternalCaller();
+        return registry.getCachedHealthSnapshots();
+    }
+
+    /** Starts non-blocking remote probes for current connections. */
+    public CompletableFuture<Void> probeDatabaseHealthAsync() {
+        requireOpen();
+        requireInternalCaller();
+        return registry.probeRemoteHealthAsync();
     }
 
     /**

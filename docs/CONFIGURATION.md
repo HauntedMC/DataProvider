@@ -13,6 +13,13 @@ DataProvider writes defaults on first startup inside the plugin data folder.
 Each backend file supports named sections (`default`, `analytics`, etc.).
 Use the same identifier in code when calling `registerDatabase*`.
 
+## Reloading Configuration
+
+`/dataprovider reload` loads and validates `config.yml` and every file in `databases/` as one snapshot.
+If any file is missing, malformed, or invalid, the reload is rejected and the active configuration is unchanged.
+The command reports global and database-file changes. Existing connections retain their current settings;
+explicitly reconnect them to use the new database configuration.
+
 ## Global Keys (`config.yml`)
 
 - `orm.schema_mode`: Hibernate schema mode (for example `validate`, `update`)
