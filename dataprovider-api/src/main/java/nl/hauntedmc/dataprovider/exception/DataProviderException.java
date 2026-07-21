@@ -22,6 +22,26 @@ public abstract class DataProviderException extends RuntimeException {
     protected DataProviderException(
             DataProviderErrorCode errorCode,
             String safeMessage,
+            DataProviderFailureContext context,
+            Throwable safeCause
+    ) {
+        this(
+                errorCode,
+                safeMessage,
+                Objects.requireNonNull(context, "Failure context cannot be null.").backendType(),
+                context.connectionIdentifier(),
+                context.operationName(),
+                context.retryAdvice(),
+                context.executionOutcome(),
+                context.diagnostics(),
+                context.diagnosticId(),
+                safeCause
+        );
+    }
+
+    protected DataProviderException(
+            DataProviderErrorCode errorCode,
+            String safeMessage,
             DatabaseType backendType,
             String connectionIdentifier,
             String operationName,
