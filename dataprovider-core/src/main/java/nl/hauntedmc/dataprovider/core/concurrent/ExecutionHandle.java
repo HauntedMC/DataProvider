@@ -9,6 +9,16 @@ public interface ExecutionHandle extends Executor, AutoCloseable {
 
     boolean isClosed();
 
+    default boolean tryAcquireSubscription() {
+        return true;
+    }
+
+    default void releaseSubscription() {
+    }
+
+    default void recordDroppedMessages(long count) {
+    }
+
     @Override
     void close();
 
@@ -29,7 +39,7 @@ public interface ExecutionHandle extends Executor, AutoCloseable {
 
         @Override
         public ExecutionMetricsSnapshot metrics() {
-            return new ExecutionMetricsSnapshot(0, 0, 0, 0, 0, 0, 0, 0, 0, 0);
+            return new ExecutionMetricsSnapshot(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0);
         }
 
         @Override
