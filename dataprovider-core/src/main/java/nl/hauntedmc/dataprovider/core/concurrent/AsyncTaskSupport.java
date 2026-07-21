@@ -1,11 +1,13 @@
 package nl.hauntedmc.dataprovider.core.concurrent;
 
+import nl.hauntedmc.dataprovider.core.exception.DataProviderExceptionMapper;
+
 import java.util.Objects;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.Executor;
 import java.util.concurrent.RejectedExecutionException;
 
-/** Shared helpers for queue-backed async execution with rejection-safe futures. */
+/** Shared helpers for queue-backed async execution with rejection-safe structured futures. */
 public final class AsyncTaskSupport {
 
     private AsyncTaskSupport() {
@@ -59,14 +61,18 @@ public final class AsyncTaskSupport {
                     future.complete(supplier.get());
                 } catch (Throwable throwable) {
                     failed = true;
-                    future.completeExceptionally(throwable);
+                    future.completeExceptionally(
+                            DataProviderExceptionMapper.translate(throwable, executor, operationName)
+                    );
                 }
             }
 
             @Override
             public void reject(RejectedExecutionException rejection) {
                 failed = true;
-                future.completeExceptionally(rejection);
+                future.completeExceptionally(
+                        DataProviderExceptionMapper.translate(rejection, executor, operationName)
+                );
             }
 
             @Override
@@ -77,15 +83,16 @@ public final class AsyncTaskSupport {
         try {
             executor.execute(task);
         } catch (ExecutionRejectedException e) {
-            future.completeExceptionally(e);
+            future.completeExceptionally(DataProviderExceptionMapper.translate(e, executor, operationName));
         } catch (RejectedExecutionException e) {
-            future.completeExceptionally(new ExecutionRejectedException(
+            ExecutionRejectedException rejection = new ExecutionRejectedException(
                     ExecutionRejectedException.Reason.LANE_QUEUE_FULL,
                     "Rejected async operation '" + operationName + "'.",
                     e
-            ));
+            );
+            future.completeExceptionally(DataProviderExceptionMapper.translate(rejection, executor, operationName));
         } catch (RuntimeException e) {
-            future.completeExceptionally(e);
+            future.completeExceptionally(DataProviderExceptionMapper.translate(e, executor, operationName));
         }
         return future;
     }
