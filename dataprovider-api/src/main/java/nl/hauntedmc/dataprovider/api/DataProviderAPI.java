@@ -1,33 +1,22 @@
 package nl.hauntedmc.dataprovider.api;
 
+import nl.hauntedmc.dataprovider.api.orm.ORMContext;
 import nl.hauntedmc.dataprovider.database.DataAccess;
 import nl.hauntedmc.dataprovider.database.DatabaseProvider;
 import nl.hauntedmc.dataprovider.database.DatabaseType;
-import nl.hauntedmc.dataprovider.api.orm.ORMContext;
+import nl.hauntedmc.dataprovider.exception.DataProviderFailureContext;
+import nl.hauntedmc.dataprovider.exception.DataProviderRegistrationException;
+import nl.hauntedmc.dataprovider.exception.ExecutionOutcome;
+import nl.hauntedmc.dataprovider.exception.RetryAdvice;
 import nl.hauntedmc.dataprovider.logging.LoggerAdapter;
 
 import javax.sql.DataSource;
 import java.util.Objects;
 import java.util.Optional;
 
-/**
- * Public, platform-neutral facade for plugin-scoped database registrations.
- *
- * <p>The API artifact intentionally contains contracts only. Platform modules provide the
- * runtime implementation and expose an instance through their native service mechanism.</p>
- */
+/** Public, platform-neutral facade for plugin-scoped database registrations. */
 public interface DataProviderAPI {
 
-    /**
-     * Creates an isolated ORM context owned by the calling plugin.
-     *
-     * @param pluginName plugin name used for ORM diagnostics
-     * @param dataSource relational data source obtained from a registered provider
-     * @param logger logger that receives ORM lifecycle diagnostics
-     * @param schemaMode Hibernate schema mode: validate, none, update, or create
-     * @param entityClasses annotated entity classes to register
-     * @return a new, initialized ORM context
-     */
     ORMContext createOrmContext(
             String pluginName,
             DataSource dataSource,
@@ -36,7 +25,30 @@ public interface DataProviderAPI {
             Class<?>... entityClasses
     );
 
+    /** Legacy nullable registration method retained for compatibility. */
     DatabaseProvider registerDatabase(DatabaseType databaseType, String connectionIdentifier);
+
+    /**
+     * Registers a database or throws a structured public exception retaining the failure category.
+     * Implementations should override this method to preserve backend-specific failure details.
+     */
+    default DatabaseProvider registerDatabaseOrThrow(DatabaseType databaseType, String connectionIdentifier) {
+        DatabaseProvider provider = registerDatabase(databaseType, connectionIdentifier);
+        if (provider != null) {
+            return provider;
+        }
+        throw new DataProviderRegistrationException(
+                "Database registration failed.",
+                DataProviderFailureContext.of(
+                        databaseType,
+                        connectionIdentifier,
+                        "registerDatabase",
+                        RetryAdvice.CONDITIONAL,
+                        ExecutionOutcome.NOT_STARTED
+                ),
+                null
+        );
+    }
 
     DataProviderScope scope(OwnerScope ownerScope);
 
@@ -46,9 +58,28 @@ public interface DataProviderAPI {
 
     void unregisterAllDatabasesForPlugin();
 
+    /** Legacy nullable lookup retained for compatibility. */
     DatabaseProvider getRegisteredDatabase(DatabaseType databaseType, String connectionIdentifier);
 
-    /** Creates an isolated ownership scope for independently managed plugin components. */
+    /** Returns a registered provider or throws a structured registration-state failure. */
+    default DatabaseProvider requireRegisteredDatabase(DatabaseType databaseType, String connectionIdentifier) {
+        DatabaseProvider provider = getRegisteredDatabase(databaseType, connectionIdentifier);
+        if (provider != null) {
+            return provider;
+        }
+        throw new DataProviderRegistrationException(
+                "No active database registration exists for the requested connection.",
+                DataProviderFailureContext.of(
+                        databaseType,
+                        connectionIdentifier,
+                        "requireRegisteredDatabase",
+                        RetryAdvice.NEVER,
+                        ExecutionOutcome.NOT_STARTED
+                ),
+                null
+        );
+    }
+
     default DataProviderScope scope(String ownerScope) {
         return scope(OwnerScope.of(ownerScope));
     }
