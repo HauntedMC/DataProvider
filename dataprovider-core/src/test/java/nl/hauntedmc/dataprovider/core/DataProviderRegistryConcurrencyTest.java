@@ -3,6 +3,7 @@ package nl.hauntedmc.dataprovider.core;
 import nl.hauntedmc.dataprovider.core.config.ConfigHandler;
 import nl.hauntedmc.dataprovider.core.testutil.RecordingLoggerAdapter;
 import nl.hauntedmc.dataprovider.database.DataAccess;
+import nl.hauntedmc.dataprovider.database.DatabaseConnectionKey;
 import nl.hauntedmc.dataprovider.database.DatabaseProvider;
 import nl.hauntedmc.dataprovider.database.DatabaseType;
 import org.junit.jupiter.api.Test;
@@ -18,6 +19,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -50,6 +52,8 @@ class DataProviderRegistryConcurrencyTest {
                 }, executor));
             }
             start.countDown();
+            assertTrue(provider.connectStarted.await(5, TimeUnit.SECONDS));
+            awaitReferenceCount(registry, 100);
             provider.allowConnect.countDown();
 
             for (CompletableFuture<DatabaseProvider> registration : registrations) {
@@ -59,6 +63,7 @@ class DataProviderRegistryConcurrencyTest {
             assertEquals(1, provider.connectCalls.get());
             assertEquals(100, registry.getActiveDatabaseReferenceCounts().values().iterator().next());
         } finally {
+            provider.allowConnect.countDown();
             registry.shutdownAllDatabases();
             executor.shutdownNow();
         }
@@ -96,27 +101,36 @@ class DataProviderRegistryConcurrencyTest {
     }
 
     @Test
-    void failedConnectionCanBeRetriedWithAReplacementProvider() {
+    void failedConnectionCanBeRetriedAndFailureRemainsDiagnosable() {
         DatabaseFactory factory = mock(DatabaseFactory.class);
         ConfigHandler config = enabledConfig();
+        IllegalStateException failure = new IllegalStateException("authentication failed");
         BlockingProvider failed = new BlockingProvider();
         failed.allowConnect.countDown();
-        failed.connectFailure = new IllegalStateException("authentication failed");
+        failed.connectFailure = failure;
         BlockingProvider replacement = new BlockingProvider();
         replacement.allowConnect.countDown();
         when(factory.createDatabaseProvider(DatabaseType.MYSQL, ConnectionIdentifier.of("default")))
                 .thenReturn(failed, replacement);
         DataProviderRegistry registry = new DataProviderRegistry(factory, config, new RecordingLoggerAdapter());
+        DatabaseConnectionKey key = new DatabaseConnectionKey("plugin", DatabaseType.MYSQL, "default");
 
         assertNull(registry.registerDatabase("plugin", "scope", DatabaseType.MYSQL, "default"));
+        ProviderLifecycleSnapshot failedSnapshot = registry.getProviderLifecycleSnapshots().get(key);
+        assertNotNull(failedSnapshot);
+        assertEquals(ProviderLifecycleState.FAILED, failedSnapshot.state());
+        assertSame(failure, failedSnapshot.failure());
+
         assertSame(replacement,
                 registry.registerDatabase("plugin", "scope", DatabaseType.MYSQL, "default"));
         assertEquals(1, failed.connectCalls.get());
         assertEquals(1, failed.disconnectCalls.get());
         assertEquals(1, replacement.connectCalls.get());
+        assertEquals(ProviderLifecycleState.READY, registry.getProviderLifecycleSnapshots().get(key).state());
 
         registry.shutdownAllDatabases();
         assertEquals(1, replacement.disconnectCalls.get());
+        assertEquals(ProviderLifecycleState.CLOSED, registry.getProviderLifecycleSnapshots().get(key).state());
     }
 
     @Test
@@ -127,7 +141,10 @@ class DataProviderRegistryConcurrencyTest {
         provider.allowConnect.countDown();
         when(factory.createDatabaseProvider(DatabaseType.MYSQL, ConnectionIdentifier.of("default"))).thenReturn(provider);
         DataProviderRegistry registry = new DataProviderRegistry(factory, config, new RecordingLoggerAdapter());
-        registry.registerDatabase("plugin", "scope", DatabaseType.MYSQL, "default");
+        for (int index = 0; index < 16; index++) {
+            assertSame(provider,
+                    registry.registerDatabase("plugin", "scope", DatabaseType.MYSQL, "default"));
+        }
 
         ExecutorService executor = Executors.newFixedThreadPool(16);
         try {
@@ -147,6 +164,44 @@ class DataProviderRegistryConcurrencyTest {
 
         assertEquals(1, provider.disconnectCalls.get());
         assertTrue(registry.getActiveDatabases().isEmpty());
+    }
+
+    @Test
+    void shutdownDuringConnectionDoesNotPublishOrDoubleCloseProvider() throws Exception {
+        DatabaseFactory factory = mock(DatabaseFactory.class);
+        ConfigHandler config = enabledConfig();
+        BlockingProvider provider = new BlockingProvider();
+        when(factory.createDatabaseProvider(DatabaseType.MYSQL, ConnectionIdentifier.of("default"))).thenReturn(provider);
+        DataProviderRegistry registry = new DataProviderRegistry(factory, config, new RecordingLoggerAdapter());
+        ExecutorService executor = Executors.newSingleThreadExecutor();
+        try {
+            CompletableFuture<DatabaseProvider> registration = CompletableFuture.supplyAsync(
+                    () -> registry.registerDatabase("plugin", "scope", DatabaseType.MYSQL, "default"), executor);
+            assertTrue(provider.connectStarted.await(5, TimeUnit.SECONDS));
+
+            registry.shutdownAllDatabases();
+            provider.allowConnect.countDown();
+
+            assertNull(registration.get(5, TimeUnit.SECONDS));
+            assertEquals(1, provider.connectCalls.get());
+            assertEquals(1, provider.disconnectCalls.get());
+            assertTrue(registry.isClosed());
+        } finally {
+            provider.allowConnect.countDown();
+            executor.shutdownNow();
+        }
+    }
+
+    private static void awaitReferenceCount(DataProviderRegistry registry, int expected) throws InterruptedException {
+        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5);
+        while (System.nanoTime() < deadline) {
+            if (registry.getActiveDatabaseReferenceCounts().values().stream()
+                    .anyMatch(value -> value == expected)) {
+                return;
+            }
+            Thread.sleep(5L);
+        }
+        assertEquals(expected, registry.getActiveDatabaseReferenceCounts().values().iterator().next());
     }
 
     private static ConfigHandler enabledConfig() {
@@ -173,7 +228,7 @@ class DataProviderRegistryConcurrencyTest {
         private volatile RuntimeException connectFailure;
 
         private BlockingProvider() {
-            this(new CountDownLatch(0), new CountDownLatch(1));
+            this(new CountDownLatch(1), new CountDownLatch(1));
         }
 
         private BlockingProvider(CountDownLatch connectStarted, CountDownLatch allowConnect) {
