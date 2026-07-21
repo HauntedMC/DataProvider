@@ -11,7 +11,10 @@ import java.util.Objects;
 public record ExecutionRuntimeConfig(
         Map<ExecutionLane, LaneConfig> lanes,
         Duration scopeShutdownGrace,
-        Duration runtimeShutdownGrace
+        Duration runtimeShutdownGrace,
+        int messagingGlobalSubscriptions,
+        int messagingPerPluginSubscriptions,
+        int messagingPerConnectionSubscriptions
 ) {
     public ExecutionRuntimeConfig {
         lanes = Map.copyOf(Objects.requireNonNull(lanes, "Lane configurations cannot be null."));
@@ -22,6 +25,10 @@ public record ExecutionRuntimeConfig(
         }
         Objects.requireNonNull(scopeShutdownGrace, "Scope shutdown grace cannot be null.");
         Objects.requireNonNull(runtimeShutdownGrace, "Runtime shutdown grace cannot be null.");
+        if (messagingGlobalSubscriptions < 1 || messagingPerPluginSubscriptions < 1
+                || messagingPerConnectionSubscriptions < 1) {
+            throw new IllegalArgumentException("Messaging subscription limits must be positive.");
+        }
     }
 
     public static ExecutionRuntimeConfig from(CommentedConfigurationNode root) {
@@ -31,11 +38,25 @@ public record ExecutionRuntimeConfig(
         configs.put(ExecutionLane.DOCUMENT, lane(root, "document", 8, 2_048, 4, 512, 2, 128));
         configs.put(ExecutionLane.REDIS, lane(root, "redis", 8, 2_048, 4, 512, 2, 128));
         configs.put(ExecutionLane.MESSAGING, lane(root, "messaging", 8, 4_096, 4, 1_024, 2, 256));
-        long scopeGraceMs = bounded(root.node("execution", "scope_shutdown_grace_ms").getLong(2_000L), 0, 60_000,
-                "execution.scope_shutdown_grace_ms");
-        long runtimeGraceMs = bounded(root.node("execution", "runtime_shutdown_grace_ms").getLong(5_000L), 0, 120_000,
-                "execution.runtime_shutdown_grace_ms");
-        return new ExecutionRuntimeConfig(configs, Duration.ofMillis(scopeGraceMs), Duration.ofMillis(runtimeGraceMs));
+        long scopeGraceMs = bounded(root.node("execution", "scope_shutdown_grace_ms").getLong(2_000L),
+                0, 60_000, "execution.scope_shutdown_grace_ms");
+        long runtimeGraceMs = bounded(root.node("execution", "runtime_shutdown_grace_ms").getLong(5_000L),
+                0, 120_000, "execution.runtime_shutdown_grace_ms");
+        CommentedConfigurationNode subscriptions = root.node("execution", "messaging_subscriptions");
+        int globalSubscriptions = bounded(subscriptions.node("global").getInt(256),
+                1, 100_000, "execution.messaging_subscriptions.global");
+        int perPluginSubscriptions = bounded(subscriptions.node("per_plugin").getInt(64),
+                1, globalSubscriptions, "execution.messaging_subscriptions.per_plugin");
+        int perConnectionSubscriptions = bounded(subscriptions.node("per_connection").getInt(32),
+                1, perPluginSubscriptions, "execution.messaging_subscriptions.per_connection");
+        return new ExecutionRuntimeConfig(
+                configs,
+                Duration.ofMillis(scopeGraceMs),
+                Duration.ofMillis(runtimeGraceMs),
+                globalSubscriptions,
+                perPluginSubscriptions,
+                perConnectionSubscriptions
+        );
     }
 
     private static LaneConfig lane(
