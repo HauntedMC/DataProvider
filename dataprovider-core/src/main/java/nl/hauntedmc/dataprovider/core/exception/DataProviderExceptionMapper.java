@@ -4,22 +4,25 @@ import com.mongodb.MongoSecurityException;
 import com.mongodb.MongoSocketException;
 import com.mongodb.MongoTimeoutException;
 import com.mongodb.MongoWriteException;
-import com.mongodb.MongoWriteConcernException;
 import nl.hauntedmc.dataprovider.core.concurrent.ExecutionHandle;
 import nl.hauntedmc.dataprovider.core.concurrent.ExecutionRejectedException;
 import nl.hauntedmc.dataprovider.database.DatabaseType;
 import nl.hauntedmc.dataprovider.exception.BackendAuthenticationException;
 import nl.hauntedmc.dataprovider.exception.BackendUnavailableException;
 import nl.hauntedmc.dataprovider.exception.DataConflictException;
+import nl.hauntedmc.dataprovider.exception.DataProviderConfigurationException;
 import nl.hauntedmc.dataprovider.exception.DataProviderErrorCode;
 import nl.hauntedmc.dataprovider.exception.DataProviderException;
 import nl.hauntedmc.dataprovider.exception.DataProviderFailureContext;
+import nl.hauntedmc.dataprovider.exception.DataProviderRegistrationException;
 import nl.hauntedmc.dataprovider.exception.DataProviderTimeoutException;
 import nl.hauntedmc.dataprovider.exception.DataSerializationException;
+import nl.hauntedmc.dataprovider.exception.DataTransactionException;
 import nl.hauntedmc.dataprovider.exception.ExecutionOutcome;
 import nl.hauntedmc.dataprovider.exception.ProviderClosedException;
 import nl.hauntedmc.dataprovider.exception.QueueSaturatedException;
 import nl.hauntedmc.dataprovider.exception.RetryAdvice;
+import nl.hauntedmc.dataprovider.exception.TransactionPhase;
 import org.bson.codecs.configuration.CodecConfigurationException;
 import redis.clients.jedis.exceptions.JedisAccessControlException;
 import redis.clients.jedis.exceptions.JedisConnectionException;
@@ -31,6 +34,7 @@ import java.sql.SQLTimeoutException;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.concurrent.CompletionException;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Executor;
 import java.util.concurrent.TimeoutException;
 
@@ -49,100 +53,157 @@ public final class DataProviderExceptionMapper {
         DatabaseType backend = execution == null ? inferBackend(operationName) : execution.backendType();
         String connection = execution == null ? null : execution.connectionIdentifier();
         DataProviderFailureContext base = DataProviderFailureContext.of(
-                backend,
-                connection,
-                operationName,
-                RetryAdvice.CONDITIONAL,
-                ExecutionOutcome.UNKNOWN
-        );
+                backend, connection, operationName, RetryAdvice.CONDITIONAL, ExecutionOutcome.UNKNOWN);
 
         if (root instanceof ExecutionRejectedException rejected) {
-            Map<String, String> diagnostics = new LinkedHashMap<>();
-            diagnostics.put("reason", rejected.reason().name());
-            if (execution != null && execution.pluginId() != null) {
-                diagnostics.put("plugin", execution.pluginId());
-            }
-            DataProviderFailureContext context = base.withDiagnostics(diagnostics);
+            Map<String, String> diagnostics = rejectionDiagnostics(rejected, execution);
             return switch (rejected.reason()) {
                 case RUNTIME_SHUTTING_DOWN, SCOPE_CLOSED -> new ProviderClosedException(
                         "The DataProvider execution scope is closed.",
-                        new DataProviderFailureContext(backend, connection, operationName, RetryAdvice.NEVER,
-                                ExecutionOutcome.NOT_STARTED, diagnostics, null),
-                        safeCause(root)
-                );
+                        context(backend, connection, operationName, RetryAdvice.NEVER,
+                                ExecutionOutcome.NOT_STARTED, diagnostics),
+                        safeCause(root));
                 case LANE_QUEUE_FULL, PLUGIN_QUEUE_LIMIT, CONNECTION_QUEUE_LIMIT, SUBSCRIPTION_LIMIT ->
                         new QueueSaturatedException(
                                 "DataProvider execution capacity is currently exhausted.",
-                                new DataProviderFailureContext(backend, connection, operationName, RetryAdvice.SAFE,
-                                        ExecutionOutcome.NOT_STARTED, diagnostics, null),
-                                safeCause(root)
-                        );
+                                context(backend, connection, operationName, RetryAdvice.SAFE,
+                                        ExecutionOutcome.NOT_STARTED, diagnostics),
+                                safeCause(root));
             };
         }
-
-        if (root instanceof SQLIntegrityConstraintViolationException || sqlStateStartsWith(root, "23")
-                || isMongoDuplicate(root)) {
+        if (isConflict(root)) {
             return new DataConflictException(
                     "The operation conflicted with existing backend state.",
-                    new DataProviderFailureContext(backend, connection, operationName, RetryAdvice.NEVER,
-                            ExecutionOutcome.NOT_APPLIED, sqlDiagnostics(root), null),
-                    safeCause(root)
-            );
+                    context(backend, connection, operationName, RetryAdvice.NEVER,
+                            ExecutionOutcome.NOT_APPLIED, sqlDiagnostics(root)), safeCause(root));
         }
-
         if (isAuthenticationFailure(root)) {
             return new BackendAuthenticationException(
                     "The backend rejected DataProvider authentication.",
-                    new DataProviderFailureContext(backend, connection, operationName, RetryAdvice.NEVER,
-                            ExecutionOutcome.NOT_STARTED, safeClassDiagnostics(root), null),
-                    safeCause(root)
-            );
+                    context(backend, connection, operationName, RetryAdvice.NEVER,
+                            ExecutionOutcome.NOT_STARTED, safeClassDiagnostics(root)), safeCause(root));
         }
-
         if (isTimeout(root)) {
             return new DataProviderTimeoutException(
                     "The backend operation timed out.",
-                    new DataProviderFailureContext(backend, connection, operationName, RetryAdvice.CONDITIONAL,
+                    context(backend, connection, operationName, RetryAdvice.CONDITIONAL,
                             isReadOperation(operationName) ? ExecutionOutcome.UNKNOWN : ExecutionOutcome.MAY_HAVE_APPLIED,
-                            safeClassDiagnostics(root), null),
-                    safeCause(root)
-            );
+                            safeClassDiagnostics(root)), safeCause(root));
         }
-
         if (isSerializationFailure(root)) {
             return new DataSerializationException(
                     "Data serialization or deserialization failed.",
-                    new DataProviderFailureContext(backend, connection, operationName, RetryAdvice.NEVER,
-                            ExecutionOutcome.NOT_STARTED, safeClassDiagnostics(root), null),
-                    safeCause(root)
-            );
+                    context(backend, connection, operationName, RetryAdvice.NEVER,
+                            ExecutionOutcome.NOT_STARTED, safeClassDiagnostics(root)), safeCause(root));
         }
-
         if (isUnavailable(root)) {
-            return new BackendUnavailableException(
-                    DataProviderErrorCode.BACKEND_UNAVAILABLE,
-                    "The configured backend is unavailable.",
-                    new DataProviderFailureContext(backend, connection, operationName, RetryAdvice.CONDITIONAL,
-                            ExecutionOutcome.UNKNOWN, safeClassDiagnostics(root), null),
-                    safeCause(root)
-            );
+            return unavailable(backend, connection, operationName, root);
         }
-
         return new BackendUnavailableException(
                 DataProviderErrorCode.BACKEND_UNAVAILABLE,
                 "The backend operation failed.",
-                base.withDiagnostics(safeClassDiagnostics(root)),
-                safeCause(root)
+                base.withDiagnostics(safeClassDiagnostics(root)), safeCause(root));
+    }
+
+    public static DataProviderException registrationFailure(
+            Throwable failure, DatabaseType backend, String connectionIdentifier, String operationName) {
+        Throwable root = unwrap(failure);
+        if (root instanceof DataProviderException structured) {
+            return structured;
+        }
+        if (root == null) {
+            return new DataProviderRegistrationException(
+                    "Database registration failed.",
+                    context(backend, connectionIdentifier, operationName, RetryAdvice.CONDITIONAL,
+                            ExecutionOutcome.NOT_STARTED, Map.of()), null);
+        }
+        if (root instanceof MissingConfigurationFailure) {
+            return new DataProviderConfigurationException(
+                    DataProviderErrorCode.CONFIGURATION_MISSING,
+                    "No configuration exists for the requested database connection.",
+                    context(backend, connectionIdentifier, operationName, RetryAdvice.NEVER,
+                            ExecutionOutcome.NOT_STARTED, safeClassDiagnostics(root)), safeCause(root));
+        }
+        return translate(root, new RegistrationExecutionHandle(backend, connectionIdentifier), operationName);
+    }
+
+    public static BackendUnavailableException backendDisabled(DatabaseType backend, String connectionIdentifier) {
+        return new BackendUnavailableException(
+                DataProviderErrorCode.BACKEND_DISABLED,
+                "The requested database backend is disabled.",
+                context(backend, connectionIdentifier, "registerDatabase", RetryAdvice.NEVER,
+                        ExecutionOutcome.NOT_STARTED, Map.of()), null);
+    }
+
+    public static DataProviderConfigurationException configurationFailure(Throwable failure, String operationName) {
+        Throwable root = unwrap(failure);
+        return new DataProviderConfigurationException(
+                DataProviderErrorCode.CONFIGURATION_INVALID,
+                "DataProvider configuration is invalid.",
+                context(null, null, operationName, RetryAdvice.NEVER,
+                        ExecutionOutcome.NOT_STARTED, safeClassDiagnostics(root)), safeCause(root));
+    }
+
+    public static DataTransactionException transactionFailure(
+            Throwable failure,
+            Executor executor,
+            String operationName,
+            TransactionPhase phase,
+            ExecutionOutcome outcome
+    ) {
+        DataProviderException mapped = translate(failure, executor, operationName);
+        return new DataTransactionException(
+                "The database transaction failed during " + phase.name().toLowerCase(java.util.Locale.ROOT) + ".",
+                phase,
+                context(mapped.backendType(), mapped.connectionIdentifier(), operationName,
+                        phase == TransactionPhase.COMMIT ? RetryAdvice.CONDITIONAL : RetryAdvice.NEVER,
+                        outcome, Map.of("phase", phase.name(), "causeCode", mapped.errorCode().name())),
+                mapped
         );
     }
 
+    public static MissingConfigurationFailure missingConfigurationFailure() {
+        return new MissingConfigurationFailure();
+    }
+
+    private static BackendUnavailableException unavailable(
+            DatabaseType backend, String connection, String operationName, Throwable root) {
+        return new BackendUnavailableException(
+                DataProviderErrorCode.BACKEND_UNAVAILABLE,
+                "The configured backend is unavailable.",
+                context(backend, connection, operationName, RetryAdvice.CONDITIONAL,
+                        ExecutionOutcome.UNKNOWN, safeClassDiagnostics(root)), safeCause(root));
+    }
+
+    private static DataProviderFailureContext context(
+            DatabaseType backend,
+            String connection,
+            String operation,
+            RetryAdvice retry,
+            ExecutionOutcome outcome,
+            Map<String, String> diagnostics
+    ) {
+        return new DataProviderFailureContext(backend, connection, operation, retry, outcome, diagnostics, null);
+    }
+
     private static Throwable unwrap(Throwable failure) {
+        if (failure == null) {
+            return null;
+        }
         Throwable current = failure;
-        while ((current instanceof CompletionException || current.getClass() == RuntimeException.class)
-                && current.getCause() != null) {
+        while (current.getCause() != null && (current instanceof CompletionException
+                || current instanceof ExecutionException
+                || current.getClass() == RuntimeException.class
+                || current instanceof IllegalStateException)) {
             current = current.getCause();
         }
         return current;
+    }
+
+    private static boolean isConflict(Throwable failure) {
+        return failure instanceof SQLIntegrityConstraintViolationException
+                || sqlStateStartsWith(failure, "23")
+                || failure instanceof MongoWriteException write && write.getError().getCode() == 11000;
     }
 
     private static boolean isAuthenticationFailure(Throwable failure) {
@@ -179,20 +240,22 @@ public final class DataProviderExceptionMapper {
         return name.contains("Connection") || name.contains("Socket") || name.contains("ServerSelection");
     }
 
-    private static boolean isMongoDuplicate(Throwable failure) {
-        if (failure instanceof MongoWriteException write) {
-            return write.getError().getCode() == 11000;
-        }
-        return failure instanceof MongoWriteConcernException concern
-                && concern.getWriteConcernError().getCode() == 11000;
-    }
-
     private static boolean sqlStateStartsWith(Throwable failure, String prefix) {
         return failure instanceof SQLException sql && startsWith(sql.getSQLState(), prefix);
     }
 
     private static boolean startsWith(String value, String prefix) {
         return value != null && value.startsWith(prefix);
+    }
+
+    private static Map<String, String> rejectionDiagnostics(
+            ExecutionRejectedException rejection, ExecutionHandle execution) {
+        LinkedHashMap<String, String> diagnostics = new LinkedHashMap<>();
+        diagnostics.put("reason", rejection.reason().name());
+        if (execution != null && execution.pluginId() != null) {
+            diagnostics.put("plugin", execution.pluginId());
+        }
+        return Map.copyOf(diagnostics);
     }
 
     private static Map<String, String> sqlDiagnostics(Throwable failure) {
@@ -207,11 +270,11 @@ public final class DataProviderExceptionMapper {
     }
 
     private static Map<String, String> safeClassDiagnostics(Throwable failure) {
-        return Map.of("causeType", failure.getClass().getName());
+        return failure == null ? Map.of() : Map.of("causeType", failure.getClass().getName());
     }
 
     private static Throwable safeCause(Throwable failure) {
-        return new SafeBackendCause(failure.getClass().getName());
+        return failure == null ? null : new SafeBackendCause(failure.getClass().getName());
     }
 
     private static boolean isReadOperation(String operationName) {
@@ -242,7 +305,23 @@ public final class DataProviderExceptionMapper {
         return null;
     }
 
-    /** Redacted cause preserving only the original exception type. */
+    private record RegistrationExecutionHandle(DatabaseType backendType, String connectionIdentifier)
+            implements ExecutionHandle {
+        @Override public void execute(Runnable command) { command.run(); }
+        @Override public nl.hauntedmc.dataprovider.core.concurrent.ExecutionMetricsSnapshot metrics() {
+            return new nl.hauntedmc.dataprovider.core.concurrent.ExecutionMetricsSnapshot(
+                    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0);
+        }
+        @Override public boolean isClosed() { return false; }
+        @Override public void close() { }
+    }
+
+    public static final class MissingConfigurationFailure extends RuntimeException {
+        private MissingConfigurationFailure() {
+            super("Missing database configuration", null, false, false);
+        }
+    }
+
     private static final class SafeBackendCause extends RuntimeException {
         private SafeBackendCause(String causeType) {
             super("Backend failure type: " + causeType, null, false, false);
