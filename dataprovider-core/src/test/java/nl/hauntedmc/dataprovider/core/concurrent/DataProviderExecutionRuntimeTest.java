@@ -22,30 +22,47 @@ class DataProviderExecutionRuntimeTest {
 
     @Test
     void floodedPluginCannotStarveAnotherPlugin() throws Exception {
-        DataProviderExecutionRuntime runtime = runtime(new ExecutionRuntimeConfig.LaneConfig(1, 32, 1, 16, 1, 16));
-        ExecutionHandle noisy = runtime.openScope("noisy", DatabaseType.MYSQL, "main");
-        ExecutionHandle quiet = runtime.openScope("quiet", DatabaseType.MYSQL, "main");
-        CountDownLatch release = new CountDownLatch(1);
-        CountDownLatch started = new CountDownLatch(1);
-        List<String> order = java.util.Collections.synchronizedList(new ArrayList<>());
+        try (DataProviderExecutionRuntime runtime = runtime(
+                new ExecutionRuntimeConfig.LaneConfig(1, 32, 1, 16, 1, 16))) {
+            ExecutionHandle noisy = runtime.openScope("noisy", DatabaseType.MYSQL, "main");
+            ExecutionHandle quiet = runtime.openScope("quiet", DatabaseType.MYSQL, "main");
+            CountDownLatch release = new CountDownLatch(1);
+            CountDownLatch started = new CountDownLatch(1);
+            List<String> order = java.util.Collections.synchronizedList(new ArrayList<>());
+            List<CompletableFuture<Void>> noisyTasks = new ArrayList<>();
 
-        CompletableFuture<Void> blocker = AsyncTaskSupport.runAsync(noisy, "blocker", () -> {
-            started.countDown();
-            release.await();
-            order.add("noisy-0");
-        });
-        assertTrue(started.await(2, TimeUnit.SECONDS));
-        for (int index = 1; index <= 8; index++) {
-            int task = index;
-            AsyncTaskSupport.runAsync(noisy, "noisy-" + task, () -> order.add("noisy-" + task));
+            CompletableFuture<Void> blocker = AsyncTaskSupport.runAsync(noisy, "blocker", () -> {
+                started.countDown();
+                release.await();
+                order.add("noisy-0");
+            });
+            assertTrue(started.await(2, TimeUnit.SECONDS));
+            for (int index = 1; index <= 8; index++) {
+                int task = index;
+                noisyTasks.add(AsyncTaskSupport.runAsync(
+                        noisy,
+                        "noisy-" + task,
+                        () -> order.add("noisy-" + task)
+                ));
+            }
+            CompletableFuture<Void> quietTask = AsyncTaskSupport.runAsync(
+                    quiet,
+                    "quiet",
+                    () -> order.add("quiet")
+            );
+
+            release.countDown();
+            blocker.get(2, TimeUnit.SECONDS);
+            quietTask.get(2, TimeUnit.SECONDS);
+            CompletableFuture.allOf(noisyTasks.toArray(CompletableFuture[]::new)).get(2, TimeUnit.SECONDS);
+
+            int quietIndex = order.indexOf("quiet");
+            int lastNoisyIndex = order.indexOf("noisy-8");
+            assertTrue(quietIndex >= 0, "Quiet task must complete.");
+            assertTrue(lastNoisyIndex >= 0, "Last noisy task must complete before comparing execution order.");
+            assertTrue(quietIndex < lastNoisyIndex,
+                    "Quiet plugin must receive a dispatch turn before the flooded plugin drains its queue.");
         }
-        CompletableFuture<Void> quietTask = AsyncTaskSupport.runAsync(quiet, "quiet", () -> order.add("quiet"));
-        release.countDown();
-        blocker.get(2, TimeUnit.SECONDS);
-        quietTask.get(2, TimeUnit.SECONDS);
-
-        assertTrue(order.indexOf("quiet") < order.indexOf("noisy-8"));
-        runtime.close();
     }
 
     @Test
