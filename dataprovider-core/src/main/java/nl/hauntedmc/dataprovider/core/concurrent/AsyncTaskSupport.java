@@ -76,9 +76,12 @@ public final class AsyncTaskSupport {
         };
         try {
             executor.execute(task);
+        } catch (ExecutionRejectedException e) {
+            future.completeExceptionally(e);
         } catch (RejectedExecutionException e) {
-            future.completeExceptionally(new RejectedExecutionException(
-                    "Rejected async operation '" + operationName + "' because capacity is exhausted or shutting down.",
+            future.completeExceptionally(new ExecutionRejectedException(
+                    ExecutionRejectedException.Reason.LANE_QUEUE_FULL,
+                    "Rejected async operation '" + operationName + "'.",
                     e
             ));
         } catch (RuntimeException e) {
