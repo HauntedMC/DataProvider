@@ -4,10 +4,10 @@ import nl.hauntedmc.dataprovider.api.DataProviderAPI;
 import nl.hauntedmc.dataprovider.api.DataProviderScope;
 import nl.hauntedmc.dataprovider.api.OwnerScope;
 import nl.hauntedmc.dataprovider.api.orm.ORMContext;
-
+import nl.hauntedmc.dataprovider.core.DataProviderHandler;
 import nl.hauntedmc.dataprovider.database.DataAccess;
-import nl.hauntedmc.dataprovider.database.DatabaseType;
 import nl.hauntedmc.dataprovider.database.DatabaseProvider;
+import nl.hauntedmc.dataprovider.database.DatabaseType;
 import nl.hauntedmc.dataprovider.database.document.DocumentDataAccess;
 import nl.hauntedmc.dataprovider.database.document.DocumentDatabaseProvider;
 import nl.hauntedmc.dataprovider.database.keyvalue.KeyValueDataAccess;
@@ -17,31 +17,15 @@ import nl.hauntedmc.dataprovider.database.messaging.MessagingDatabaseProvider;
 import nl.hauntedmc.dataprovider.database.relational.RelationalDataAccess;
 import nl.hauntedmc.dataprovider.database.relational.RelationalDatabaseProvider;
 import nl.hauntedmc.dataprovider.database.relational.schema.SchemaManager;
-import nl.hauntedmc.dataprovider.core.DataProviderHandler;
 
 import javax.sql.DataSource;
 import java.util.Objects;
 
-/**
- * DataProviderAPI is the public facade that exposes safe, read-only database handles
- * for third-party plugins. Internally, it delegates to a DataProviderHandler, but it does not
- * expose lifecycle-sensitive methods (like shutdownAllDatabases or getActiveDatabases).
- *
- * For most integrations, the primary lifecycle is:
- * register -> use provider/data access -> unregister.
- * Optional scoped ownership is available through {@link #scope(String)} for advanced cases
- * where one plugin/software process needs isolated ownership domains for independently
- * managed components.
- */
+/** Public read-only facade for plugin-scoped DataProvider access. */
 public final class DefaultDataProviderApi implements DataProviderAPI {
 
     private final DataProviderHandler handler;
 
-    /**
-     * Constructs the API wrapper.
-     *
-     * @param handler the internal DataProviderHandler instance.
-     */
     public DefaultDataProviderApi(DataProviderHandler handler) {
         this.handler = Objects.requireNonNull(handler, "DataProviderHandler cannot be null");
     }
@@ -55,68 +39,47 @@ public final class DefaultDataProviderApi implements DataProviderAPI {
             Class<?>... entityClasses
     ) {
         return new nl.hauntedmc.dataprovider.core.orm.ORMContext(
-                pluginName,
-                dataSource,
-                logger,
-                schemaMode,
-                entityClasses
-        );
+                pluginName, dataSource, logger, schemaMode, entityClasses);
     }
 
-    /**
-     * Registers a database connection for the resolved caller plugin.
-     * This is the default path for most integrations.
-     *
-     * @param databaseType         the type of database (e.g. MYSQL, MONGODB, etc.)
-     * @param connectionIdentifier a unique identifier for the connection
-     * @return the registered read-only {@link DatabaseProvider} handle.
-     */
+    @Override
     public DatabaseProvider registerDatabase(DatabaseType databaseType, String connectionIdentifier) {
         return wrapProvider(handler.registerDatabase(databaseType, connectionIdentifier));
     }
 
-    /**
-     * Creates an optional scoped lifecycle facade using a typed owner scope.
-     */
+    @Override
+    public DatabaseProvider registerDatabaseOrThrow(DatabaseType databaseType, String connectionIdentifier) {
+        return wrapProvider(handler.registerDatabaseOrThrow(databaseType, connectionIdentifier));
+    }
+
+    @Override
     public DataProviderScope scope(OwnerScope ownerScope) {
         return new DefaultDataProviderScope(handler, ownerScope);
     }
 
-    /**
-     * Unregisters a specific database connection for the resolved caller plugin.
-     * This is the default path for most integrations.
-     *
-     * @param databaseType         the type of database.
-     * @param connectionIdentifier the connection identifier.
-     */
+    @Override
     public void unregisterDatabase(DatabaseType databaseType, String connectionIdentifier) {
         handler.unregisterDatabase(databaseType, connectionIdentifier);
     }
 
-    /**
-     * Unregisters all database connections for the resolved caller plugin default owner scope.
-     */
+    @Override
     public void unregisterAllDatabases() {
         handler.unregisterAllDatabases();
     }
 
-    /**
-     * Unregisters all database connections for the caller plugin across all caller scopes.
-     * Use this for deterministic full-plugin shutdown cleanup.
-     */
+    @Override
     public void unregisterAllDatabasesForPlugin() {
         handler.unregisterAllDatabasesForPlugin();
     }
 
-    /**
-     * Retrieves a registered database connection for the resolved caller plugin.
-     *
-     * @param databaseType         the type of database.
-     * @param connectionIdentifier the connection identifier.
-     * @return the {@link DatabaseProvider} instance, or null if not registered.
-     */
+    @Override
     public DatabaseProvider getRegisteredDatabase(DatabaseType databaseType, String connectionIdentifier) {
         return wrapProvider(handler.getRegisteredDatabase(databaseType, connectionIdentifier));
+    }
+
+    @Override
+    public DatabaseProvider requireRegisteredDatabase(DatabaseType databaseType, String connectionIdentifier) {
+        return wrapProvider(handler.requireRegisteredDatabase(databaseType, connectionIdentifier));
     }
 
     static DatabaseProvider wrapProvider(DatabaseProvider provider) {
@@ -145,21 +108,9 @@ public final class DefaultDataProviderApi implements DataProviderAPI {
         private DatabaseProviderView {
             Objects.requireNonNull(delegate, "Delegate database provider cannot be null.");
         }
-
-        @Override
-        public boolean isConnected() {
-            return delegate.isConnected();
-        }
-
-        @Override
-        public DataAccess getDataAccess() {
-            return delegate.getDataAccess();
-        }
-
-        @Override
-        public DataSource getDataSource() {
-            return delegate.getDataSource();
-        }
+        @Override public boolean isConnected() { return delegate.isConnected(); }
+        @Override public DataAccess getDataAccess() { return delegate.getDataAccess(); }
+        @Override public DataSource getDataSource() { return delegate.getDataSource(); }
     }
 
     private record RelationalDatabaseProviderView(RelationalDatabaseProvider delegate)
@@ -167,26 +118,10 @@ public final class DefaultDataProviderApi implements DataProviderAPI {
         private RelationalDatabaseProviderView {
             Objects.requireNonNull(delegate, "Delegate relational database provider cannot be null.");
         }
-
-        @Override
-        public boolean isConnected() {
-            return delegate.isConnected();
-        }
-
-        @Override
-        public RelationalDataAccess getDataAccess() {
-            return delegate.getDataAccess();
-        }
-
-        @Override
-        public DataSource getDataSource() {
-            return delegate.getDataSource();
-        }
-
-        @Override
-        public SchemaManager getSchemaManager() {
-            return delegate.getSchemaManager();
-        }
+        @Override public boolean isConnected() { return delegate.isConnected(); }
+        @Override public RelationalDataAccess getDataAccess() { return delegate.getDataAccess(); }
+        @Override public DataSource getDataSource() { return delegate.getDataSource(); }
+        @Override public SchemaManager getSchemaManager() { return delegate.getSchemaManager(); }
     }
 
     private record DocumentDatabaseProviderView(DocumentDatabaseProvider delegate)
@@ -194,16 +129,8 @@ public final class DefaultDataProviderApi implements DataProviderAPI {
         private DocumentDatabaseProviderView {
             Objects.requireNonNull(delegate, "Delegate document database provider cannot be null.");
         }
-
-        @Override
-        public boolean isConnected() {
-            return delegate.isConnected();
-        }
-
-        @Override
-        public DocumentDataAccess getDataAccess() {
-            return delegate.getDataAccess();
-        }
+        @Override public boolean isConnected() { return delegate.isConnected(); }
+        @Override public DocumentDataAccess getDataAccess() { return delegate.getDataAccess(); }
     }
 
     private record KeyValueDatabaseProviderView(KeyValueDatabaseProvider delegate)
@@ -211,16 +138,8 @@ public final class DefaultDataProviderApi implements DataProviderAPI {
         private KeyValueDatabaseProviderView {
             Objects.requireNonNull(delegate, "Delegate key-value database provider cannot be null.");
         }
-
-        @Override
-        public boolean isConnected() {
-            return delegate.isConnected();
-        }
-
-        @Override
-        public KeyValueDataAccess getDataAccess() {
-            return delegate.getDataAccess();
-        }
+        @Override public boolean isConnected() { return delegate.isConnected(); }
+        @Override public KeyValueDataAccess getDataAccess() { return delegate.getDataAccess(); }
     }
 
     private record MessagingDatabaseProviderView(MessagingDatabaseProvider delegate)
@@ -228,15 +147,7 @@ public final class DefaultDataProviderApi implements DataProviderAPI {
         private MessagingDatabaseProviderView {
             Objects.requireNonNull(delegate, "Delegate messaging database provider cannot be null.");
         }
-
-        @Override
-        public boolean isConnected() {
-            return delegate.isConnected();
-        }
-
-        @Override
-        public MessagingDataAccess getDataAccess() {
-            return delegate.getDataAccess();
-        }
+        @Override public boolean isConnected() { return delegate.isConnected(); }
+        @Override public MessagingDataAccess getDataAccess() { return delegate.getDataAccess(); }
     }
 }
