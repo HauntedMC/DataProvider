@@ -103,10 +103,10 @@ class DatabaseFactory {
     }
 
     protected void applyConfigurationSnapshot(DatabaseConfigMap.DatabaseConfigSnapshot snapshot) {
-        configMap.applyConfigurationSnapshot(snapshot);
+        configMap.applySnapshot(snapshot);
     }
 
     protected DatabaseConfigMap.DatabaseConfigSnapshot currentConfigurationSnapshot() {
-        return configMap.currentConfigurationSnapshot();
+        return configMap.currentSnapshot();
     }
 }
