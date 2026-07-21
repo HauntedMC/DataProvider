@@ -59,7 +59,7 @@ public final class RedisMessagingDatabase implements MessagingDatabaseProvider, 
         int database = requireInRange(config.node("database").getInt(0), 0, 65_535, "database");
         String user = config.node("user").getString("");
         String password = config.node("password").getString("");
-        int connectionPoolSize = requireInRange(config.node("pool", "connections").getInt(4),
+        int commandPoolSize = requireInRange(config.node("pool", "connections").getInt(4),
                 1, 256, "pool.connections");
         int maxSubscriptions = requireInRange(config.node("pool", "max_subscriptions").getInt(64),
                 1, 10_000, "pool.max_subscriptions");
@@ -71,10 +71,10 @@ public final class RedisMessagingDatabase implements MessagingDatabaseProvider, 
         int handlerBatchSize = requireInRange(config.node("pool", "handler_batch_size").getInt(64),
                 1, 10_000, "pool.handler_batch_size");
         int maxIdleConnections = requireInRange(
-                config.node("pool", "max_idle").getInt(connectionPoolSize),
-                0, connectionPoolSize, "pool.max_idle");
+                config.node("pool", "max_idle").getInt(commandPoolSize),
+                0, commandPoolSize, "pool.max_idle");
         int minIdleConnections = requireInRange(
-                config.node("pool", "min_idle").getInt(Math.min(2, connectionPoolSize)),
+                config.node("pool", "min_idle").getInt(Math.min(2, commandPoolSize)),
                 0, maxIdleConnections, "pool.min_idle");
         int connectionTimeoutMs = requireInRange(config.node("connection_timeout_ms").getInt(2_000),
                 250, 300_000, "connection_timeout_ms");
@@ -102,8 +102,10 @@ public final class RedisMessagingDatabase implements MessagingDatabaseProvider, 
 
         JedisPool createdPool = null;
         try {
+            int totalPoolCapacity = Math.addExact(commandPoolSize, maxSubscriptions);
             JedisPoolConfig poolConfig = new JedisPoolConfig();
-            poolConfig.setMaxTotal(connectionPoolSize);
+            // Each subscription owns one long-lived connection. Extra capacity keeps command operations isolated.
+            poolConfig.setMaxTotal(totalPoolCapacity);
             poolConfig.setMaxIdle(maxIdleConnections);
             poolConfig.setMinIdle(minIdleConnections);
             poolConfig.setTestOnBorrow(config.node("pool", "test_on_borrow").getBoolean(true));
@@ -144,9 +146,9 @@ public final class RedisMessagingDatabase implements MessagingDatabaseProvider, 
             connected = true;
             lifecycleFailure = null;
             logger.info(String.format(
-                    "[RedisMessagingDatabase] Connected at %s:%d (db=%d, auth=%s, tls=%s, connectionPool=%d, maxSubscriptions=%d)",
+                    "[RedisMessagingDatabase] Connected at %s:%d (db=%d, auth=%s, tls=%s, commandCapacity=%d, subscriptionCapacity=%d)",
                     host, port, database, password.isBlank() ? "disabled" : "enabled",
-                    tlsEnabled ? "enabled" : "disabled", connectionPoolSize, maxSubscriptions));
+                    tlsEnabled ? "enabled" : "disabled", commandPoolSize, maxSubscriptions));
         } catch (Exception e) {
             lifecycleFailure = e;
             connected = false;
