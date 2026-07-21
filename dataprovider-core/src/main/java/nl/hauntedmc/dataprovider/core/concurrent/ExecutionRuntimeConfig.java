@@ -25,9 +25,19 @@ public record ExecutionRuntimeConfig(
         }
         Objects.requireNonNull(scopeShutdownGrace, "Scope shutdown grace cannot be null.");
         Objects.requireNonNull(runtimeShutdownGrace, "Runtime shutdown grace cannot be null.");
-        if (messagingGlobalSubscriptions < 1 || messagingPerPluginSubscriptions < 1
+        if (scopeShutdownGrace.isNegative() || runtimeShutdownGrace.isNegative()) {
+            throw new IllegalArgumentException("Execution shutdown grace durations cannot be negative.");
+        }
+        if (messagingGlobalSubscriptions < 1
+                || messagingPerPluginSubscriptions < 1
                 || messagingPerConnectionSubscriptions < 1) {
             throw new IllegalArgumentException("Messaging subscription limits must be positive.");
+        }
+        if (messagingPerPluginSubscriptions > messagingGlobalSubscriptions
+                || messagingPerConnectionSubscriptions > messagingPerPluginSubscriptions) {
+            throw new IllegalArgumentException(
+                    "Messaging subscription limits must satisfy global >= per-plugin >= per-connection."
+            );
         }
     }
 
@@ -108,6 +118,18 @@ public record ExecutionRuntimeConfig(
             if (workers < 1 || queueCapacity < 1 || perPluginActive < 1 || perPluginQueue < 1
                     || perConnectionActive < 1 || perConnectionQueue < 1) {
                 throw new IllegalArgumentException("Execution limits must be positive.");
+            }
+            if (perPluginActive > workers) {
+                throw new IllegalArgumentException("Per-plugin active limit cannot exceed lane workers.");
+            }
+            if (perConnectionActive > perPluginActive) {
+                throw new IllegalArgumentException("Per-connection active limit cannot exceed per-plugin active limit.");
+            }
+            if (perPluginQueue > queueCapacity) {
+                throw new IllegalArgumentException("Per-plugin queue limit cannot exceed lane queue capacity.");
+            }
+            if (perConnectionQueue > perPluginQueue) {
+                throw new IllegalArgumentException("Per-connection queue limit cannot exceed per-plugin queue limit.");
             }
         }
     }
