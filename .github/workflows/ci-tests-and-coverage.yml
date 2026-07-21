@@ -29,8 +29,8 @@ jobs:
           java-version: "25"
           cache: maven
 
-      - name: Run Maven Verify
-        run: mvn -U -B -ntp verify
+      - name: Run Unit and Backend Integration Tests
+        run: mvn -U -B -ntp -Pintegration-tests verify
 
       - name: Upload JaCoCo Report
         if: always()
@@ -39,3 +39,11 @@ jobs:
           name: jacoco-report
           if-no-files-found: error
           path: "**/target/site/jacoco"
+
+      - name: Upload Integration Test Reports
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: integration-test-reports
+          if-no-files-found: error
+          path: "**/target/failsafe-reports"
