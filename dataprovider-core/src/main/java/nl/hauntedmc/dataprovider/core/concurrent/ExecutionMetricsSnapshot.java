@@ -8,6 +8,8 @@ public record ExecutionMetricsSnapshot(
         long failedTasks,
         long cancelledTasks,
         long rejectedTasks,
+        long activeSubscriptions,
+        long droppedMessages,
         long totalQueueWaitNanos,
         long maxQueueWaitNanos,
         long totalExecutionNanos,
