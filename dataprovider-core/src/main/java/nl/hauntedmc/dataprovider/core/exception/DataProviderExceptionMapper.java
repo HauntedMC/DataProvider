@@ -61,40 +61,38 @@ public final class DataProviderExceptionMapper {
                 case RUNTIME_SHUTTING_DOWN, SCOPE_CLOSED -> new ProviderClosedException(
                         "The DataProvider execution scope is closed.",
                         context(backend, connection, operationName, RetryAdvice.NEVER,
-                                ExecutionOutcome.NOT_STARTED, diagnostics),
-                        safeCause(root));
+                                ExecutionOutcome.NOT_STARTED, diagnostics), safeCause(root));
                 case LANE_QUEUE_FULL, PLUGIN_QUEUE_LIMIT, CONNECTION_QUEUE_LIMIT, SUBSCRIPTION_LIMIT ->
                         new QueueSaturatedException(
                                 "DataProvider execution capacity is currently exhausted.",
                                 context(backend, connection, operationName, RetryAdvice.SAFE,
-                                        ExecutionOutcome.NOT_STARTED, diagnostics),
-                                safeCause(root));
+                                        ExecutionOutcome.NOT_STARTED, diagnostics), safeCause(root));
             };
         }
         if (isConflict(root)) {
             return new DataConflictException(
                     "The operation conflicted with existing backend state.",
                     context(backend, connection, operationName, RetryAdvice.NEVER,
-                            ExecutionOutcome.NOT_APPLIED, sqlDiagnostics(root)), safeCause(root));
+                            ExecutionOutcome.NOT_APPLIED, diagnosticsFor(root)), safeCause(root));
         }
         if (isAuthenticationFailure(root)) {
             return new BackendAuthenticationException(
                     "The backend rejected DataProvider authentication.",
                     context(backend, connection, operationName, RetryAdvice.NEVER,
-                            ExecutionOutcome.NOT_STARTED, safeClassDiagnostics(root)), safeCause(root));
+                            ExecutionOutcome.NOT_STARTED, diagnosticsFor(root)), safeCause(root));
         }
         if (isTimeout(root)) {
             return new DataProviderTimeoutException(
                     "The backend operation timed out.",
                     context(backend, connection, operationName, RetryAdvice.CONDITIONAL,
                             isReadOperation(operationName) ? ExecutionOutcome.UNKNOWN : ExecutionOutcome.MAY_HAVE_APPLIED,
-                            safeClassDiagnostics(root)), safeCause(root));
+                            diagnosticsFor(root)), safeCause(root));
         }
         if (isSerializationFailure(root)) {
             return new DataSerializationException(
                     "Data serialization or deserialization failed.",
                     context(backend, connection, operationName, RetryAdvice.NEVER,
-                            ExecutionOutcome.NOT_STARTED, safeClassDiagnostics(root)), safeCause(root));
+                            ExecutionOutcome.NOT_STARTED, diagnosticsFor(root)), safeCause(root));
         }
         if (isUnavailable(root)) {
             return unavailable(backend, connection, operationName, root);
@@ -102,7 +100,7 @@ public final class DataProviderExceptionMapper {
         return new BackendUnavailableException(
                 DataProviderErrorCode.BACKEND_UNAVAILABLE,
                 "The backend operation failed.",
-                base.withDiagnostics(safeClassDiagnostics(root)), safeCause(root));
+                base.withDiagnostics(diagnosticsFor(root)), safeCause(root));
     }
 
     public static DataProviderException registrationFailure(
@@ -122,7 +120,7 @@ public final class DataProviderExceptionMapper {
                     DataProviderErrorCode.CONFIGURATION_MISSING,
                     "No configuration exists for the requested database connection.",
                     context(backend, connectionIdentifier, operationName, RetryAdvice.NEVER,
-                            ExecutionOutcome.NOT_STARTED, safeClassDiagnostics(root)), safeCause(root));
+                            ExecutionOutcome.NOT_STARTED, diagnosticsFor(root)), safeCause(root));
         }
         return translate(root, new RegistrationExecutionHandle(backend, connectionIdentifier), operationName);
     }
@@ -141,7 +139,7 @@ public final class DataProviderExceptionMapper {
                 DataProviderErrorCode.CONFIGURATION_INVALID,
                 "DataProvider configuration is invalid.",
                 context(null, null, operationName, RetryAdvice.NEVER,
-                        ExecutionOutcome.NOT_STARTED, safeClassDiagnostics(root)), safeCause(root));
+                        ExecutionOutcome.NOT_STARTED, diagnosticsFor(root)), safeCause(root));
     }
 
     public static DataTransactionException transactionFailure(
@@ -172,7 +170,7 @@ public final class DataProviderExceptionMapper {
                 DataProviderErrorCode.BACKEND_UNAVAILABLE,
                 "The configured backend is unavailable.",
                 context(backend, connection, operationName, RetryAdvice.CONDITIONAL,
-                        ExecutionOutcome.UNKNOWN, safeClassDiagnostics(root)), safeCause(root));
+                        ExecutionOutcome.UNKNOWN, diagnosticsFor(root)), safeCause(root));
     }
 
     private static DataProviderFailureContext context(
@@ -258,8 +256,11 @@ public final class DataProviderExceptionMapper {
         return Map.copyOf(diagnostics);
     }
 
-    private static Map<String, String> sqlDiagnostics(Throwable failure) {
-        LinkedHashMap<String, String> diagnostics = new LinkedHashMap<>(safeClassDiagnostics(failure));
+    private static Map<String, String> diagnosticsFor(Throwable failure) {
+        LinkedHashMap<String, String> diagnostics = new LinkedHashMap<>();
+        if (failure != null) {
+            diagnostics.put("causeType", failure.getClass().getName());
+        }
         if (failure instanceof SQLException sql) {
             if (sql.getSQLState() != null && !sql.getSQLState().isBlank()) {
                 diagnostics.put("sqlState", sql.getSQLState());
@@ -267,10 +268,6 @@ public final class DataProviderExceptionMapper {
             diagnostics.put("vendorCode", Integer.toString(sql.getErrorCode()));
         }
         return Map.copyOf(diagnostics);
-    }
-
-    private static Map<String, String> safeClassDiagnostics(Throwable failure) {
-        return failure == null ? Map.of() : Map.of("causeType", failure.getClass().getName());
     }
 
     private static Throwable safeCause(Throwable failure) {
