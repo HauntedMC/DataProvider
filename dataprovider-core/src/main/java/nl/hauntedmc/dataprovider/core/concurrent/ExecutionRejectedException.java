@@ -1,5 +1,6 @@
 package nl.hauntedmc.dataprovider.core.concurrent;
 
+import java.util.Objects;
 import java.util.concurrent.RejectedExecutionException;
 
 /** Rejection with a stable reason suitable for diagnostics and metrics. */
@@ -9,7 +10,12 @@ public final class ExecutionRejectedException extends RejectedExecutionException
 
     public ExecutionRejectedException(Reason reason, String message) {
         super(message);
-        this.reason = reason;
+        this.reason = Objects.requireNonNull(reason, "Reason cannot be null.");
+    }
+
+    public ExecutionRejectedException(Reason reason, String message, Throwable cause) {
+        super(message, cause);
+        this.reason = Objects.requireNonNull(reason, "Reason cannot be null.");
     }
 
     public Reason reason() {
@@ -21,6 +27,7 @@ public final class ExecutionRejectedException extends RejectedExecutionException
         SCOPE_CLOSED,
         LANE_QUEUE_FULL,
         PLUGIN_QUEUE_LIMIT,
-        CONNECTION_QUEUE_LIMIT
+        CONNECTION_QUEUE_LIMIT,
+        SUBSCRIPTION_LIMIT
     }
 }
