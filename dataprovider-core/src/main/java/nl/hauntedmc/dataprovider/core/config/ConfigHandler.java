@@ -1,7 +1,8 @@
 package nl.hauntedmc.dataprovider.core.config;
 
-import nl.hauntedmc.dataprovider.database.DatabaseType;
+import nl.hauntedmc.dataprovider.core.concurrent.ExecutionRuntimeConfig;
 import nl.hauntedmc.dataprovider.core.security.FilePermissionHardening;
+import nl.hauntedmc.dataprovider.database.DatabaseType;
 import nl.hauntedmc.dataprovider.logging.LoggerAdapter;
 import org.spongepowered.configurate.CommentedConfigurationNode;
 import org.spongepowered.configurate.loader.ConfigurationLoader;
@@ -28,9 +29,6 @@ public class ConfigHandler {
     private final Path configFile;
     private final ConfigurationLoader<CommentedConfigurationNode> loader;
 
-    /**
-     * Creates a new ConfigHandler using a default data directory and config file.
-     */
     public ConfigHandler(Path dataDir, LoggerAdapter logger) {
         this.logger = Objects.requireNonNull(logger, "Logger cannot be null.");
         Objects.requireNonNull(dataDir, "Data directory cannot be null.");
@@ -44,10 +42,6 @@ public class ConfigHandler {
         injectMissingKeys();
     }
 
-    /**
-     * Ensures the configuration file exists.
-     * If not, attempts to copy a default config.yml from the plugin's resources.
-     */
     private void ensureConfigFileExists() {
         try {
             Path parentDirectory = configFile.getParent();
@@ -58,7 +52,6 @@ public class ConfigHandler {
                     if (in != null) {
                         Files.copy(in, configFile);
                     } else {
-                        // Keep bootstrap deterministic even if the resource is missing.
                         Files.createFile(configFile);
                         logger.warn("Default config.yml not found in resources. Created an empty config.yml.");
                     }
@@ -70,9 +63,6 @@ public class ConfigHandler {
         }
     }
 
-    /**
-     * Reloads the configuration from disk.
-     */
     public void reloadConfig() {
         applySnapshot(loadSnapshot());
     }
@@ -92,18 +82,18 @@ public class ConfigHandler {
             }
             String schemaMode = candidate.node("orm", "schema_mode").getString(DEFAULT_ORM_SCHEMA_MODE);
             String normalizedSchemaMode = normalizeSchemaMode(schemaMode);
+            // Execution lanes are runtime-scoped, but every reload must still reject invalid future settings.
+            ExecutionRuntimeConfig.from(candidate);
             return new ConfigSnapshot(candidate, enabledTypes, normalizedSchemaMode);
         } catch (IOException e) {
             throw new IllegalStateException("Error loading config file at " + configFile, e);
         }
     }
 
-    /** Atomically replaces the active main configuration with an already validated snapshot. */
     public void applySnapshot(ConfigSnapshot newSnapshot) {
         this.snapshot = Objects.requireNonNull(newSnapshot, "Configuration snapshot cannot be null.");
     }
 
-    /** Returns the active immutable configuration snapshot. */
     public ConfigSnapshot currentSnapshot() {
         ConfigSnapshot activeSnapshot = snapshot;
         if (activeSnapshot == null) {
@@ -112,10 +102,6 @@ public class ConfigHandler {
         return activeSnapshot;
     }
 
-    /**
-     * Injects missing default keys into the config.
-     * In this example, we ensure each DatabaseType has a default 'enabled' key.
-     */
     private void injectMissingKeys() {
         if (snapshot == null) {
             throw new IllegalStateException("Configuration is not loaded.");
@@ -123,7 +109,6 @@ public class ConfigHandler {
 
         boolean changed = false;
         for (DatabaseType type : DatabaseType.values()) {
-            // The config path is "databases.<type>.enabled"
             CommentedConfigurationNode node = snapshot.root().node("databases", type.name().toLowerCase(), "enabled");
             if (node.virtual()) {
                 try {
@@ -152,9 +137,6 @@ public class ConfigHandler {
         }
     }
 
-    /**
-     * Saves the current configuration to disk.
-     */
     private void saveConfig() {
         try {
             loader.save(snapshot.root());
@@ -164,12 +146,6 @@ public class ConfigHandler {
         }
     }
 
-    /**
-     * Checks if a specific DatabaseType is enabled in the configuration.
-     *
-     * @param type the database type to check.
-     * @return true if enabled; otherwise, returns true as a default.
-     */
     public boolean isDatabaseTypeEnabled(DatabaseType type) {
         if (snapshot == null) {
             throw new IllegalStateException("Configuration is not loaded.");
@@ -177,9 +153,6 @@ public class ConfigHandler {
         return snapshot.enabledTypes().get(type);
     }
 
-    /**
-     * Returns a defensive copy of the root configuration node.
-     */
     public CommentedConfigurationNode getConfig() {
         if (snapshot == null) {
             throw new IllegalStateException("Configuration is not loaded.");
@@ -187,16 +160,10 @@ public class ConfigHandler {
         return copyNode(snapshot.root());
     }
 
-    /**
-     * Returns the validated configured Hibernate schema mode.
-     *
-     * @return normalized ORM schema mode.
-     */
     public String getOrmSchemaMode() {
         if (snapshot == null) {
             throw new IllegalStateException("Configuration is not loaded.");
         }
-
         return snapshot.ormSchemaMode();
     }
 
