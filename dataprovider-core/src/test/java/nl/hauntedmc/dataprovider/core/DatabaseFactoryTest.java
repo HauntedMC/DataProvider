@@ -1,17 +1,16 @@
 package nl.hauntedmc.dataprovider.core;
 
-import nl.hauntedmc.dataprovider.database.DatabaseProvider;
-import nl.hauntedmc.dataprovider.database.DatabaseType;
 import nl.hauntedmc.dataprovider.core.database.document.impl.mongodb.MongoDBDatabase;
 import nl.hauntedmc.dataprovider.core.database.keyvalue.impl.redis.RedisDatabase;
 import nl.hauntedmc.dataprovider.core.database.messaging.impl.redis.RedisMessagingDatabase;
 import nl.hauntedmc.dataprovider.core.database.relational.impl.mysql.MySQLDatabase;
+import nl.hauntedmc.dataprovider.core.exception.DataProviderExceptionMapper;
 import nl.hauntedmc.dataprovider.core.testutil.RecordingLoggerAdapter;
+import nl.hauntedmc.dataprovider.database.DatabaseType;
 import org.junit.jupiter.api.Test;
 import org.spongepowered.configurate.CommentedConfigurationNode;
 
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
-import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.mock;
@@ -29,15 +28,14 @@ class DatabaseFactoryTest {
     }
 
     @Test
-    void returnsNullAndLogsWhenConfigurationIsMissing() {
+    void retainsTypedFailureAndLogsWhenConfigurationIsMissing() {
         RecordingLoggerAdapter logger = new RecordingLoggerAdapter();
         DatabaseConfigMap configMap = mock(DatabaseConfigMap.class);
         when(configMap.getConfig(DatabaseType.MYSQL, ConnectionIdentifier.of("missing"))).thenReturn(null);
 
         DatabaseFactory factory = new DatabaseFactory(configMap, logger);
-        DatabaseProvider provider = factory.createDatabaseProvider(DatabaseType.MYSQL, "missing");
-
-        assertNull(provider);
+        assertThrows(DataProviderExceptionMapper.MissingConfigurationFailure.class,
+                () -> factory.createDatabaseProvider(DatabaseType.MYSQL, "missing"));
         assertTrue(logger.errorMessages().stream().anyMatch(m -> m.contains("Could not load configuration")));
     }
 
@@ -56,6 +54,7 @@ class DatabaseFactoryTest {
         assertInstanceOf(MySQLDatabase.class, factory.createDatabaseProvider(DatabaseType.MYSQL, "default"));
         assertInstanceOf(MongoDBDatabase.class, factory.createDatabaseProvider(DatabaseType.MONGODB, "default"));
         assertInstanceOf(RedisDatabase.class, factory.createDatabaseProvider(DatabaseType.REDIS, "default"));
-        assertInstanceOf(RedisMessagingDatabase.class, factory.createDatabaseProvider(DatabaseType.REDIS_MESSAGING, "default"));
+        assertInstanceOf(RedisMessagingDatabase.class,
+                factory.createDatabaseProvider(DatabaseType.REDIS_MESSAGING, "default"));
     }
 }
