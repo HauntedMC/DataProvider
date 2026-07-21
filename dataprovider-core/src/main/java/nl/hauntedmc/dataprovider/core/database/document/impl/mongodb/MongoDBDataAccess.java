@@ -6,10 +6,12 @@ import com.mongodb.client.MongoDatabase;
 import com.mongodb.client.model.IndexOptions;
 import com.mongodb.client.model.UpdateOptions;
 import nl.hauntedmc.dataprovider.core.concurrent.AsyncTaskSupport;
+import nl.hauntedmc.dataprovider.core.exception.StructuredFailures;
 import nl.hauntedmc.dataprovider.database.document.DocumentDataAccess;
 import nl.hauntedmc.dataprovider.database.document.model.DocumentQuery;
 import nl.hauntedmc.dataprovider.database.document.model.DocumentUpdate;
 import nl.hauntedmc.dataprovider.database.document.model.DocumentUpdateOptions;
+import nl.hauntedmc.dataprovider.exception.DataSerializationException;
 import org.bson.Document;
 import org.bson.conversions.Bson;
 import org.bson.types.Binary;
@@ -65,11 +67,23 @@ public class MongoDBDataAccess implements DocumentDataAccess {
     }
 
     private Document toMongoDocument(Map<?, ?> document) {
-        return copyDocument(document, "document");
+        try {
+            return copyDocument(document, "document");
+        } catch (DataSerializationException structured) {
+            throw structured;
+        } catch (RuntimeException failure) {
+            throw StructuredFailures.serialization(failure, executor, "mongodb.serialize");
+        }
     }
 
     private Map<String, Object> documentToMap(Document document) {
-        return new LinkedHashMap<>(copyDocument(document, "document"));
+        try {
+            return new LinkedHashMap<>(copyDocument(document, "document"));
+        } catch (DataSerializationException structured) {
+            throw structured;
+        } catch (RuntimeException failure) {
+            throw StructuredFailures.serialization(failure, executor, "mongodb.deserialize");
+        }
     }
 
     @Override
