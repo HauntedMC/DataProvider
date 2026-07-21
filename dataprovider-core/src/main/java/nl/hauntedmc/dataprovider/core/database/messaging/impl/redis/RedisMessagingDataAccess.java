@@ -1,10 +1,11 @@
 package nl.hauntedmc.dataprovider.core.database.messaging.impl.redis;
 
+import nl.hauntedmc.dataprovider.core.concurrent.AsyncTaskSupport;
+import nl.hauntedmc.dataprovider.core.concurrent.ExecutionHandle;
 import nl.hauntedmc.dataprovider.database.messaging.MessagingDataAccess;
 import nl.hauntedmc.dataprovider.database.messaging.api.EventMessage;
 import nl.hauntedmc.dataprovider.database.messaging.api.MessageRegistry;
 import nl.hauntedmc.dataprovider.database.messaging.api.Subscription;
-import nl.hauntedmc.dataprovider.core.concurrent.AsyncTaskSupport;
 import nl.hauntedmc.dataprovider.logging.LoggerAdapter;
 import redis.clients.jedis.Jedis;
 import redis.clients.jedis.JedisPool;
@@ -15,6 +16,7 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.Executor;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -27,12 +29,14 @@ final class RedisMessagingDataAccess implements MessagingDataAccess {
     private static final Pattern DESTINATION_PATTERN = Pattern.compile("[A-Za-z0-9_.:-]{1,128}");
 
     private final JedisPool pool;
-    private final ExecutorService workers;
+    private final Executor workers;
+    private final ExecutionHandle executionBudget;
     private final LoggerAdapter logger;
     private final MessageRegistry messageRegistry;
     private final int maxSubscriptions;
     private final int maxPayloadChars;
     private final int maxQueuedMessagesPerHandler;
+    private final int handlerBatchSize;
     private final Map<String, ChannelSubscription> channelSubscriptions = new ConcurrentHashMap<>();
     private final Object subscriptionLock = new Object();
     private final AtomicBoolean shuttingDown = new AtomicBoolean(false);
@@ -46,53 +50,75 @@ final class RedisMessagingDataAccess implements MessagingDataAccess {
             int maxPayloadChars,
             int maxQueuedMessagesPerHandler
     ) {
+        this(pool, workers, null, logger, messageRegistry, maxSubscriptions, maxPayloadChars,
+                maxQueuedMessagesPerHandler, 64);
+    }
+
+    RedisMessagingDataAccess(
+            JedisPool pool,
+            ExecutionHandle workers,
+            LoggerAdapter logger,
+            MessageRegistry messageRegistry,
+            int maxSubscriptions,
+            int maxPayloadChars,
+            int maxQueuedMessagesPerHandler,
+            int handlerBatchSize
+    ) {
+        this(pool, workers, workers, logger, messageRegistry, maxSubscriptions, maxPayloadChars,
+                maxQueuedMessagesPerHandler, handlerBatchSize);
+    }
+
+    private RedisMessagingDataAccess(
+            JedisPool pool,
+            Executor workers,
+            ExecutionHandle executionBudget,
+            LoggerAdapter logger,
+            MessageRegistry messageRegistry,
+            int maxSubscriptions,
+            int maxPayloadChars,
+            int maxQueuedMessagesPerHandler,
+            int handlerBatchSize
+    ) {
         this.pool = Objects.requireNonNull(pool, "Pool cannot be null");
         this.workers = Objects.requireNonNull(workers, "Workers cannot be null");
+        this.executionBudget = executionBudget;
         this.logger = Objects.requireNonNull(logger, "Logger cannot be null");
         this.messageRegistry = Objects.requireNonNull(messageRegistry, "Message registry cannot be null");
-        if (maxSubscriptions < 1) {
-            throw new IllegalArgumentException("maxSubscriptions must be greater than zero");
-        }
-        this.maxSubscriptions = maxSubscriptions;
-        if (maxPayloadChars < 1) {
-            throw new IllegalArgumentException("maxPayloadChars must be greater than zero");
-        }
-        this.maxPayloadChars = maxPayloadChars;
-        if (maxQueuedMessagesPerHandler < 1) {
-            throw new IllegalArgumentException("maxQueuedMessagesPerHandler must be greater than zero");
-        }
-        this.maxQueuedMessagesPerHandler = maxQueuedMessagesPerHandler;
+        this.maxSubscriptions = requirePositive(maxSubscriptions, "maxSubscriptions");
+        this.maxPayloadChars = requirePositive(maxPayloadChars, "maxPayloadChars");
+        this.maxQueuedMessagesPerHandler = requirePositive(
+                maxQueuedMessagesPerHandler, "maxQueuedMessagesPerHandler");
+        this.handlerBatchSize = requirePositive(handlerBatchSize, "handlerBatchSize");
     }
 
     @Override
-    public <T extends EventMessage> CompletableFuture<Void> publish(String dest, T msg) {
-        String destination = validateDestination(dest);
-        Objects.requireNonNull(msg, "Message cannot be null");
-
+    public <T extends EventMessage> CompletableFuture<Void> publish(String destination, T message) {
+        String validatedDestination = validateDestination(destination);
+        Objects.requireNonNull(message, "Message cannot be null");
         if (shuttingDown.get()) {
             return CompletableFuture.failedFuture(new IllegalStateException("Messaging provider is shutting down"));
         }
-
-        String json = messageRegistry.toJson(msg);
+        String json = messageRegistry.toJson(message);
         if (json.length() > maxPayloadChars) {
             return CompletableFuture.failedFuture(new IllegalArgumentException(
                     "Message payload exceeds maxPayloadChars (" + maxPayloadChars + ")"));
         }
         return AsyncTaskSupport.runAsync(workers, "redis.messaging.publish", () -> {
-            try (Jedis j = pool.getResource()) {
-                j.publish(destination, json);
+            try (Jedis jedis = pool.getResource()) {
+                jedis.publish(validatedDestination, json);
             }
         });
     }
 
     @Override
     public <T extends EventMessage> Subscription subscribe(
-            String dest, Class<T> type, Consumer<T> handler
+            String destination,
+            Class<T> type,
+            Consumer<T> handler
     ) {
-        String destination = validateDestination(dest);
+        String validatedDestination = validateDestination(destination);
         Objects.requireNonNull(type, "Type cannot be null");
         Objects.requireNonNull(handler, "Handler cannot be null");
-
         if (shuttingDown.get()) {
             throw new IllegalStateException("Messaging provider is shutting down");
         }
@@ -100,13 +126,17 @@ final class RedisMessagingDataAccess implements MessagingDataAccess {
         ChannelSubscription channelSubscription;
         boolean created = false;
         synchronized (subscriptionLock) {
-            channelSubscription = channelSubscriptions.get(destination);
+            channelSubscription = channelSubscriptions.get(validatedDestination);
             if (channelSubscription == null) {
                 if (channelSubscriptions.size() >= maxSubscriptions) {
-                    throw new IllegalStateException("Maximum active Redis subscriptions reached (" + maxSubscriptions + ")");
+                    throw new IllegalStateException(
+                            "Maximum active Redis subscriptions reached (" + maxSubscriptions + ")");
                 }
-                channelSubscription = new ChannelSubscription(destination);
-                channelSubscriptions.put(destination, channelSubscription);
+                if (executionBudget != null && !executionBudget.tryAcquireSubscription()) {
+                    throw new IllegalStateException("DataProvider messaging subscription budget exhausted");
+                }
+                channelSubscription = new ChannelSubscription(validatedDestination, executionBudget != null);
+                channelSubscriptions.put(validatedDestination, channelSubscription);
                 created = true;
             }
         }
@@ -123,29 +153,29 @@ final class RedisMessagingDataAccess implements MessagingDataAccess {
         if (!shuttingDown.compareAndSet(false, true)) {
             return CompletableFuture.completedFuture(null);
         }
-
-        ChannelSubscription[] active = channelSubscriptions.values().toArray(new ChannelSubscription[0]);
-        CompletableFuture<?>[] futures = new CompletableFuture[active.length];
-        for (int i = 0; i < active.length; i++) {
-            futures[i] = active[i].unsubscribeChannel();
+        ChannelSubscription[] active = channelSubscriptions.values().toArray(ChannelSubscription[]::new);
+        CompletableFuture<?>[] futures = new CompletableFuture<?>[active.length];
+        for (int index = 0; index < active.length; index++) {
+            futures[index] = active[index].unsubscribeChannel();
         }
-
         return CompletableFuture.allOf(futures).whenComplete((unused, throwable) -> channelSubscriptions.clear());
     }
 
     private final class ChannelSubscription {
-
         private final String destination;
         private final JedisPubSub pubSub;
         private final Thread thread;
         private final AtomicBoolean started = new AtomicBoolean(false);
         private final AtomicBoolean closed = new AtomicBoolean(false);
-        private final AtomicLong handlerSequence = new AtomicLong(0);
+        private final AtomicBoolean budgetReleased = new AtomicBoolean(false);
+        private final AtomicLong handlerSequence = new AtomicLong();
         private final Map<Long, HandlerRegistration<?>> handlers = new ConcurrentHashMap<>();
+        private final boolean budgetHeld;
 
-        private ChannelSubscription(String destination) {
+        private ChannelSubscription(String destination, boolean budgetHeld) {
             this.destination = destination;
-            this.pubSub = new JedisPubSub() {
+            this.budgetHeld = budgetHeld;
+            pubSub = new JedisPubSub() {
                 @Override
                 public void onMessage(String channel, String raw) {
                     if (raw == null || raw.isBlank()) {
@@ -153,30 +183,31 @@ final class RedisMessagingDataAccess implements MessagingDataAccess {
                         return;
                     }
                     if (raw.length() > maxPayloadChars) {
-                        logger.warn("Dropped oversized message on channel " + channel + " (length="
-                                + raw.length() + ", maxPayloadChars=" + maxPayloadChars + ")");
+                        recordDropped(1);
+                        logger.warn("Dropped oversized message on channel " + channel);
                         return;
                     }
-                    for (HandlerRegistration<?> registration : handlers.values()) {
-                        registration.enqueue(channel, raw);
-                    }
+                    handlers.values().forEach(registration -> registration.enqueue(channel, raw));
                 }
             };
-            String channelThreadName = destination.length() > 48 ? destination.substring(0, 48) : destination;
-            this.thread = new Thread(() -> {
-                try (Jedis j = pool.getResource()) {
-                    j.subscribe(pubSub, destination);
-                } catch (Exception ex) {
-                    if (!closed.get()) {
-                        logger.error("Error while subscribing to " + destination, ex);
-                    }
-                } finally {
-                    channelSubscriptions.remove(destination, this);
-                    closeAndClearHandlers();
-                    closed.set(true);
+            String threadName = destination.length() > 48 ? destination.substring(0, 48) : destination;
+            thread = new Thread(this::listen, "redis-sub-" + threadName);
+            thread.setDaemon(true);
+        }
+
+        private void listen() {
+            try (Jedis jedis = pool.getResource()) {
+                jedis.subscribe(pubSub, destination);
+            } catch (Exception e) {
+                if (!closed.get()) {
+                    logger.error("Error while subscribing to " + destination, e);
                 }
-            }, "redis-sub-" + channelThreadName);
-            this.thread.setDaemon(true);
+            } finally {
+                channelSubscriptions.remove(destination, this);
+                closeAndClearHandlers();
+                closed.set(true);
+                releaseBudget();
+            }
         }
 
         private void start() {
@@ -196,10 +227,7 @@ final class RedisMessagingDataAccess implements MessagingDataAccess {
             if (removed != null) {
                 removed.close();
             }
-            if (!handlers.isEmpty()) {
-                return CompletableFuture.completedFuture(null);
-            }
-            return unsubscribeChannel();
+            return handlers.isEmpty() ? unsubscribeChannel() : CompletableFuture.completedFuture(null);
         }
 
         private CompletableFuture<Void> unsubscribeChannel() {
@@ -212,34 +240,34 @@ final class RedisMessagingDataAccess implements MessagingDataAccess {
                 try {
                     pubSub.unsubscribe();
                 } catch (Exception ignored) {
-                    // Ignore best-effort unsubscribe exceptions during shutdown.
+                    // Best-effort during shutdown.
                 }
                 if (started.get() && Thread.currentThread() != thread) {
-                    try {
-                        thread.join(500);
-                    } catch (InterruptedException ignored) {
-                        Thread.currentThread().interrupt();
-                    }
+                    thread.join(500L);
                 }
+                releaseBudget();
             });
         }
 
         private void closeAndClearHandlers() {
-            for (HandlerRegistration<?> registration : handlers.values()) {
-                registration.close();
-            }
+            handlers.values().forEach(HandlerRegistration::close);
             handlers.clear();
+        }
+
+        private void releaseBudget() {
+            if (budgetHeld && budgetReleased.compareAndSet(false, true)) {
+                executionBudget.releaseSubscription();
+            }
         }
     }
 
     private final class HandlerRegistration<T extends EventMessage> {
-
         private final Class<T> type;
         private final Consumer<T> handler;
         private final Object queueLock = new Object();
         private final ArrayDeque<QueuedMessage> queuedMessages = new ArrayDeque<>();
         private final AtomicBoolean closed = new AtomicBoolean(false);
-        private final AtomicLong droppedMessages = new AtomicLong(0L);
+        private final AtomicLong droppedMessages = new AtomicLong();
         private boolean workerScheduled;
 
         private HandlerRegistration(Class<T> type, Consumer<T> handler) {
@@ -248,10 +276,6 @@ final class RedisMessagingDataAccess implements MessagingDataAccess {
         }
 
         private void enqueue(String channel, String raw) {
-            if (closed.get()) {
-                return;
-            }
-
             boolean shouldSchedule = false;
             synchronized (queueLock) {
                 if (closed.get()) {
@@ -259,10 +283,9 @@ final class RedisMessagingDataAccess implements MessagingDataAccess {
                 }
                 if (queuedMessages.size() >= maxQueuedMessagesPerHandler) {
                     long dropped = droppedMessages.incrementAndGet();
+                    recordDropped(1);
                     if (dropped == 1 || dropped % 100 == 0) {
-                        logger.warn("Dropped " + dropped + " queued message(s) for channel " + channel
-                                + " because handler queue reached max_queued_messages_per_handler="
-                                + maxQueuedMessagesPerHandler);
+                        logger.warn("Dropped " + dropped + " queued message(s) for channel " + channel);
                     }
                     return;
                 }
@@ -272,7 +295,6 @@ final class RedisMessagingDataAccess implements MessagingDataAccess {
                     shouldSchedule = true;
                 }
             }
-
             if (shouldSchedule) {
                 scheduleDrain();
             }
@@ -280,58 +302,82 @@ final class RedisMessagingDataAccess implements MessagingDataAccess {
 
         private void scheduleDrain() {
             try {
-                workers.execute(this::drainQueue);
+                workers.execute(this::drainBatch);
             } catch (RejectedExecutionException e) {
+                long dropped;
                 synchronized (queueLock) {
-                    workerScheduled = false;
+                    dropped = queuedMessages.size();
                     queuedMessages.clear();
+                    workerScheduled = false;
                 }
-                logger.warn("Dropped queued handler messages because dispatch worker pool is full.", e);
+                recordDropped(dropped);
+                logger.warn("Dropped queued handler messages because dispatch capacity is full.", e);
             }
         }
 
-        private void drainQueue() {
-            while (true) {
-                QueuedMessage queuedMessage;
+        private void drainBatch() {
+            int processed = 0;
+            while (processed < handlerBatchSize) {
+                QueuedMessage queued;
                 synchronized (queueLock) {
                     if (closed.get()) {
                         queuedMessages.clear();
                         workerScheduled = false;
                         return;
                     }
-                    queuedMessage = queuedMessages.pollFirst();
-                    if (queuedMessage == null) {
+                    queued = queuedMessages.pollFirst();
+                    if (queued == null) {
                         workerScheduled = false;
                         return;
                     }
                 }
-                dispatch(queuedMessage.channel(), queuedMessage.raw());
+                dispatch(queued.channel(), queued.raw());
+                processed++;
             }
+            synchronized (queueLock) {
+                if (closed.get() || queuedMessages.isEmpty()) {
+                    workerScheduled = false;
+                    return;
+                }
+            }
+            scheduleDrain();
         }
 
         private void dispatch(String channel, String raw) {
             try {
-                T msg = messageRegistry.fromJson(raw, type);
-                if (msg == null) {
+                T message = messageRegistry.fromJson(raw, type);
+                if (message == null) {
                     logger.warn("Received null message while subscribing to channel " + channel);
                     return;
                 }
-                handler.accept(msg);
-            } catch (Exception ex) {
-                logger.error("Error while handling message from channel " + channel, ex);
+                handler.accept(message);
+            } catch (Exception e) {
+                logger.error("Error while handling message from channel " + channel, e);
             }
         }
 
         private void close() {
             closed.set(true);
             synchronized (queueLock) {
+                long dropped = queuedMessages.size();
                 queuedMessages.clear();
                 workerScheduled = false;
+                recordDropped(dropped);
             }
         }
     }
 
-    private record QueuedMessage(String channel, String raw) {
+    private void recordDropped(long count) {
+        if (count > 0 && executionBudget != null) {
+            executionBudget.recordDroppedMessages(count);
+        }
+    }
+
+    private static int requirePositive(int value, String field) {
+        if (value < 1) {
+            throw new IllegalArgumentException(field + " must be greater than zero");
+        }
+        return value;
     }
 
     private static String validateDestination(String destination) {
@@ -340,5 +386,8 @@ final class RedisMessagingDataAccess implements MessagingDataAccess {
             throw new IllegalArgumentException("Destination contains unsupported characters.");
         }
         return destination;
+    }
+
+    private record QueuedMessage(String channel, String raw) {
     }
 }

@@ -14,8 +14,6 @@ default:
     trust_store_type: ""
   pool:
     connections: 8
-    threads:     8
-    queue_capacity: 1600
     min_idle: 2
     max_idle: 8
     test_on_borrow: true

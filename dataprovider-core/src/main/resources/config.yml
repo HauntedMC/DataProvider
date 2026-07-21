@@ -1,6 +1,43 @@
 orm:
   schema_mode: validate
 
+execution:
+  scope_shutdown_grace_ms: 2000
+  runtime_shutdown_grace_ms: 5000
+  messaging_subscriptions:
+    global: 256
+    per_plugin: 64
+    per_connection: 32
+  lanes:
+    relational:
+      workers: 8
+      queue_capacity: 2048
+      per_plugin_active: 4
+      per_plugin_queue: 512
+      per_connection_active: 2
+      per_connection_queue: 128
+    document:
+      workers: 8
+      queue_capacity: 2048
+      per_plugin_active: 4
+      per_plugin_queue: 512
+      per_connection_active: 2
+      per_connection_queue: 128
+    redis:
+      workers: 8
+      queue_capacity: 2048
+      per_plugin_active: 4
+      per_plugin_queue: 512
+      per_connection_active: 2
+      per_connection_queue: 128
+    messaging:
+      workers: 8
+      queue_capacity: 4096
+      per_plugin_active: 4
+      per_plugin_queue: 1024
+      per_connection_active: 2
+      per_connection_queue: 256
+
 databases:
   mysql:
     enabled: true

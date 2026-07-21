@@ -9,7 +9,6 @@ default:
   allow_public_key_retrieval: false
   pool_size: 10
   min_idle: 2
-  queue_capacity: 2000
   connection_timeout_ms: 30000
   validation_timeout_ms: 3000
   idle_timeout_ms: 600000
