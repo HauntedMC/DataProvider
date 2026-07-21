@@ -16,7 +16,7 @@ import java.util.Set;
 import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.atomic.AtomicBoolean;
 
-/** Runtime-owned bounded worker lanes with round-robin fairness between connection scopes. */
+/** Runtime-owned bounded worker lanes with plugin-first and connection-second fairness. */
 public final class DataProviderExecutionRuntime implements AutoCloseable {
 
     private final Map<ExecutionLane, FairLane> lanes;
@@ -41,13 +41,18 @@ public final class DataProviderExecutionRuntime implements AutoCloseable {
 
     public ExecutionHandle openScope(String pluginId, DatabaseType type, String connectionIdentifier) {
         if (closed.get()) {
-            throw new ExecutionRejectedException(ExecutionRejectedException.Reason.RUNTIME_SHUTTING_DOWN,
-                    "DataProvider execution runtime is shutting down.");
+            throw new ExecutionRejectedException(
+                    ExecutionRejectedException.Reason.RUNTIME_SHUTTING_DOWN,
+                    "DataProvider execution runtime is shutting down."
+            );
         }
         FairLane lane = lanes.get(ExecutionLane.forDatabaseType(
                 Objects.requireNonNull(type, "Database type cannot be null.")));
-        return lane.openScope(requireText(pluginId, "pluginId"),
-                requireText(connectionIdentifier, "connectionIdentifier"), scopeShutdownGrace);
+        return lane.openScope(
+                requireText(pluginId, "pluginId"),
+                requireText(connectionIdentifier, "connectionIdentifier"),
+                scopeShutdownGrace
+        );
     }
 
     public Map<ExecutionLane, ExecutionMetricsSnapshot> metrics() {
@@ -87,19 +92,22 @@ public final class DataProviderExecutionRuntime implements AutoCloseable {
         private final int connectionSubscriptionLimit;
         private final Object lock = new Object();
         private final LinkedHashMap<Scope, ArrayDeque<Task>> queues = new LinkedHashMap<>();
+        private final LinkedHashMap<String, List<Scope>> pluginScopes = new LinkedHashMap<>();
         private final Map<String, Integer> pluginQueued = new HashMap<>();
         private final Map<String, Integer> pluginActive = new HashMap<>();
         private final Map<String, Integer> pluginSubscriptions = new HashMap<>();
+        private final Map<String, Integer> pluginScopeCursor = new HashMap<>();
         private final Map<Scope, Integer> scopeActive = new HashMap<>();
         private final Map<Scope, Integer> scopeSubscriptions = new HashMap<>();
         private final Map<Scope, Set<Thread>> activeThreads = new HashMap<>();
+        private final Map<Thread, ActiveTask> activeTasks = new HashMap<>();
         private final Map<String, MutableMetrics> pluginMetrics = new HashMap<>();
         private final List<Thread> workers = new ArrayList<>();
         private final MutableMetrics metrics = new MutableMetrics();
         private boolean stopping;
         private int queuedTasks;
         private int subscriptions;
-        private int cursor;
+        private int pluginCursor;
 
         private FairLane(
                 ExecutionLane lane,
@@ -114,8 +122,10 @@ public final class DataProviderExecutionRuntime implements AutoCloseable {
             this.pluginSubscriptionLimit = pluginSubscriptionLimit;
             this.connectionSubscriptionLimit = connectionSubscriptionLimit;
             for (int index = 0; index < config.workers(); index++) {
-                Thread worker = new Thread(this::workerLoop,
-                        "dataprovider-" + lane.name().toLowerCase() + "-" + (index + 1));
+                Thread worker = new Thread(
+                        this::workerLoop,
+                        "dataprovider-" + lane.name().toLowerCase() + "-" + (index + 1)
+                );
                 worker.setDaemon(true);
                 workers.add(worker);
                 worker.start();
@@ -130,6 +140,7 @@ public final class DataProviderExecutionRuntime implements AutoCloseable {
                 }
                 Scope scope = new Scope(this, pluginId, connectionIdentifier, shutdownGrace);
                 queues.put(scope, new ArrayDeque<>());
+                pluginScopes.computeIfAbsent(pluginId, ignored -> new ArrayList<>()).add(scope);
                 pluginMetrics.computeIfAbsent(pluginId, ignored -> new MutableMetrics());
                 return scope;
             }
@@ -170,14 +181,22 @@ public final class DataProviderExecutionRuntime implements AutoCloseable {
 
         private boolean tryAcquireSubscription(Scope scope) {
             synchronized (lock) {
-                if (lane != ExecutionLane.MESSAGING || stopping || scope.closed.get()) {
-                    return lane != ExecutionLane.MESSAGING;
+                if (lane != ExecutionLane.MESSAGING) {
+                    return true;
+                }
+                if (stopping || scope.closed.get()) {
+                    reject(scope, stopping
+                                    ? ExecutionRejectedException.Reason.RUNTIME_SHUTTING_DOWN
+                                    : ExecutionRejectedException.Reason.SCOPE_CLOSED,
+                            "Messaging execution scope is unavailable for " + scope.key());
+                    return false;
                 }
                 int pluginCount = pluginSubscriptions.getOrDefault(scope.pluginId, 0);
                 int connectionCount = scopeSubscriptions.getOrDefault(scope, 0);
-                if (subscriptions >= globalSubscriptionLimit || pluginCount >= pluginSubscriptionLimit
+                if (subscriptions >= globalSubscriptionLimit
+                        || pluginCount >= pluginSubscriptionLimit
                         || connectionCount >= connectionSubscriptionLimit) {
-                    reject(scope, ExecutionRejectedException.Reason.CONNECTION_QUEUE_LIMIT,
+                    reject(scope, ExecutionRejectedException.Reason.SUBSCRIPTION_LIMIT,
                             "Messaging subscription budget exhausted for " + scope.key());
                     return false;
                 }
@@ -220,21 +239,21 @@ public final class DataProviderExecutionRuntime implements AutoCloseable {
         private void workerLoop() {
             while (true) {
                 Selection selection;
+                Thread worker = Thread.currentThread();
                 synchronized (lock) {
                     while ((selection = selectNext()) == null && !stopping) {
                         try {
                             lock.wait();
-                        } catch (InterruptedException e) {
-                            if (stopping) {
-                                return;
-                            }
+                        } catch (InterruptedException ignored) {
+                            Thread.interrupted();
                         }
                     }
                     if (selection == null) {
                         return;
                     }
-                    markStarted(selection.scope, selection.task, Thread.currentThread());
+                    markStarted(selection.scope, selection.task, worker);
                 }
+
                 long startedAt = System.nanoTime();
                 boolean failed = false;
                 try {
@@ -246,35 +265,47 @@ public final class DataProviderExecutionRuntime implements AutoCloseable {
                     failed = true;
                 } finally {
                     synchronized (lock) {
-                        markFinished(selection.scope, Thread.currentThread(),
-                                System.nanoTime() - startedAt, failed);
+                        markFinished(selection.scope, worker, System.nanoTime() - startedAt, failed);
                         lock.notifyAll();
                     }
+                    // A timed-out scope may interrupt a shared worker. Never leak that flag into another plugin's task.
+                    Thread.interrupted();
                 }
             }
         }
 
         private Selection selectNext() {
-            if (queuedTasks == 0 || queues.isEmpty()) {
+            if (queuedTasks == 0 || pluginScopes.isEmpty()) {
                 return null;
             }
-            List<Map.Entry<Scope, ArrayDeque<Task>>> entries = new ArrayList<>(queues.entrySet());
-            for (int offset = 0; offset < entries.size(); offset++) {
-                int index = Math.floorMod(cursor + offset, entries.size());
-                Map.Entry<Scope, ArrayDeque<Task>> entry = entries.get(index);
-                Scope scope = entry.getKey();
-                ArrayDeque<Task> queue = entry.getValue();
-                if (scope.closed.get() || queue.isEmpty()
-                        || pluginActive.getOrDefault(scope.pluginId, 0) >= config.perPluginActive()
-                        || scopeActive.getOrDefault(scope, 0) >= config.perConnectionActive()) {
+            List<String> plugins = new ArrayList<>(pluginScopes.keySet());
+            for (int pluginOffset = 0; pluginOffset < plugins.size(); pluginOffset++) {
+                int pluginIndex = Math.floorMod(pluginCursor + pluginOffset, plugins.size());
+                String pluginId = plugins.get(pluginIndex);
+                if (pluginActive.getOrDefault(pluginId, 0) >= config.perPluginActive()) {
                     continue;
                 }
-                cursor = (index + 1) % entries.size();
-                Task task = queue.removeFirst();
-                queuedTasks--;
-                decrement(pluginQueued, scope.pluginId);
-                changeQueued(scope, -1);
-                return new Selection(scope, task);
+                List<Scope> scopes = pluginScopes.get(pluginId);
+                if (scopes == null || scopes.isEmpty()) {
+                    continue;
+                }
+                int start = Math.floorMod(pluginScopeCursor.getOrDefault(pluginId, 0), scopes.size());
+                for (int scopeOffset = 0; scopeOffset < scopes.size(); scopeOffset++) {
+                    int scopeIndex = Math.floorMod(start + scopeOffset, scopes.size());
+                    Scope scope = scopes.get(scopeIndex);
+                    ArrayDeque<Task> queue = queues.get(scope);
+                    if (scope.closed.get() || queue == null || queue.isEmpty()
+                            || scopeActive.getOrDefault(scope, 0) >= config.perConnectionActive()) {
+                        continue;
+                    }
+                    pluginCursor = (pluginIndex + 1) % plugins.size();
+                    pluginScopeCursor.put(pluginId, (scopeIndex + 1) % scopes.size());
+                    Task task = queue.removeFirst();
+                    queuedTasks--;
+                    decrement(pluginQueued, pluginId);
+                    changeQueued(scope, -1);
+                    return new Selection(scope, task);
+                }
             }
             return null;
         }
@@ -283,6 +314,7 @@ public final class DataProviderExecutionRuntime implements AutoCloseable {
             pluginActive.merge(scope.pluginId, 1, Integer::sum);
             scopeActive.merge(scope, 1, Integer::sum);
             activeThreads.computeIfAbsent(scope, ignored -> new HashSet<>()).add(thread);
+            activeTasks.put(thread, new ActiveTask(scope, task));
             long wait = System.nanoTime() - task.enqueuedAt;
             MutableMetrics plugin = pluginMetrics.get(scope.pluginId);
             scope.metrics.activeTasks++;
@@ -296,6 +328,7 @@ public final class DataProviderExecutionRuntime implements AutoCloseable {
         private void markFinished(Scope scope, Thread thread, long duration, boolean failed) {
             decrement(pluginActive, scope.pluginId);
             decrement(scopeActive, scope);
+            activeTasks.remove(thread);
             Set<Thread> threads = activeThreads.get(scope);
             if (threads != null) {
                 threads.remove(thread);
@@ -314,6 +347,7 @@ public final class DataProviderExecutionRuntime implements AutoCloseable {
 
         private void closeScope(Scope scope, Duration grace) {
             List<Task> cancelled;
+            List<ActiveTask> timedOut;
             synchronized (lock) {
                 if (!scope.closed.compareAndSet(false, true)) {
                     return;
@@ -324,22 +358,46 @@ public final class DataProviderExecutionRuntime implements AutoCloseable {
                     queuedTasks--;
                     decrement(pluginQueued, scope.pluginId);
                     changeQueued(scope, -1);
-                    scope.metrics.cancelledTasks++;
-                    pluginMetrics.get(scope.pluginId).cancelledTasks++;
-                    metrics.cancelledTasks++;
+                    countCancellation(scope);
                 }
+                removeScopeFromPlugin(scope);
                 releaseAllSubscriptions(scope);
                 awaitActive(scope, grace);
+                timedOut = activeTasks.values().stream()
+                        .filter(active -> active.scope == scope)
+                        .toList();
+                timedOut.forEach(active -> {
+                    if (active.task.markCancelled()) {
+                        countCancellation(scope);
+                    }
+                    rejectTask(active.task.command, scopeClosedRejection(scope));
+                });
                 Set<Thread> threads = activeThreads.get(scope);
                 if (threads != null) {
                     threads.forEach(Thread::interrupt);
                 }
                 lock.notifyAll();
             }
-            RejectedExecutionException rejection = new ExecutionRejectedException(
-                    ExecutionRejectedException.Reason.SCOPE_CLOSED,
-                    "Execution scope closed for " + scope.key());
+            RejectedExecutionException rejection = scopeClosedRejection(scope);
             cancelled.forEach(task -> rejectTask(task.command, rejection));
+        }
+
+        private void removeScopeFromPlugin(Scope scope) {
+            List<Scope> scopes = pluginScopes.get(scope.pluginId);
+            if (scopes == null) {
+                return;
+            }
+            scopes.remove(scope);
+            if (scopes.isEmpty()) {
+                pluginScopes.remove(scope.pluginId);
+                pluginScopeCursor.remove(scope.pluginId);
+                if (pluginCursor > 0) {
+                    pluginCursor--;
+                }
+            } else {
+                pluginScopeCursor.computeIfPresent(scope.pluginId,
+                        (ignored, cursor) -> Math.floorMod(cursor, scopes.size()));
+            }
         }
 
         private void awaitActive(Scope scope, Duration grace) {
@@ -356,21 +414,22 @@ public final class DataProviderExecutionRuntime implements AutoCloseable {
         }
 
         private void releaseAllSubscriptions(Scope scope) {
-            int count = scopeSubscriptions.remove(scope) == null ? 0 : scope.metrics.activeSubscriptions > Integer.MAX_VALUE
-                    ? Integer.MAX_VALUE : (int) scope.metrics.activeSubscriptions;
+            int count = scopeSubscriptions.getOrDefault(scope, 0);
+            scopeSubscriptions.remove(scope);
             if (count <= 0) {
                 return;
             }
-            subscriptions -= count;
+            subscriptions = Math.max(0, subscriptions - count);
             int pluginCount = pluginSubscriptions.getOrDefault(scope.pluginId, 0) - count;
             if (pluginCount <= 0) {
                 pluginSubscriptions.remove(scope.pluginId);
             } else {
                 pluginSubscriptions.put(scope.pluginId, pluginCount);
             }
-            pluginMetrics.get(scope.pluginId).activeSubscriptions -= count;
-            metrics.activeSubscriptions -= count;
-            scope.metrics.activeSubscriptions = 0;
+            MutableMetrics plugin = pluginMetrics.get(scope.pluginId);
+            scope.metrics.activeSubscriptions = Math.max(0, scope.metrics.activeSubscriptions - count);
+            plugin.activeSubscriptions = Math.max(0, plugin.activeSubscriptions - count);
+            metrics.activeSubscriptions = Math.max(0, metrics.activeSubscriptions - count);
         }
 
         private void shutdown(Duration grace) {
@@ -383,23 +442,50 @@ public final class DataProviderExecutionRuntime implements AutoCloseable {
                 queues.forEach((scope, queue) -> {
                     scope.closed.set(true);
                     cancelled.addAll(queue);
-                    scope.metrics.cancelledTasks += queue.size();
-                    pluginMetrics.get(scope.pluginId).cancelledTasks += queue.size();
+                    for (int index = 0; index < queue.size(); index++) {
+                        countCancellation(scope);
+                    }
                     scope.metrics.queuedTasks = 0;
                     releaseAllSubscriptions(scope);
                 });
-                metrics.cancelledTasks += cancelled.size();
                 metrics.queuedTasks = 0;
+                pluginMetrics.values().forEach(plugin -> plugin.queuedTasks = 0);
                 queuedTasks = 0;
                 pluginQueued.clear();
                 queues.clear();
+                pluginScopes.clear();
+                pluginScopeCursor.clear();
                 lock.notifyAll();
             }
+
             RejectedExecutionException rejection = new ExecutionRejectedException(
                     ExecutionRejectedException.Reason.RUNTIME_SHUTTING_DOWN,
-                    "DataProvider execution runtime is shutting down.");
+                    "DataProvider execution runtime is shutting down."
+            );
             cancelled.forEach(task -> rejectTask(task.command, rejection));
+
             long deadline = System.nanoTime() + grace.toNanos();
+            synchronized (lock) {
+                while (!activeTasks.isEmpty() && System.nanoTime() < deadline) {
+                    long remaining = deadline - System.nanoTime();
+                    try {
+                        lock.wait(Math.max(1L, Math.min(100L, Duration.ofNanos(remaining).toMillis())));
+                    } catch (InterruptedException e) {
+                        Thread.currentThread().interrupt();
+                        break;
+                    }
+                }
+                for (Map.Entry<Thread, ActiveTask> entry : new ArrayList<>(activeTasks.entrySet())) {
+                    ActiveTask active = entry.getValue();
+                    if (active.task.markCancelled()) {
+                        countCancellation(active.scope);
+                    }
+                    rejectTask(active.task.command, rejection);
+                    entry.getKey().interrupt();
+                }
+                lock.notifyAll();
+            }
+
             for (Thread worker : workers) {
                 long remaining = deadline - System.nanoTime();
                 if (remaining <= 0) {
@@ -415,6 +501,12 @@ public final class DataProviderExecutionRuntime implements AutoCloseable {
             workers.stream().filter(Thread::isAlive).forEach(Thread::interrupt);
         }
 
+        private void countCancellation(Scope scope) {
+            scope.metrics.cancelledTasks++;
+            pluginMetrics.get(scope.pluginId).cancelledTasks++;
+            metrics.cancelledTasks++;
+        }
+
         private ExecutionRejectedException reject(
                 Scope scope,
                 ExecutionRejectedException.Reason reason,
@@ -426,6 +518,13 @@ public final class DataProviderExecutionRuntime implements AutoCloseable {
                 pluginMetrics.get(scope.pluginId).rejectedTasks++;
             }
             return new ExecutionRejectedException(reason, message);
+        }
+
+        private ExecutionRejectedException scopeClosedRejection(Scope scope) {
+            return new ExecutionRejectedException(
+                    ExecutionRejectedException.Reason.SCOPE_CLOSED,
+                    "Execution scope closed for " + scope.key()
+            );
         }
 
         private ExecutionMetricsSnapshot snapshot() {
@@ -559,13 +658,39 @@ public final class DataProviderExecutionRuntime implements AutoCloseable {
         }
 
         private ExecutionMetricsSnapshot snapshot() {
-            return new ExecutionMetricsSnapshot(activeTasks, queuedTasks, completedTasks, failedTasks, cancelledTasks,
-                    rejectedTasks, activeSubscriptions, droppedMessages, totalQueueWaitNanos, maxQueueWaitNanos,
-                    totalExecutionNanos, maxExecutionNanos);
+            return new ExecutionMetricsSnapshot(
+                    activeTasks,
+                    queuedTasks,
+                    completedTasks,
+                    failedTasks,
+                    cancelledTasks,
+                    rejectedTasks,
+                    activeSubscriptions,
+                    droppedMessages,
+                    totalQueueWaitNanos,
+                    maxQueueWaitNanos,
+                    totalExecutionNanos,
+                    maxExecutionNanos
+            );
         }
     }
 
-    private record Task(Runnable command, long enqueuedAt) {
+    private static final class Task {
+        private final Runnable command;
+        private final long enqueuedAt;
+        private final AtomicBoolean cancelled = new AtomicBoolean();
+
+        private Task(Runnable command, long enqueuedAt) {
+            this.command = command;
+            this.enqueuedAt = enqueuedAt;
+        }
+
+        private boolean markCancelled() {
+            return cancelled.compareAndSet(false, true);
+        }
+    }
+
+    private record ActiveTask(Scope scope, Task task) {
     }
 
     private record Selection(Scope scope, Task task) {
