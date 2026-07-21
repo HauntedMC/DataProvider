@@ -7,6 +7,7 @@ import nl.hauntedmc.dataprovider.core.database.document.impl.mongodb.MongoDBData
 import nl.hauntedmc.dataprovider.core.database.keyvalue.impl.redis.RedisDatabase;
 import nl.hauntedmc.dataprovider.core.database.messaging.impl.redis.RedisMessagingDatabase;
 import nl.hauntedmc.dataprovider.core.database.relational.impl.mysql.MySQLDatabase;
+import nl.hauntedmc.dataprovider.core.exception.DataProviderExceptionMapper;
 import nl.hauntedmc.dataprovider.database.DatabaseType;
 import nl.hauntedmc.dataprovider.logging.LoggerAdapter;
 import org.spongepowered.configurate.CommentedConfigurationNode;
@@ -75,7 +76,7 @@ class DatabaseFactory {
         CommentedConfigurationNode connectionConfig = configMap.getConfig(type, connectionIdentifier);
         if (connectionConfig == null) {
             logger.error("Could not load configuration for " + connectionIdentifier.value() + " (" + type.name() + ")");
-            return null;
+            throw DataProviderExceptionMapper.missingConfigurationFailure();
         }
         ExecutionHandle rawExecution = executionRuntime == null
                 ? ExecutionHandle.direct()
