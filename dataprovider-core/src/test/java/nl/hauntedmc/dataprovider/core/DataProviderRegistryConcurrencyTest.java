@@ -41,7 +41,7 @@ class DataProviderRegistryConcurrencyTest {
                 });
         DataProviderRegistry registry = new DataProviderRegistry(factory, config, new RecordingLoggerAdapter());
 
-        ExecutorService executor = Executors.newFixedThreadPool(24);
+        ExecutorService executor = Executors.newFixedThreadPool(100);
         try {
             CountDownLatch start = new CountDownLatch(1);
             List<CompletableFuture<DatabaseProvider>> registrations = new ArrayList<>();
