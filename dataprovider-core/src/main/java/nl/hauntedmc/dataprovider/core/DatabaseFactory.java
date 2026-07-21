@@ -11,8 +11,11 @@ import nl.hauntedmc.dataprovider.logging.LoggerAdapter;
 import org.spongepowered.configurate.CommentedConfigurationNode;
 
 import java.util.Objects;
+import java.util.function.Supplier;
 
 class DatabaseFactory {
+
+    private static final ThreadLocal<PluginId> CREATION_PLUGIN = new ThreadLocal<>();
 
     private final DatabaseConfigMap configMap;
     private final LoggerAdapter logger;
@@ -32,15 +35,32 @@ class DatabaseFactory {
         this.executionRuntime = executionRuntime;
     }
 
+    static <T> T withCreationPlugin(PluginId pluginId, Supplier<T> action) {
+        Objects.requireNonNull(pluginId, "Plugin id cannot be null.");
+        Objects.requireNonNull(action, "Action cannot be null.");
+        PluginId previous = CREATION_PLUGIN.get();
+        CREATION_PLUGIN.set(pluginId);
+        try {
+            return action.get();
+        } finally {
+            if (previous == null) {
+                CREATION_PLUGIN.remove();
+            } else {
+                CREATION_PLUGIN.set(previous);
+            }
+        }
+    }
+
     protected ManagedDatabaseProvider createDatabaseProvider(DatabaseType type, String connectionIdentifier) {
-        return createDatabaseProvider(PluginId.of("legacy"), type, ConnectionIdentifier.of(connectionIdentifier));
+        return createDatabaseProvider(type, ConnectionIdentifier.of(connectionIdentifier));
     }
 
     protected ManagedDatabaseProvider createDatabaseProvider(
             DatabaseType type,
             ConnectionIdentifier connectionIdentifier
     ) {
-        return createDatabaseProvider(PluginId.of("legacy"), type, connectionIdentifier);
+        PluginId pluginId = CREATION_PLUGIN.get();
+        return createDatabaseProvider(pluginId == null ? PluginId.of("internal") : pluginId, type, connectionIdentifier);
     }
 
     protected ManagedDatabaseProvider createDatabaseProvider(
@@ -83,10 +103,10 @@ class DatabaseFactory {
     }
 
     protected void applyConfigurationSnapshot(DatabaseConfigMap.DatabaseConfigSnapshot snapshot) {
-        configMap.applySnapshot(snapshot);
+        configMap.applyConfigurationSnapshot(snapshot);
     }
 
     protected DatabaseConfigMap.DatabaseConfigSnapshot currentConfigurationSnapshot() {
-        return configMap.currentSnapshot();
+        return configMap.currentConfigurationSnapshot();
     }
 }
