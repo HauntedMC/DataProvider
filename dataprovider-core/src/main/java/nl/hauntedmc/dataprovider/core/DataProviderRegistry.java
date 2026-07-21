@@ -30,13 +30,15 @@ class DataProviderRegistry {
 
     private final ConcurrentMap<RegistrationKey, ProviderSlot> activeDatabases = new ConcurrentHashMap<>();
     private final ConcurrentMap<RegistrationKey, ConnectionHealthSnapshot> healthSnapshots = new ConcurrentHashMap<>();
+    private final ConcurrentMap<RegistrationKey, ProviderLifecycleSnapshot> lifecycleSnapshots =
+            new ConcurrentHashMap<>();
     private final ReadWriteLock lifecycleLock = new ReentrantReadWriteLock(true);
     private final DatabaseFactory factory;
     private final ConfigHandler configHandler;
     private final LoggerAdapter logger;
     private volatile boolean closed;
 
-    DataProviderRegistry(DatabaseFactory factory, ConfigHandler configHandler, LoggerAdapter logger) {
+    public DataProviderRegistry(DatabaseFactory factory, ConfigHandler configHandler, LoggerAdapter logger) {
         this.factory = Objects.requireNonNull(factory, "Factory cannot be null.");
         this.configHandler = Objects.requireNonNull(configHandler, "Config handler cannot be null.");
         this.logger = Objects.requireNonNull(logger, "Logger cannot be null.");
@@ -66,66 +68,86 @@ class DataProviderRegistry {
         Objects.requireNonNull(ownerScope, "Owner scope cannot be null.");
         Objects.requireNonNull(databaseType, "Database type cannot be null.");
         Objects.requireNonNull(connectionIdentifier, "Connection identifier cannot be null.");
-        ensureOpen();
 
-        if (!configHandler.isDatabaseTypeEnabled(databaseType)) {
+        RegistrationKey key = new RegistrationKey(pluginId, databaseType, connectionIdentifier);
+        AtomicBoolean creator = new AtomicBoolean();
+        AtomicBoolean disabled = new AtomicBoolean();
+        AtomicReference<ProviderSlot> staleSlot = new AtomicReference<>();
+        ProviderSlot slot;
+
+        Lock readLock = lifecycleLock.readLock();
+        readLock.lock();
+        try {
+            ensureOpen();
+            slot = activeDatabases.compute(key, (ignored, existing) -> {
+                if (existing != null && existing.tryAcquireReference(ownerScope)) {
+                    return existing;
+                }
+                if (existing != null) {
+                    staleSlot.set(existing);
+                }
+                if (!configHandler.isDatabaseTypeEnabled(databaseType)) {
+                    disabled.set(true);
+                    return null;
+                }
+                creator.set(true);
+                return new ProviderSlot(key, ownerScope);
+            });
+        } finally {
+            readLock.unlock();
+        }
+
+        ProviderSlot stale = staleSlot.get();
+        if (stale != null && stale != slot) {
+            stale.close("replaced stale provider");
+        }
+        if (disabled.get()) {
             logger.error("Failed to establish connection for " + pluginId.value() + " with " + databaseType.name()
                     + ": This database type is disabled in the main config.");
             return null;
         }
+        if (slot == null) {
+            return null;
+        }
 
-        RegistrationKey key = new RegistrationKey(pluginId, databaseType, connectionIdentifier);
-        while (true) {
-            ensureOpen();
-            AtomicBoolean creator = new AtomicBoolean(false);
-            AtomicReference<ProviderSlot> staleSlot = new AtomicReference<>();
-            ProviderSlot slot = activeDatabases.compute(key, (ignored, existing) -> {
-                if (existing == null || existing.isReplaceable()) {
-                    if (existing != null) {
-                        staleSlot.set(existing);
-                    }
-                    creator.set(true);
-                    return new ProviderSlot(key, ownerScope);
-                }
-                if (existing.tryAcquireReference(ownerScope)) {
-                    return existing;
-                }
-                staleSlot.set(existing);
-                creator.set(true);
-                return new ProviderSlot(key, ownerScope);
-            });
+        if (creator.get()) {
+            slot.initialize();
+        }
 
-            ProviderSlot stale = staleSlot.get();
-            if (stale != null && stale != slot) {
-                stale.close("replaced stale provider");
-            }
-
-            if (creator.get()) {
-                slot.initialize();
-            }
-
-            ManagedDatabaseProvider provider = slot.awaitReady();
-            if (provider != null) {
-                if (closed) {
-                    if (activeDatabases.remove(key, slot)) {
-                        healthSnapshots.remove(key);
-                    }
-                    slot.close("registry shut down during registration");
-                    throw new IllegalStateException(SHUTDOWN_MESSAGE);
-                }
-                healthSnapshots.putIfAbsent(key, ConnectionHealthSnapshot.unprobed(true));
-                logger.info(pluginId.value() + " registered " + databaseType.name() + " connection ("
-                        + connectionIdentifier.value() + "), active references=" + slot.referenceCount());
-                return provider;
-            }
-
-            activeDatabases.remove(key, slot);
-            healthSnapshots.remove(key);
+        ManagedDatabaseProvider provider = slot.awaitReady();
+        if (provider == null) {
+            detachFailedSlot(key, slot);
             Throwable failure = slot.failure();
             if (failure != null) {
                 logger.error("Failed to register database for " + pluginId.value(), failure);
             }
             return null;
+        }
+
+        readLock.lock();
+        try {
+            ensureOpen();
+            if (activeDatabases.get(key) != slot || slot.state() != ProviderLifecycleState.READY) {
+                return null;
+            }
+            healthSnapshots.putIfAbsent(key, ConnectionHealthSnapshot.unprobed(true));
+        } finally {
+            readLock.unlock();
+        }
+
+        logger.info(pluginId.value() + " registered " + databaseType.name() + " connection ("
+                + connectionIdentifier.value() + "), active references=" + slot.referenceCount());
+        return provider;
+    }
+
+    private void detachFailedSlot(RegistrationKey key, ProviderSlot slot) {
+        Lock readLock = lifecycleLock.readLock();
+        readLock.lock();
+        try {
+            activeDatabases.remove(key, slot);
+            healthSnapshots.remove(key);
+        } finally {
+            readLock.unlock();
         }
     }
 
@@ -141,10 +163,7 @@ class DataProviderRegistry {
         Objects.requireNonNull(pluginId, "Plugin id cannot be null.");
         Objects.requireNonNull(databaseType, "Database type cannot be null.");
         Objects.requireNonNull(connectionIdentifier, "Connection identifier cannot be null.");
-        ensureOpen();
-        RegistrationKey key = new RegistrationKey(pluginId, databaseType, connectionIdentifier);
-        ProviderSlot slot = activeDatabases.get(key);
-        return readyProviderOrRemoveStale(key, slot);
+        return lookupProvider(new RegistrationKey(pluginId, databaseType, connectionIdentifier), null);
     }
 
     DatabaseProvider getDatabase(
@@ -157,29 +176,37 @@ class DataProviderRegistry {
         Objects.requireNonNull(ownerScope, "Owner scope cannot be null.");
         Objects.requireNonNull(databaseType, "Database type cannot be null.");
         Objects.requireNonNull(connectionIdentifier, "Connection identifier cannot be null.");
-        ensureOpen();
-        RegistrationKey key = new RegistrationKey(pluginId, databaseType, connectionIdentifier);
-        ProviderSlot slot = activeDatabases.get(key);
-        if (slot == null || !slot.hasReference(ownerScope)) {
-            return null;
-        }
-        return readyProviderOrRemoveStale(key, slot);
+        return lookupProvider(new RegistrationKey(pluginId, databaseType, connectionIdentifier), ownerScope);
     }
 
-    private DatabaseProvider readyProviderOrRemoveStale(RegistrationKey key, ProviderSlot slot) {
-        if (slot == null || slot.state() != ProviderLifecycleState.READY) {
-            return null;
+    private DatabaseProvider lookupProvider(RegistrationKey key, OwnerScopeId ownerScope) {
+        ProviderSlot stale = null;
+        DatabaseProvider result = null;
+        Lock readLock = lifecycleLock.readLock();
+        readLock.lock();
+        try {
+            ensureOpen();
+            ProviderSlot slot = activeDatabases.get(key);
+            if (slot == null || ownerScope != null && !slot.hasReference(ownerScope)) {
+                return null;
+            }
+            if (slot.state() == ProviderLifecycleState.READY) {
+                ManagedDatabaseProvider provider = slot.provider();
+                if (provider != null && safeLocalState(provider, key)) {
+                    result = provider;
+                } else if (activeDatabases.remove(key, slot)) {
+                    healthSnapshots.remove(key);
+                    stale = slot;
+                }
+            }
+        } finally {
+            readLock.unlock();
         }
-        ManagedDatabaseProvider provider = slot.provider();
-        if (provider != null && safeLocalState(provider, key)) {
-            return provider;
-        }
-        if (activeDatabases.remove(key, slot)) {
-            healthSnapshots.remove(key);
-            slot.close("stale provider lookup");
+        if (stale != null) {
+            stale.close("stale provider lookup");
             logger.warn("Removed stale provider for " + key + ".");
         }
-        return null;
+        return result;
     }
 
     private boolean safeLocalState(ManagedDatabaseProvider provider, RegistrationKey key) {
@@ -215,25 +242,34 @@ class DataProviderRegistry {
         Objects.requireNonNull(ownerScope, "Owner scope cannot be null.");
         Objects.requireNonNull(databaseType, "Database type cannot be null.");
         Objects.requireNonNull(connectionIdentifier, "Connection identifier cannot be null.");
-        ensureOpen();
 
         RegistrationKey key = new RegistrationKey(pluginId, databaseType, connectionIdentifier);
-        ProviderSlot slot = activeDatabases.get(key);
-        if (slot == null) {
-            return;
+        ProviderSlot toClose = null;
+        ReferenceReleaseResult result;
+        Lock readLock = lifecycleLock.readLock();
+        readLock.lock();
+        try {
+            ensureOpen();
+            ProviderSlot slot = activeDatabases.get(key);
+            if (slot == null) {
+                return;
+            }
+            result = slot.releaseReference(ownerScope);
+            if (result.ownerHadReference() && result.totalReferences() == 0 && activeDatabases.remove(key, slot)) {
+                healthSnapshots.remove(key);
+                toClose = slot;
+            }
+        } finally {
+            readLock.unlock();
         }
-        ReferenceReleaseResult result = slot.releaseReference(ownerScope);
+
         if (!result.ownerHadReference()) {
             logger.warn(pluginId.value() + " attempted to release " + databaseType.name() + " connection ("
                     + connectionIdentifier.value() + ") from unregistered scope " + ownerScope.value());
             return;
         }
-        if (result.totalReferences() > 0) {
-            return;
-        }
-        if (activeDatabases.remove(key, slot)) {
-            healthSnapshots.remove(key);
-            slot.close("last reference released");
+        if (toClose != null) {
+            toClose.close("last reference released");
         }
     }
 
@@ -244,18 +280,23 @@ class DataProviderRegistry {
     void unregisterAllDatabases(PluginId pluginId, OwnerScopeId ownerScope) {
         Objects.requireNonNull(pluginId, "Plugin id cannot be null.");
         Objects.requireNonNull(ownerScope, "Owner scope cannot be null.");
-        ensureOpen();
-        List<Map.Entry<RegistrationKey, ProviderSlot>> toClose = new ArrayList<>();
-        activeDatabases.forEach((key, slot) -> {
-            if (!key.pluginId().equals(pluginId)) {
-                return;
-            }
-            if (slot.releaseAllForOwner(ownerScope) == 0 && activeDatabases.remove(key, slot)) {
-                healthSnapshots.remove(key);
-                toClose.add(Map.entry(key, slot));
-            }
-        });
-        toClose.forEach(entry -> entry.getValue().close("owner scope released"));
+        List<ProviderSlot> toClose = new ArrayList<>();
+        Lock readLock = lifecycleLock.readLock();
+        readLock.lock();
+        try {
+            ensureOpen();
+            activeDatabases.forEach((key, slot) -> {
+                if (key.pluginId().equals(pluginId)
+                        && slot.releaseAllForOwner(ownerScope) == 0
+                        && activeDatabases.remove(key, slot)) {
+                    healthSnapshots.remove(key);
+                    toClose.add(slot);
+                }
+            });
+        } finally {
+            readLock.unlock();
+        }
+        toClose.forEach(slot -> slot.close("owner scope released"));
     }
 
     protected void unregisterAllDatabasesForPlugin(String pluginName) {
@@ -264,15 +305,21 @@ class DataProviderRegistry {
 
     void unregisterAllDatabasesForPlugin(PluginId pluginId) {
         Objects.requireNonNull(pluginId, "Plugin id cannot be null.");
-        ensureOpen();
         List<ProviderSlot> toClose = new ArrayList<>();
-        activeDatabases.forEach((key, slot) -> {
-            if (key.pluginId().equals(pluginId) && activeDatabases.remove(key, slot)) {
-                healthSnapshots.remove(key);
-                slot.forceReleaseAll();
-                toClose.add(slot);
-            }
-        });
+        Lock readLock = lifecycleLock.readLock();
+        readLock.lock();
+        try {
+            ensureOpen();
+            activeDatabases.forEach((key, slot) -> {
+                if (key.pluginId().equals(pluginId) && activeDatabases.remove(key, slot)) {
+                    healthSnapshots.remove(key);
+                    slot.forceReleaseAll();
+                    toClose.add(slot);
+                }
+            });
+        } finally {
+            readLock.unlock();
+        }
         toClose.forEach(slot -> slot.close("plugin cleanup"));
     }
 
@@ -296,41 +343,64 @@ class DataProviderRegistry {
     }
 
     protected ConcurrentMap<DatabaseConnectionKey, DatabaseProvider> getActiveDatabases() {
-        ensureOpen();
-        ConcurrentMap<DatabaseConnectionKey, DatabaseProvider> snapshot = new ConcurrentHashMap<>();
-        activeDatabases.forEach((key, slot) -> {
-            if (slot.state() == ProviderLifecycleState.READY && slot.provider() != null) {
-                snapshot.put(key.toExternalKey(), slot.provider());
-            }
-        });
-        return snapshot;
+        Lock readLock = lifecycleLock.readLock();
+        readLock.lock();
+        try {
+            ensureOpen();
+            ConcurrentMap<DatabaseConnectionKey, DatabaseProvider> snapshot = new ConcurrentHashMap<>();
+            activeDatabases.forEach((key, slot) -> {
+                if (slot.state() == ProviderLifecycleState.READY && slot.provider() != null) {
+                    snapshot.put(key.toExternalKey(), slot.provider());
+                }
+            });
+            return snapshot;
+        } finally {
+            readLock.unlock();
+        }
     }
 
     protected Map<DatabaseConnectionKey, ConnectionHealthSnapshot> getCachedHealthSnapshots() {
-        ensureOpen();
-        Map<DatabaseConnectionKey, ConnectionHealthSnapshot> snapshots = new HashMap<>();
-        activeDatabases.forEach((key, slot) -> {
-            boolean connected = slot.state() == ProviderLifecycleState.READY;
-            ConnectionHealthSnapshot cached = healthSnapshots.getOrDefault(key, ConnectionHealthSnapshot.unprobed(connected));
-            snapshots.put(key.toExternalKey(), new ConnectionHealthSnapshot(
-                    connected
-                            ? ConnectionHealthSnapshot.LocalConnectionState.CONNECTED
-                            : ConnectionHealthSnapshot.LocalConnectionState.DISCONNECTED,
-                    cached.remoteHealth(),
-                    cached.checkedAt()
-            ));
-        });
-        return Map.copyOf(snapshots);
+        Lock readLock = lifecycleLock.readLock();
+        readLock.lock();
+        try {
+            ensureOpen();
+            Map<DatabaseConnectionKey, ConnectionHealthSnapshot> snapshots = new HashMap<>();
+            activeDatabases.forEach((key, slot) -> {
+                boolean connected = slot.state() == ProviderLifecycleState.READY;
+                ConnectionHealthSnapshot cached = healthSnapshots.getOrDefault(
+                        key,
+                        ConnectionHealthSnapshot.unprobed(connected)
+                );
+                snapshots.put(key.toExternalKey(), new ConnectionHealthSnapshot(
+                        connected
+                                ? ConnectionHealthSnapshot.LocalConnectionState.CONNECTED
+                                : ConnectionHealthSnapshot.LocalConnectionState.DISCONNECTED,
+                        cached.remoteHealth(),
+                        cached.checkedAt()
+                ));
+            });
+            return Map.copyOf(snapshots);
+        } finally {
+            readLock.unlock();
+        }
     }
 
     Map<DatabaseConnectionKey, ProviderLifecycleSnapshot> getProviderLifecycleSnapshots() {
         Map<DatabaseConnectionKey, ProviderLifecycleSnapshot> snapshots = new HashMap<>();
-        activeDatabases.forEach((key, slot) -> snapshots.put(key.toExternalKey(), slot.snapshot()));
+        lifecycleSnapshots.forEach((key, snapshot) -> snapshots.put(key.toExternalKey(), snapshot));
         return Map.copyOf(snapshots);
     }
 
     protected CompletableFuture<Void> probeRemoteHealthAsync() {
-        Map<RegistrationKey, ProviderSlot> registrations = new HashMap<>(activeDatabases);
+        Map<RegistrationKey, ProviderSlot> registrations;
+        Lock readLock = lifecycleLock.readLock();
+        readLock.lock();
+        try {
+            ensureOpen();
+            registrations = new HashMap<>(activeDatabases);
+        } finally {
+            readLock.unlock();
+        }
         return CompletableFuture.runAsync(() -> registrations.forEach((key, slot) -> {
             ManagedDatabaseProvider provider = slot.provider();
             if (slot.state() != ProviderLifecycleState.READY || provider == null) {
@@ -355,24 +425,42 @@ class DataProviderRegistry {
     }
 
     protected Map<DatabaseConnectionKey, Integer> getActiveDatabaseReferenceCounts() {
-        ensureOpen();
-        Map<DatabaseConnectionKey, Integer> snapshot = new HashMap<>();
-        activeDatabases.forEach((key, slot) -> snapshot.put(key.toExternalKey(), slot.referenceCount()));
-        return snapshot;
+        Lock readLock = lifecycleLock.readLock();
+        readLock.lock();
+        try {
+            ensureOpen();
+            Map<DatabaseConnectionKey, Integer> snapshot = new HashMap<>();
+            activeDatabases.forEach((key, slot) -> snapshot.put(key.toExternalKey(), slot.referenceCount()));
+            return snapshot;
+        } finally {
+            readLock.unlock();
+        }
     }
 
     protected Map<DatabaseType, Boolean> getConfiguredDatabaseTypeStates() {
-        ensureOpen();
-        Map<DatabaseType, Boolean> states = new EnumMap<>(DatabaseType.class);
-        for (DatabaseType type : DatabaseType.values()) {
-            states.put(type, configHandler.isDatabaseTypeEnabled(type));
+        Lock readLock = lifecycleLock.readLock();
+        readLock.lock();
+        try {
+            ensureOpen();
+            Map<DatabaseType, Boolean> states = new EnumMap<>(DatabaseType.class);
+            for (DatabaseType type : DatabaseType.values()) {
+                states.put(type, configHandler.isDatabaseTypeEnabled(type));
+            }
+            return states;
+        } finally {
+            readLock.unlock();
         }
-        return states;
     }
 
     protected String getOrmSchemaMode() {
-        ensureOpen();
-        return configHandler.getOrmSchemaMode();
+        Lock readLock = lifecycleLock.readLock();
+        readLock.lock();
+        try {
+            ensureOpen();
+            return configHandler.getOrmSchemaMode();
+        } finally {
+            readLock.unlock();
+        }
     }
 
     protected void reloadConfiguration() {
@@ -441,18 +529,21 @@ class DataProviderRegistry {
                 new AtomicReference<>(ProviderLifecycleState.NEW);
         private final CompletableFuture<ManagedDatabaseProvider> readyFuture = new CompletableFuture<>();
         private final AtomicBoolean closeStarted = new AtomicBoolean();
+        private final AtomicBoolean providerCloseStarted = new AtomicBoolean();
         private volatile ManagedDatabaseProvider provider;
         private volatile Throwable failure;
         private volatile Instant changedAt = Instant.now();
         private int referenceCount;
 
         private ProviderSlot(RegistrationKey key, OwnerScopeId initialOwnerScope) {
-            this.key = key;
-            this.referenceCount = 1;
+            this.key = Objects.requireNonNull(key, "Registration key cannot be null.");
+            Objects.requireNonNull(initialOwnerScope, "Initial owner scope cannot be null.");
+            referenceCount = 1;
             ownerReferenceCounts.put(initialOwnerScope, 1);
+            publishSnapshot();
         }
 
-        private synchronized void initialize() {
+        private void initialize() {
             if (!transition(ProviderLifecycleState.NEW, ProviderLifecycleState.CONNECTING)) {
                 return;
             }
@@ -464,19 +555,31 @@ class DataProviderRegistry {
                 provider = created;
                 created.connect();
                 if (!created.isLocallyConnected()) {
+                    Throwable providerFailure = created.lifecycleFailure();
+                    if (providerFailure != null) {
+                        throw new IllegalStateException("Provider connection failed for " + key, providerFailure);
+                    }
                     throw new IllegalStateException("Provider did not become locally connected for " + key);
                 }
-                if (closed || closeStarted.get()) {
-                    throw new IllegalStateException("Provider connection completed after shutdown started for " + key);
+                if (closeStarted.get() || closed
+                        || !transition(ProviderLifecycleState.CONNECTING, ProviderLifecycleState.READY)) {
+                    throw new IllegalStateException("Provider connection completed after closure started for " + key);
                 }
-                state.set(ProviderLifecycleState.READY);
-                changedAt = Instant.now();
                 readyFuture.complete(created);
             } catch (Throwable connectFailure) {
                 failure = connectFailure;
-                state.set(ProviderLifecycleState.FAILED);
+                if (closeStarted.get()) {
+                    state.set(ProviderLifecycleState.CLOSING);
+                    changedAt = Instant.now();
+                    publishSnapshot();
+                    closeProviderOnce(connectFailure);
+                    state.set(ProviderLifecycleState.CLOSED);
+                } else {
+                    state.set(ProviderLifecycleState.FAILED);
+                    closeProviderOnce(connectFailure);
+                }
                 changedAt = Instant.now();
-                closeProviderOnce(connectFailure);
+                publishSnapshot();
                 readyFuture.completeExceptionally(connectFailure);
             }
         }
@@ -491,9 +594,17 @@ class DataProviderRegistry {
 
         private synchronized boolean tryAcquireReference(OwnerScopeId ownerScope) {
             ProviderLifecycleState current = state.get();
-            if (ownerScope == null || current == ProviderLifecycleState.CLOSING
-                    || current == ProviderLifecycleState.CLOSED || current == ProviderLifecycleState.FAILED) {
+            if (ownerScope == null || closeStarted.get()
+                    || current == ProviderLifecycleState.CLOSING
+                    || current == ProviderLifecycleState.CLOSED
+                    || current == ProviderLifecycleState.FAILED) {
                 return false;
+            }
+            if (current == ProviderLifecycleState.READY) {
+                ManagedDatabaseProvider snapshot = provider;
+                if (snapshot == null || !safeLocalState(snapshot, key)) {
+                    return false;
+                }
             }
             referenceCount++;
             ownerReferenceCounts.merge(ownerScope, 1, Integer::sum);
@@ -539,23 +650,34 @@ class DataProviderRegistry {
             if (!closeStarted.compareAndSet(false, true)) {
                 return;
             }
-            synchronized (this) {
+            while (true) {
                 ProviderLifecycleState current = state.get();
-                if (current == ProviderLifecycleState.CLOSED) {
+                if (current == ProviderLifecycleState.CLOSED || current == ProviderLifecycleState.CLOSING) {
                     return;
                 }
-                state.set(ProviderLifecycleState.CLOSING);
+                if (!state.compareAndSet(current, ProviderLifecycleState.CLOSING)) {
+                    continue;
+                }
                 changedAt = Instant.now();
+                publishSnapshot();
+                readyFuture.completeExceptionally(
+                        new IllegalStateException("Provider closed before ready: " + reason)
+                );
+                if (current == ProviderLifecycleState.CONNECTING) {
+                    return;
+                }
                 closeProviderOnce(null);
                 state.set(ProviderLifecycleState.CLOSED);
                 changedAt = Instant.now();
-                if (!readyFuture.isDone()) {
-                    readyFuture.completeExceptionally(new IllegalStateException("Provider closed before ready: " + reason));
-                }
+                publishSnapshot();
+                return;
             }
         }
 
         private void closeProviderOnce(Throwable originalFailure) {
+            if (!providerCloseStarted.compareAndSet(false, true)) {
+                return;
+            }
             ManagedDatabaseProvider snapshot = provider;
             if (snapshot == null) {
                 return;
@@ -576,13 +698,13 @@ class DataProviderRegistry {
             boolean changed = state.compareAndSet(expected, update);
             if (changed) {
                 changedAt = Instant.now();
+                publishSnapshot();
             }
             return changed;
         }
 
-        private boolean isReplaceable() {
-            ProviderLifecycleState current = state.get();
-            return current == ProviderLifecycleState.FAILED || current == ProviderLifecycleState.CLOSED;
+        private void publishSnapshot() {
+            lifecycleSnapshots.put(key, new ProviderLifecycleSnapshot(state.get(), failure, changedAt));
         }
 
         private ProviderLifecycleState state() {
@@ -595,10 +717,6 @@ class DataProviderRegistry {
 
         private Throwable failure() {
             return failure;
-        }
-
-        private ProviderLifecycleSnapshot snapshot() {
-            return new ProviderLifecycleSnapshot(state(), failure, changedAt);
         }
     }
 
