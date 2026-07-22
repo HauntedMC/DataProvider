@@ -40,17 +40,29 @@ class DataProviderExceptionTest {
 
     @Test
     void sensitiveDiagnosticKeysAreRejected() {
-        DataProviderFailureContext context = new DataProviderFailureContext(
+        DataProviderFailureContext context = context(Map.of("password", "must-not-appear"), null);
+
+        assertThrows(IllegalArgumentException.class,
+                () -> new DataProviderRegistrationException("Safe message.", context, null));
+    }
+
+    @Test
+    void malformedDiagnosticIdentifiersAreRejected() {
+        DataProviderFailureContext context = context(Map.of(), "invalid identifier with spaces");
+
+        assertThrows(IllegalArgumentException.class,
+                () -> new DataProviderRegistrationException("Safe message.", context, null));
+    }
+
+    private static DataProviderFailureContext context(Map<String, String> diagnostics, String diagnosticId) {
+        return new DataProviderFailureContext(
                 DatabaseType.REDIS,
                 "cache",
                 "redis.getKey",
                 RetryAdvice.NEVER,
                 ExecutionOutcome.NOT_STARTED,
-                Map.of("password", "must-not-appear"),
-                null
+                diagnostics,
+                diagnosticId
         );
-
-        assertThrows(IllegalArgumentException.class,
-                () -> new DataProviderRegistrationException("Safe message.", context, null));
     }
 }
