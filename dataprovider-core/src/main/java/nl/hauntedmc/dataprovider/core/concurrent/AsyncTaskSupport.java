@@ -1,8 +1,10 @@
 package nl.hauntedmc.dataprovider.core.concurrent;
 
 import nl.hauntedmc.dataprovider.core.exception.DataProviderExceptionMapper;
+import nl.hauntedmc.dataprovider.exception.DataProviderException;
 
 import java.util.Objects;
+import java.util.concurrent.CancellationException;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.Executor;
 import java.util.concurrent.RejectedExecutionException;
@@ -61,18 +63,18 @@ public final class AsyncTaskSupport {
                     future.complete(supplier.get());
                 } catch (Throwable throwable) {
                     failed = true;
-                    future.completeExceptionally(
-                            DataProviderExceptionMapper.translate(throwable, executor, operationName)
-                    );
+                    future.completeExceptionally(mapFailure(throwable, executor, operationName));
                 }
             }
 
             @Override
             public void reject(RejectedExecutionException rejection) {
                 failed = true;
-                future.completeExceptionally(
-                        DataProviderExceptionMapper.translate(rejection, executor, operationName)
-                );
+                future.completeExceptionally(DataProviderExceptionMapper.translate(
+                        rejection,
+                        executor,
+                        operationName
+                ));
             }
 
             @Override
@@ -82,18 +84,39 @@ public final class AsyncTaskSupport {
         };
         try {
             executor.execute(task);
-        } catch (ExecutionRejectedException e) {
-            future.completeExceptionally(DataProviderExceptionMapper.translate(e, executor, operationName));
-        } catch (RejectedExecutionException e) {
-            ExecutionRejectedException rejection = new ExecutionRejectedException(
+        } catch (ExecutionRejectedException rejection) {
+            future.completeExceptionally(DataProviderExceptionMapper.translate(
+                    rejection,
+                    executor,
+                    operationName
+            ));
+        } catch (RejectedExecutionException rejection) {
+            ExecutionRejectedException structuredRejection = new ExecutionRejectedException(
                     ExecutionRejectedException.Reason.LANE_QUEUE_FULL,
                     "Rejected async operation '" + operationName + "'.",
-                    e
+                    rejection
             );
-            future.completeExceptionally(DataProviderExceptionMapper.translate(rejection, executor, operationName));
-        } catch (RuntimeException e) {
-            future.completeExceptionally(DataProviderExceptionMapper.translate(e, executor, operationName));
+            future.completeExceptionally(DataProviderExceptionMapper.translate(
+                    structuredRejection,
+                    executor,
+                    operationName
+            ));
+        } catch (RuntimeException failure) {
+            future.completeExceptionally(mapFailure(failure, executor, operationName));
         }
         return future;
+    }
+
+    private static Throwable mapFailure(Throwable failure, Executor executor, String operationName) {
+        if (failure instanceof DataProviderException
+                || failure instanceof IllegalArgumentException
+                || failure instanceof NullPointerException
+                || failure instanceof UnsupportedOperationException
+                || failure instanceof SecurityException
+                || failure instanceof CancellationException
+                || failure instanceof Error) {
+            return failure;
+        }
+        return DataProviderExceptionMapper.translate(failure, executor, operationName);
     }
 }
