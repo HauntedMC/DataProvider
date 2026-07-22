@@ -6,7 +6,11 @@ DataProvider exposes unchecked structured failures from `nl.hauntedmc.dataprovid
 
 Use `registerDatabaseOrThrow(...)` when startup must distinguish missing configuration, disabled backends, authentication failure, timeout, or backend unavailability. Use `requireRegisteredDatabase(...)` when absence is exceptional.
 
-The original `registerDatabase(...)` and optional helpers remain available for compatibility. They continue returning `null` or `Optional.empty()` and intentionally discard the failure category after DataProvider records it internally.
+The original `registerDatabase(...)` and optional helpers remain available for compatibility. They continue returning `null` or `Optional.empty()` and intentionally discard the failure category after DataProvider records registration failures internally.
+
+Legacy methods retain their previous lifecycle behavior, including `IllegalStateException` after their API or scope has closed. The new strict registration and lookup methods report closure as `ProviderClosedException`.
+
+Caller input validation remains distinct from backend failure classification. Invalid identifiers, unsupported document values, null arguments, and similar programming errors continue to use standard validation exceptions such as `IllegalArgumentException` and `NullPointerException`.
 
 ## Common handling
 
@@ -29,7 +33,7 @@ All structured exceptions expose:
 - `retryAdvice()` — `NEVER`, `SAFE`, or `CONDITIONAL`
 - `executionOutcome()` — whether the operation started or may already have applied
 - `diagnostics()` — immutable allowlisted metadata
-- `diagnosticId()` — correlation identifier for operational support
+- `diagnosticId()` — validated correlation identifier for operational support
 
 ## Retry safety
 
@@ -43,6 +47,6 @@ A transaction commit timeout can mean the commit succeeded but its acknowledgeme
 
 ## Redaction
 
-Public exception messages, diagnostics, and causes never include passwords, tokens, payloads, query parameter values, raw configuration, or credential-bearing URLs. Public causes preserve the original failure type through a redacted surrogate. Raw backend failures remain confined to DataProvider lifecycle diagnostics and internal logging.
+DataProvider-generated public exception messages, diagnostics, and causes do not include passwords, tokens, payloads, query parameter values, raw configuration, or credential-bearing URLs. Public causes preserve the original failure type through a redacted surrogate. Registration lifecycle failures retain their original internal cause for diagnostics while exposing only redacted public metadata.
 
 Rollback failures are attached as suppressed structured exceptions without replacing the primary transaction failure.
