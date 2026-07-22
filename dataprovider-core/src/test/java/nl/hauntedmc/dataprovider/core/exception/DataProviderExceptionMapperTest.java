@@ -7,6 +7,7 @@ import nl.hauntedmc.dataprovider.database.DatabaseType;
 import nl.hauntedmc.dataprovider.exception.BackendAuthenticationException;
 import nl.hauntedmc.dataprovider.exception.DataConflictException;
 import nl.hauntedmc.dataprovider.exception.DataProviderException;
+import nl.hauntedmc.dataprovider.exception.DataProviderOperationException;
 import nl.hauntedmc.dataprovider.exception.DataProviderTimeoutException;
 import nl.hauntedmc.dataprovider.exception.ExecutionOutcome;
 import nl.hauntedmc.dataprovider.exception.ProviderClosedException;
@@ -22,7 +23,6 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
-import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class DataProviderExceptionMapperTest {
 
@@ -87,14 +87,45 @@ class DataProviderExceptionMapperTest {
         );
         assertEquals(ExecutionOutcome.NOT_APPLIED, conflict.executionOutcome());
 
-        DataProviderTimeoutException timeout = assertInstanceOf(
+        DataProviderTimeoutException writeTimeout = assertInstanceOf(
                 DataProviderTimeoutException.class,
                 DataProviderExceptionMapper.translate(
                         new SQLTimeoutException("write timed out", "HYT00"),
                         execution,
                         "mysql.executeUpdate")
         );
-        assertEquals(ExecutionOutcome.MAY_HAVE_APPLIED, timeout.executionOutcome());
-        assertTrue(timeout.retryable());
+        assertEquals(ExecutionOutcome.MAY_HAVE_APPLIED, writeTimeout.executionOutcome());
+        assertEquals(RetryAdvice.CONDITIONAL, writeTimeout.retryAdvice());
+    }
+
+    @Test
+    void readTimeoutIsSafeToRetryAndCannotHaveAppliedData() {
+        DataProviderTimeoutException timeout = assertInstanceOf(
+                DataProviderTimeoutException.class,
+                DataProviderExceptionMapper.translate(
+                        new SQLTimeoutException("read timed out", "HYT00"),
+                        execution,
+                        "mysql.queryForList")
+        );
+
+        assertEquals(RetryAdvice.SAFE, timeout.retryAdvice());
+        assertEquals(ExecutionOutcome.NOT_APPLIED, timeout.executionOutcome());
+    }
+
+    @Test
+    void unclassifiedDriverFailureUsesGenericOperationCategory() {
+        DataProviderOperationException failure = assertInstanceOf(
+                DataProviderOperationException.class,
+                DataProviderExceptionMapper.translate(
+                        new SQLException("syntax near password=secret", "42000", 1064),
+                        execution,
+                        "mysql.executeUpdate")
+        );
+
+        assertEquals(RetryAdvice.CONDITIONAL, failure.retryAdvice());
+        assertEquals(ExecutionOutcome.UNKNOWN, failure.executionOutcome());
+        assertEquals("42000", failure.diagnostics().get("sqlState"));
+        assertFalse(failure.getMessage().contains("secret"));
+        assertFalse(failure.getCause().getMessage().contains("secret"));
     }
 }
