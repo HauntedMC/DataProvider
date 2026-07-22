@@ -146,84 +146,149 @@ public class MySQLDataAccess implements RelationalDataAccess {
     }
 
     private <T> T executeTransaction(TransactionCallback<T> callback) {
-        Connection connection;
+        Connection connection = null;
         boolean oldAutoCommit;
         try {
             connection = dataSource.getConnection();
             oldAutoCommit = connection.getAutoCommit();
             connection.setAutoCommit(false);
-        } catch (Throwable beginFailure) {
-            throw DataProviderExceptionMapper.transactionFailure(
-                    beginFailure, executor, TRANSACTION_OPERATION, TransactionPhase.BEGIN,
-                    ExecutionOutcome.NOT_STARTED);
-        }
-
-        try (connection) {
-            T result;
-            try {
-                result = callback.doInTransaction(connection);
-            } catch (Throwable callbackFailure) {
-                DataTransactionException structured = rollbackAfterFailure(
-                        connection, callbackFailure, TransactionPhase.CALLBACK, ExecutionOutcome.NOT_APPLIED);
-                restoreAutoCommit(connection, oldAutoCommit, structured);
-                throw structured;
-            }
-
-            try {
-                connection.commit();
-            } catch (Throwable commitFailure) {
-                DataTransactionException structured = rollbackAfterFailure(
-                        connection, commitFailure, TransactionPhase.COMMIT, ExecutionOutcome.MAY_HAVE_APPLIED);
-                restoreAutoCommit(connection, oldAutoCommit, structured);
-                throw structured;
-            }
-
-            try {
-                connection.setAutoCommit(oldAutoCommit);
-            } catch (Throwable restoreFailure) {
-                throw DataProviderExceptionMapper.transactionFailure(
-                        restoreFailure, executor, TRANSACTION_OPERATION, TransactionPhase.ROLLBACK,
-                        ExecutionOutcome.UNKNOWN);
-            }
-            return result;
-        } catch (DataTransactionException structured) {
+        } catch (Error fatal) {
+            closeAfterFatal(connection, fatal);
+            throw fatal;
+        } catch (Exception beginFailure) {
+            DataTransactionException structured = transactionFailure(
+                    beginFailure, TransactionPhase.BEGIN, ExecutionOutcome.NOT_STARTED);
+            closeConnection(connection, structured, ExecutionOutcome.NOT_STARTED);
             throw structured;
-        } catch (Throwable closeFailure) {
-            throw DataProviderExceptionMapper.transactionFailure(
-                    closeFailure, executor, TRANSACTION_OPERATION, TransactionPhase.ROLLBACK,
-                    ExecutionOutcome.UNKNOWN);
         }
+
+        T result;
+        try {
+            result = callback.doInTransaction(connection);
+        } catch (Error fatal) {
+            cleanupAfterFatal(connection, oldAutoCommit, fatal);
+            throw fatal;
+        } catch (Exception callbackFailure) {
+            DataTransactionException structured = transactionFailure(
+                    callbackFailure, TransactionPhase.CALLBACK, ExecutionOutcome.NOT_APPLIED);
+            rollback(connection, structured);
+            restoreAutoCommit(connection, oldAutoCommit, structured, ExecutionOutcome.NOT_APPLIED);
+            closeConnection(connection, structured, ExecutionOutcome.NOT_APPLIED);
+            throw structured;
+        }
+
+        try {
+            connection.commit();
+        } catch (Error fatal) {
+            cleanupAfterFatal(connection, oldAutoCommit, fatal);
+            throw fatal;
+        } catch (Exception commitFailure) {
+            DataTransactionException structured = transactionFailure(
+                    commitFailure, TransactionPhase.COMMIT, ExecutionOutcome.MAY_HAVE_APPLIED);
+            rollback(connection, structured);
+            restoreAutoCommit(connection, oldAutoCommit, structured, ExecutionOutcome.MAY_HAVE_APPLIED);
+            closeConnection(connection, structured, ExecutionOutcome.MAY_HAVE_APPLIED);
+            throw structured;
+        }
+
+        try {
+            connection.setAutoCommit(oldAutoCommit);
+        } catch (Error fatal) {
+            closeAfterFatal(connection, fatal);
+            throw fatal;
+        } catch (Exception restoreFailure) {
+            DataTransactionException structured = transactionFailure(
+                    restoreFailure, TransactionPhase.CLEANUP, ExecutionOutcome.MAY_HAVE_APPLIED);
+            closeConnection(connection, structured, ExecutionOutcome.MAY_HAVE_APPLIED);
+            throw structured;
+        }
+
+        try {
+            connection.close();
+        } catch (Error fatal) {
+            throw fatal;
+        } catch (Exception closeFailure) {
+            throw transactionFailure(closeFailure, TransactionPhase.CLEANUP, ExecutionOutcome.MAY_HAVE_APPLIED);
+        }
+        return result;
     }
 
-    private DataTransactionException rollbackAfterFailure(
-            Connection connection,
-            Throwable primary,
+    private DataTransactionException transactionFailure(
+            Throwable failure,
             TransactionPhase phase,
             ExecutionOutcome outcome
     ) {
-        DataTransactionException structured = DataProviderExceptionMapper.transactionFailure(
-                primary, executor, TRANSACTION_OPERATION, phase, outcome);
+        return DataProviderExceptionMapper.transactionFailure(
+                failure, executor, TRANSACTION_OPERATION, phase, outcome);
+    }
+
+    private void rollback(Connection connection, DataTransactionException primary) {
         try {
             connection.rollback();
-        } catch (Throwable rollbackFailure) {
-            structured.addSuppressed(DataProviderExceptionMapper.transactionFailure(
-                    rollbackFailure, executor, TRANSACTION_OPERATION, TransactionPhase.ROLLBACK,
-                    ExecutionOutcome.UNKNOWN));
+        } catch (Error fatal) {
+            primary.addSuppressed(fatal);
+        } catch (Exception rollbackFailure) {
+            primary.addSuppressed(transactionFailure(
+                    rollbackFailure, TransactionPhase.ROLLBACK, ExecutionOutcome.UNKNOWN));
         }
-        return structured;
     }
 
     private void restoreAutoCommit(
             Connection connection,
             boolean oldAutoCommit,
-            DataTransactionException primary
+            DataTransactionException primary,
+            ExecutionOutcome outcome
     ) {
         try {
             connection.setAutoCommit(oldAutoCommit);
-        } catch (Throwable restoreFailure) {
-            primary.addSuppressed(DataProviderExceptionMapper.transactionFailure(
-                    restoreFailure, executor, TRANSACTION_OPERATION, TransactionPhase.ROLLBACK,
-                    ExecutionOutcome.UNKNOWN));
+        } catch (Error fatal) {
+            primary.addSuppressed(fatal);
+        } catch (Exception restoreFailure) {
+            primary.addSuppressed(transactionFailure(
+                    restoreFailure, TransactionPhase.CLEANUP, outcome));
+        }
+    }
+
+    private void closeConnection(
+            Connection connection,
+            DataTransactionException primary,
+            ExecutionOutcome outcome
+    ) {
+        if (connection == null) {
+            return;
+        }
+        try {
+            connection.close();
+        } catch (Error fatal) {
+            primary.addSuppressed(fatal);
+        } catch (Exception closeFailure) {
+            primary.addSuppressed(transactionFailure(
+                    closeFailure, TransactionPhase.CLEANUP, outcome));
+        }
+    }
+
+    private static void cleanupAfterFatal(Connection connection, boolean oldAutoCommit, Error fatal) {
+        try {
+            connection.rollback();
+        } catch (Throwable cleanupFailure) {
+            fatal.addSuppressed(cleanupFailure);
+        }
+        try {
+            connection.setAutoCommit(oldAutoCommit);
+        } catch (Throwable cleanupFailure) {
+            fatal.addSuppressed(cleanupFailure);
+        }
+        closeAfterFatal(connection, fatal);
+    }
+
+    private static void closeAfterFatal(Connection connection, Error fatal) {
+        if (connection == null) {
+            return;
+        }
+        try {
+            connection.close();
+        } catch (Throwable closeFailure) {
+            fatal.addSuppressed(closeFailure);
         }
     }
 
