@@ -5,5 +5,6 @@ public enum TransactionPhase {
     BEGIN,
     CALLBACK,
     COMMIT,
-    ROLLBACK
+    ROLLBACK,
+    CLEANUP
 }
