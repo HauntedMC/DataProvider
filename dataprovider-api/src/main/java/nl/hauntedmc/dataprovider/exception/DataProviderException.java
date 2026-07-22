@@ -3,12 +3,17 @@ package nl.hauntedmc.dataprovider.exception;
 import nl.hauntedmc.dataprovider.database.DatabaseType;
 
 import java.util.LinkedHashMap;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import java.util.UUID;
+import java.util.regex.Pattern;
 
 /** Base type for safe, structured failures exposed by DataProvider. */
 public abstract class DataProviderException extends RuntimeException {
+
+    private static final Pattern DIAGNOSTIC_KEY_PATTERN = Pattern.compile("[A-Za-z][A-Za-z0-9_.-]{0,63}");
+    private static final Pattern DIAGNOSTIC_ID_PATTERN = Pattern.compile("[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}");
 
     private final DataProviderErrorCode errorCode;
     private final DatabaseType backendType;
@@ -59,9 +64,7 @@ public abstract class DataProviderException extends RuntimeException {
         this.retryAdvice = Objects.requireNonNull(retryAdvice, "Retry advice cannot be null.");
         this.executionOutcome = Objects.requireNonNull(executionOutcome, "Execution outcome cannot be null.");
         this.diagnostics = sanitizeDiagnostics(diagnostics);
-        this.diagnosticId = diagnosticId == null || diagnosticId.isBlank()
-                ? UUID.randomUUID().toString()
-                : diagnosticId.trim();
+        this.diagnosticId = normalizeDiagnosticId(diagnosticId);
     }
 
     public final DataProviderErrorCode errorCode() {
@@ -107,7 +110,7 @@ public abstract class DataProviderException extends RuntimeException {
         LinkedHashMap<String, String> safe = new LinkedHashMap<>();
         source.forEach((key, value) -> {
             String normalizedKey = requireSafeText(key, "diagnostic key");
-            if (!normalizedKey.matches("[A-Za-z][A-Za-z0-9_.-]{0,63}")) {
+            if (!DIAGNOSTIC_KEY_PATTERN.matcher(normalizedKey).matches()) {
                 throw new IllegalArgumentException("Unsupported diagnostic key: " + normalizedKey);
             }
             if (isSensitiveKey(normalizedKey)) {
@@ -123,10 +126,21 @@ public abstract class DataProviderException extends RuntimeException {
     }
 
     private static boolean isSensitiveKey(String key) {
-        String lower = key.toLowerCase(java.util.Locale.ROOT);
+        String lower = key.toLowerCase(Locale.ROOT);
         return lower.contains("password") || lower.contains("secret") || lower.contains("token")
                 || lower.contains("credential") || lower.contains("authorization") || lower.contains("payload")
                 || lower.contains("query") || lower.contains("parameter") || lower.contains("url");
+    }
+
+    private static String normalizeDiagnosticId(String diagnosticId) {
+        if (diagnosticId == null || diagnosticId.isBlank()) {
+            return UUID.randomUUID().toString();
+        }
+        String normalized = diagnosticId.trim();
+        if (!DIAGNOSTIC_ID_PATTERN.matcher(normalized).matches()) {
+            throw new IllegalArgumentException("Unsupported diagnostic identifier.");
+        }
+        return normalized;
     }
 
     private static String requireSafeText(String value, String field) {
