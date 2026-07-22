@@ -42,7 +42,7 @@ class AsyncTaskSupportTest {
     }
 
     @Test
-    void runAsyncRedactsAndStructuresTaskFailures() {
+    void runAsyncRedactsAndStructuresBackendFailures() {
         Executor directExecutor = Runnable::run;
         CompletableFuture<Void> future = AsyncTaskSupport.runAsync(
                 directExecutor,
@@ -57,5 +57,24 @@ class AsyncTaskSupportTest {
                 BackendUnavailableException.class, completion.getCause());
         assertEquals("unit.failure", failure.operationName());
         assertEquals("java.lang.IllegalStateException", failure.diagnostics().get("causeType"));
+    }
+
+    @Test
+    void supplyAsyncPreservesCallerValidationFailures() {
+        Executor directExecutor = Runnable::run;
+        CompletableFuture<Void> future = AsyncTaskSupport.runAsync(
+                directExecutor,
+                "unit.validation",
+                () -> {
+                    throw new IllegalArgumentException("invalid identifier");
+                }
+        );
+
+        CompletionException completion = assertThrows(CompletionException.class, future::join);
+        IllegalArgumentException validation = assertInstanceOf(
+                IllegalArgumentException.class,
+                completion.getCause()
+        );
+        assertEquals("invalid identifier", validation.getMessage());
     }
 }
