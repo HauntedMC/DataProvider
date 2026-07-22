@@ -1,6 +1,6 @@
 package nl.hauntedmc.dataprovider.core.concurrent;
 
-import nl.hauntedmc.dataprovider.exception.BackendUnavailableException;
+import nl.hauntedmc.dataprovider.exception.DataProviderOperationException;
 import nl.hauntedmc.dataprovider.exception.ExecutionOutcome;
 import nl.hauntedmc.dataprovider.exception.QueueSaturatedException;
 import nl.hauntedmc.dataprovider.exception.RetryAdvice;
@@ -42,7 +42,7 @@ class AsyncTaskSupportTest {
     }
 
     @Test
-    void runAsyncRedactsAndStructuresBackendFailures() {
+    void runAsyncRedactsAndStructuresUnclassifiedFailures() {
         Executor directExecutor = Runnable::run;
         CompletableFuture<Void> future = AsyncTaskSupport.runAsync(
                 directExecutor,
@@ -53,8 +53,8 @@ class AsyncTaskSupportTest {
         );
 
         CompletionException completion = assertThrows(CompletionException.class, future::join);
-        BackendUnavailableException failure = assertInstanceOf(
-                BackendUnavailableException.class, completion.getCause());
+        DataProviderOperationException failure = assertInstanceOf(
+                DataProviderOperationException.class, completion.getCause());
         assertEquals("unit.failure", failure.operationName());
         assertEquals("java.lang.IllegalStateException", failure.diagnostics().get("causeType"));
     }
