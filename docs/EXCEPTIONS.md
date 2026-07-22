@@ -20,7 +20,9 @@ try {
 } catch (BackendAuthenticationException exception) {
     // Configuration intervention is required; retrying unchanged credentials is not useful.
 } catch (BackendUnavailableException exception) {
-    // Consult retryAdvice() and executionOutcome() before retrying.
+    // The backend is disabled or unreachable.
+} catch (DataProviderOperationException exception) {
+    // The operation failed without matching a more specific public category.
 }
 ```
 
@@ -39,14 +41,17 @@ All structured exceptions expose:
 
 `retryable()` is a convenience method. Prefer `retryAdvice()` and `executionOutcome()` for writes:
 
-- `SAFE` + `NOT_STARTED`: retrying is normally safe.
+- `SAFE` + `NOT_STARTED` or `NOT_APPLIED`: retrying is normally safe.
 - `CONDITIONAL` + `MAY_HAVE_APPLIED`: do not retry blindly; use an idempotency key or verify backend state.
-- `NEVER`: correct configuration, ownership, authentication, or lifecycle state first.
+- `CONDITIONAL` + `UNKNOWN`: retry only when the operation is idempotent or backend state has been checked.
+- `NEVER`: correct configuration, ownership, authentication, lifecycle, or cleanup state first.
 
-A transaction commit timeout can mean the commit succeeded but its acknowledgement was lost. DataProvider reports this as `DataTransactionException` with phase `COMMIT` and outcome `MAY_HAVE_APPLIED`.
+Read timeouts are reported as `SAFE` with outcome `NOT_APPLIED`. Write timeouts remain `CONDITIONAL` with outcome `MAY_HAVE_APPLIED`.
+
+A transaction commit timeout can mean the commit succeeded but its acknowledgement was lost. DataProvider reports this as `DataTransactionException` with phase `COMMIT` and outcome `MAY_HAVE_APPLIED`. Failures while restoring or closing a connection after a successful commit use phase `CLEANUP`, outcome `MAY_HAVE_APPLIED`, and are not retryable.
 
 ## Redaction
 
-DataProvider-generated public exception messages, diagnostics, and causes do not include passwords, tokens, payloads, query parameter values, raw configuration, or credential-bearing URLs. Public causes preserve the original failure type through a redacted surrogate. Registration lifecycle failures retain their original internal cause for diagnostics while exposing only redacted public metadata.
+DataProvider-generated public exception messages, diagnostics, causes, and suppressed cleanup failures do not include passwords, tokens, payloads, query parameter values, raw configuration, or credential-bearing URLs. Public causes preserve the original failure type through a redacted surrogate. Registration lifecycle failures retain their original internal cause for diagnostics while exposing only redacted public metadata.
 
-Rollback failures are attached as suppressed structured exceptions without replacing the primary transaction failure.
+Rollback and cleanup failures are attached as suppressed structured exceptions without replacing the primary transaction failure. JVM-fatal errors remain primary and are never converted into ordinary DataProvider failures.
