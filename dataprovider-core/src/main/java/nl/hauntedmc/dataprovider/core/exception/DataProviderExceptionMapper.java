@@ -14,6 +14,7 @@ import nl.hauntedmc.dataprovider.exception.DataProviderConfigurationException;
 import nl.hauntedmc.dataprovider.exception.DataProviderErrorCode;
 import nl.hauntedmc.dataprovider.exception.DataProviderException;
 import nl.hauntedmc.dataprovider.exception.DataProviderFailureContext;
+import nl.hauntedmc.dataprovider.exception.DataProviderOperationException;
 import nl.hauntedmc.dataprovider.exception.DataProviderRegistrationException;
 import nl.hauntedmc.dataprovider.exception.DataProviderTimeoutException;
 import nl.hauntedmc.dataprovider.exception.DataSerializationException;
@@ -32,6 +33,7 @@ import java.sql.SQLIntegrityConstraintViolationException;
 import java.sql.SQLException;
 import java.sql.SQLTimeoutException;
 import java.util.LinkedHashMap;
+import java.util.Locale;
 import java.util.Map;
 import java.util.concurrent.CompletionException;
 import java.util.concurrent.ExecutionException;
@@ -45,15 +47,13 @@ public final class DataProviderExceptionMapper {
     }
 
     public static DataProviderException translate(Throwable failure, Executor executor, String operationName) {
-        Throwable root = unwrap(failure);
+        Throwable root = unwrapAsync(failure);
         if (root instanceof DataProviderException structured) {
             return structured;
         }
         ExecutionHandle execution = executor instanceof ExecutionHandle handle ? handle : null;
         DatabaseType backend = execution == null ? inferBackend(operationName) : execution.backendType();
         String connection = execution == null ? null : execution.connectionIdentifier();
-        DataProviderFailureContext base = DataProviderFailureContext.of(
-                backend, connection, operationName, RetryAdvice.CONDITIONAL, ExecutionOutcome.UNKNOWN);
 
         if (root instanceof ExecutionRejectedException rejected) {
             Map<String, String> diagnostics = rejectionDiagnostics(rejected, execution);
@@ -82,10 +82,12 @@ public final class DataProviderExceptionMapper {
                             ExecutionOutcome.NOT_STARTED, diagnosticsFor(root)), safeCause(root));
         }
         if (isTimeout(root)) {
+            boolean readOperation = isReadOperation(operationName);
             return new DataProviderTimeoutException(
                     "The backend operation timed out.",
-                    context(backend, connection, operationName, RetryAdvice.CONDITIONAL,
-                            isReadOperation(operationName) ? ExecutionOutcome.UNKNOWN : ExecutionOutcome.MAY_HAVE_APPLIED,
+                    context(backend, connection, operationName,
+                            readOperation ? RetryAdvice.SAFE : RetryAdvice.CONDITIONAL,
+                            readOperation ? ExecutionOutcome.NOT_APPLIED : ExecutionOutcome.MAY_HAVE_APPLIED,
                             diagnosticsFor(root)), safeCause(root));
         }
         if (isSerializationFailure(root)) {
@@ -97,23 +99,20 @@ public final class DataProviderExceptionMapper {
         if (isUnavailable(root)) {
             return unavailable(backend, connection, operationName, root);
         }
-        return new BackendUnavailableException(
-                DataProviderErrorCode.BACKEND_UNAVAILABLE,
+        return new DataProviderOperationException(
                 "The backend operation failed.",
-                base.withDiagnostics(diagnosticsFor(root)), safeCause(root));
+                context(backend, connection, operationName, RetryAdvice.CONDITIONAL,
+                        ExecutionOutcome.UNKNOWN, diagnosticsFor(root)), safeCause(root));
     }
 
     public static DataProviderException registrationFailure(
             Throwable failure, DatabaseType backend, String connectionIdentifier, String operationName) {
-        Throwable root = unwrap(failure);
+        Throwable root = unwrapRegistration(failure);
         if (root instanceof DataProviderException structured) {
             return structured;
         }
         if (root == null) {
-            return new DataProviderRegistrationException(
-                    "Database registration failed.",
-                    context(backend, connectionIdentifier, operationName, RetryAdvice.CONDITIONAL,
-                            ExecutionOutcome.NOT_STARTED, Map.of()), null);
+            return registrationException(backend, connectionIdentifier, operationName, Map.of(), null);
         }
         if (root instanceof MissingConfigurationFailure) {
             return new DataProviderConfigurationException(
@@ -122,7 +121,14 @@ public final class DataProviderExceptionMapper {
                     context(backend, connectionIdentifier, operationName, RetryAdvice.NEVER,
                             ExecutionOutcome.NOT_STARTED, diagnosticsFor(root)), safeCause(root));
         }
-        return translate(root, new RegistrationExecutionHandle(backend, connectionIdentifier), operationName);
+        DataProviderException mapped = translate(
+                root, new RegistrationExecutionHandle(backend, connectionIdentifier), operationName);
+        if (mapped instanceof DataProviderOperationException) {
+            return registrationException(
+                    backend, connectionIdentifier, operationName,
+                    Map.of("causeCode", mapped.errorCode().name()), mapped);
+        }
+        return mapped;
     }
 
     public static BackendUnavailableException backendDisabled(DatabaseType backend, String connectionIdentifier) {
@@ -134,7 +140,7 @@ public final class DataProviderExceptionMapper {
     }
 
     public static DataProviderConfigurationException configurationFailure(Throwable failure, String operationName) {
-        Throwable root = unwrap(failure);
+        Throwable root = unwrapAsync(failure);
         return new DataProviderConfigurationException(
                 DataProviderErrorCode.CONFIGURATION_INVALID,
                 "DataProvider configuration is invalid.",
@@ -151,7 +157,7 @@ public final class DataProviderExceptionMapper {
     ) {
         DataProviderException mapped = translate(failure, executor, operationName);
         return new DataTransactionException(
-                "The database transaction failed during " + phase.name().toLowerCase(java.util.Locale.ROOT) + ".",
+                "The database transaction failed during " + phase.name().toLowerCase(Locale.ROOT) + ".",
                 phase,
                 context(mapped.backendType(), mapped.connectionIdentifier(), operationName,
                         phase == TransactionPhase.COMMIT ? RetryAdvice.CONDITIONAL : RetryAdvice.NEVER,
@@ -162,6 +168,19 @@ public final class DataProviderExceptionMapper {
 
     public static MissingConfigurationFailure missingConfigurationFailure() {
         return new MissingConfigurationFailure();
+    }
+
+    private static DataProviderRegistrationException registrationException(
+            DatabaseType backend,
+            String connectionIdentifier,
+            String operationName,
+            Map<String, String> diagnostics,
+            Throwable cause
+    ) {
+        return new DataProviderRegistrationException(
+                "Database registration failed.",
+                context(backend, connectionIdentifier, operationName, RetryAdvice.CONDITIONAL,
+                        ExecutionOutcome.NOT_STARTED, diagnostics), cause);
     }
 
     private static BackendUnavailableException unavailable(
@@ -184,16 +203,23 @@ public final class DataProviderExceptionMapper {
         return new DataProviderFailureContext(backend, connection, operation, retry, outcome, diagnostics, null);
     }
 
-    private static Throwable unwrap(Throwable failure) {
+    private static Throwable unwrapAsync(Throwable failure) {
         if (failure == null) {
             return null;
         }
         Throwable current = failure;
         while (current.getCause() != null && (current instanceof CompletionException
                 || current instanceof ExecutionException
-                || current.getClass() == RuntimeException.class
-                || current instanceof IllegalStateException)) {
+                || current.getClass() == RuntimeException.class)) {
             current = current.getCause();
+        }
+        return current;
+    }
+
+    private static Throwable unwrapRegistration(Throwable failure) {
+        Throwable current = unwrapAsync(failure);
+        while (current instanceof IllegalStateException && current.getCause() != null) {
+            current = unwrapAsync(current.getCause());
         }
         return current;
     }
@@ -278,7 +304,7 @@ public final class DataProviderExceptionMapper {
         if (operationName == null) {
             return false;
         }
-        String lower = operationName.toLowerCase(java.util.Locale.ROOT);
+        String lower = operationName.toLowerCase(Locale.ROOT);
         return lower.contains("get") || lower.contains("find") || lower.contains("query")
                 || lower.contains("scan") || lower.contains("range") || lower.contains("health");
     }
