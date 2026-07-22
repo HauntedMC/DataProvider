@@ -10,6 +10,7 @@ import nl.hauntedmc.dataprovider.exception.ExecutionOutcome;
 import nl.hauntedmc.dataprovider.exception.ProviderClosedException;
 import nl.hauntedmc.dataprovider.exception.RetryAdvice;
 
+import java.util.Map;
 import java.util.Objects;
 
 /** Optional scoped lifecycle helper for independently managed plugin components. */
@@ -40,25 +41,27 @@ public final class DefaultDataProviderScope implements DataProviderScope {
     @Override
     public DatabaseProvider registerDatabase(DatabaseType databaseType, String connectionIdentifier) {
         synchronized (lifecycleMonitor) {
-            requireOpen();
+            requireLegacyOpen();
             return DefaultDataProviderApi.wrapProvider(
-                    handler.registerDatabaseForScope(ownerScope, databaseType, connectionIdentifier));
+                    handler.registerDatabaseForScope(ownerScope, databaseType, connectionIdentifier)
+            );
         }
     }
 
     @Override
     public DatabaseProvider registerDatabaseOrThrow(DatabaseType databaseType, String connectionIdentifier) {
         synchronized (lifecycleMonitor) {
-            requireOpen();
+            requireStructuredOpen("scope.registerDatabase");
             return DefaultDataProviderApi.wrapProvider(
-                    handler.registerDatabaseForScopeOrThrow(ownerScope, databaseType, connectionIdentifier));
+                    handler.registerDatabaseForScopeOrThrow(ownerScope, databaseType, connectionIdentifier)
+            );
         }
     }
 
     @Override
     public void unregisterDatabase(DatabaseType databaseType, String connectionIdentifier) {
         synchronized (lifecycleMonitor) {
-            requireOpen();
+            requireLegacyOpen();
             handler.unregisterDatabaseForScope(ownerScope, databaseType, connectionIdentifier);
         }
     }
@@ -66,7 +69,7 @@ public final class DefaultDataProviderScope implements DataProviderScope {
     @Override
     public void unregisterAllDatabases() {
         synchronized (lifecycleMonitor) {
-            requireOpen();
+            requireLegacyOpen();
             handler.unregisterAllDatabasesForScope(ownerScope);
         }
     }
@@ -74,18 +77,20 @@ public final class DefaultDataProviderScope implements DataProviderScope {
     @Override
     public DatabaseProvider getRegisteredDatabase(DatabaseType databaseType, String connectionIdentifier) {
         synchronized (lifecycleMonitor) {
-            requireOpen();
+            requireLegacyOpen();
             return DefaultDataProviderApi.wrapProvider(
-                    handler.getRegisteredDatabaseForScope(ownerScope, databaseType, connectionIdentifier));
+                    handler.getRegisteredDatabaseForScope(ownerScope, databaseType, connectionIdentifier)
+            );
         }
     }
 
     @Override
     public DatabaseProvider requireRegisteredDatabase(DatabaseType databaseType, String connectionIdentifier) {
         synchronized (lifecycleMonitor) {
-            requireOpen();
+            requireStructuredOpen("scope.requireRegisteredDatabase");
             return DefaultDataProviderApi.wrapProvider(
-                    handler.requireRegisteredDatabaseForScope(ownerScope, databaseType, connectionIdentifier));
+                    handler.requireRegisteredDatabaseForScope(ownerScope, databaseType, connectionIdentifier)
+            );
         }
     }
 
@@ -104,13 +109,23 @@ public final class DefaultDataProviderScope implements DataProviderScope {
         }
     }
 
-    private void requireOpen() {
+    private void requireLegacyOpen() {
+        if (lifecycleState != LifecycleState.OPEN) {
+            throw new IllegalStateException(CLOSED_MESSAGE);
+        }
+    }
+
+    private void requireStructuredOpen(String operation) {
         if (lifecycleState != LifecycleState.OPEN) {
             throw new ProviderClosedException(
                     CLOSED_MESSAGE,
-                    DataProviderFailureContext.of(null, null, "scope", RetryAdvice.NEVER,
-                            ExecutionOutcome.NOT_STARTED)
-                            .withDiagnostics(java.util.Map.of("ownerScope", ownerScope.value())),
+                    DataProviderFailureContext.of(
+                            null,
+                            null,
+                            operation,
+                            RetryAdvice.NEVER,
+                            ExecutionOutcome.NOT_STARTED
+                    ).withDiagnostics(Map.of("ownerScope", ownerScope.value())),
                     null
             );
         }
