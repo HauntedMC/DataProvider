@@ -226,7 +226,9 @@ public class MySQLDataAccess implements RelationalDataAccess {
         try {
             connection.rollback();
         } catch (Error fatal) {
-            primary.addSuppressed(fatal);
+            fatal.addSuppressed(primary);
+            closeAfterFatal(connection, fatal);
+            throw fatal;
         } catch (Exception rollbackFailure) {
             primary.addSuppressed(transactionFailure(
                     rollbackFailure, TransactionPhase.ROLLBACK, ExecutionOutcome.UNKNOWN));
@@ -242,7 +244,9 @@ public class MySQLDataAccess implements RelationalDataAccess {
         try {
             connection.setAutoCommit(oldAutoCommit);
         } catch (Error fatal) {
-            primary.addSuppressed(fatal);
+            fatal.addSuppressed(primary);
+            closeAfterFatal(connection, fatal);
+            throw fatal;
         } catch (Exception restoreFailure) {
             primary.addSuppressed(transactionFailure(
                     restoreFailure, TransactionPhase.CLEANUP, outcome));
@@ -260,7 +264,8 @@ public class MySQLDataAccess implements RelationalDataAccess {
         try {
             connection.close();
         } catch (Error fatal) {
-            primary.addSuppressed(fatal);
+            fatal.addSuppressed(primary);
+            throw fatal;
         } catch (Exception closeFailure) {
             primary.addSuppressed(transactionFailure(
                     closeFailure, TransactionPhase.CLEANUP, outcome));
