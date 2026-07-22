@@ -1,11 +1,13 @@
 package nl.hauntedmc.dataprovider.core;
 
+import nl.hauntedmc.dataprovider.core.concurrent.ContextualExecutionHandle;
 import nl.hauntedmc.dataprovider.core.concurrent.DataProviderExecutionRuntime;
 import nl.hauntedmc.dataprovider.core.concurrent.ExecutionHandle;
 import nl.hauntedmc.dataprovider.core.database.document.impl.mongodb.MongoDBDatabase;
 import nl.hauntedmc.dataprovider.core.database.keyvalue.impl.redis.RedisDatabase;
 import nl.hauntedmc.dataprovider.core.database.messaging.impl.redis.RedisMessagingDatabase;
 import nl.hauntedmc.dataprovider.core.database.relational.impl.mysql.MySQLDatabase;
+import nl.hauntedmc.dataprovider.core.exception.DataProviderExceptionMapper;
 import nl.hauntedmc.dataprovider.database.DatabaseType;
 import nl.hauntedmc.dataprovider.logging.LoggerAdapter;
 import org.spongepowered.configurate.CommentedConfigurationNode;
@@ -74,11 +76,17 @@ class DatabaseFactory {
         CommentedConfigurationNode connectionConfig = configMap.getConfig(type, connectionIdentifier);
         if (connectionConfig == null) {
             logger.error("Could not load configuration for " + connectionIdentifier.value() + " (" + type.name() + ")");
-            return null;
+            throw DataProviderExceptionMapper.missingConfigurationFailure();
         }
-        ExecutionHandle execution = executionRuntime == null
+        ExecutionHandle rawExecution = executionRuntime == null
                 ? ExecutionHandle.direct()
                 : executionRuntime.openScope(pluginId.value(), type, connectionIdentifier.value());
+        ExecutionHandle execution = new ContextualExecutionHandle(
+                rawExecution,
+                pluginId.value(),
+                type,
+                connectionIdentifier.value()
+        );
         try {
             return switch (type) {
                 case MYSQL -> new MySQLDatabase(connectionConfig, logger, execution);

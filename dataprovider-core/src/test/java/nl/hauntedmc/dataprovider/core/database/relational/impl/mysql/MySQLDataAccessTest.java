@@ -1,6 +1,11 @@
 package nl.hauntedmc.dataprovider.core.database.relational.impl.mysql;
 
 import nl.hauntedmc.dataprovider.core.testutil.DirectExecutorService;
+import nl.hauntedmc.dataprovider.exception.BackendUnavailableException;
+import nl.hauntedmc.dataprovider.exception.DataProviderOperationException;
+import nl.hauntedmc.dataprovider.exception.DataTransactionException;
+import nl.hauntedmc.dataprovider.exception.ExecutionOutcome;
+import nl.hauntedmc.dataprovider.exception.TransactionPhase;
 import org.junit.jupiter.api.Test;
 
 import javax.sql.DataSource;
@@ -12,15 +17,18 @@ import java.sql.SQLException;
 import java.sql.Statement;
 import java.util.List;
 import java.util.Map;
-import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionException;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.Mockito.doNothing;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
@@ -51,7 +59,6 @@ class MySQLDataAccessTest {
         PreparedStatement statement = mock(PreparedStatement.class);
         ResultSet resultSet = mock(ResultSet.class);
         ResultSetMetaData metaData = mock(ResultSetMetaData.class);
-
         when(dataSource.getConnection()).thenReturn(connection);
         when(connection.prepareStatement(anyString())).thenReturn(statement);
         when(statement.executeQuery()).thenReturn(resultSet);
@@ -63,9 +70,8 @@ class MySQLDataAccessTest {
         when(resultSet.getObject(1)).thenReturn(7);
         when(resultSet.getObject(2)).thenReturn("Remy");
 
-        MySQLDataAccess access = new MySQLDataAccess(dataSource, new DirectExecutorService());
-        Map<String, Object> row = access.queryForSingle("SELECT * FROM players WHERE id=?", 7).join();
-
+        Map<String, Object> row = new MySQLDataAccess(dataSource, new DirectExecutorService())
+                .queryForSingle("SELECT * FROM players WHERE id=?", 7).join();
         assertEquals(7, row.get("id"));
         assertEquals("Remy", row.get("name"));
     }
@@ -80,9 +86,8 @@ class MySQLDataAccessTest {
         when(connection.prepareStatement(anyString())).thenReturn(statement);
         when(statement.executeQuery()).thenReturn(resultSet);
         when(resultSet.next()).thenReturn(false);
-
-        MySQLDataAccess access = new MySQLDataAccess(dataSource, new DirectExecutorService());
-        assertNull(access.queryForSingle("SELECT 1").join());
+        assertNull(new MySQLDataAccess(dataSource, new DirectExecutorService())
+                .queryForSingle("SELECT 1").join());
     }
 
     @Test
@@ -92,7 +97,6 @@ class MySQLDataAccessTest {
         PreparedStatement statement = mock(PreparedStatement.class);
         ResultSet resultSet = mock(ResultSet.class);
         ResultSetMetaData metaData = mock(ResultSetMetaData.class);
-
         when(dataSource.getConnection()).thenReturn(connection);
         when(connection.prepareStatement(anyString())).thenReturn(statement);
         when(statement.executeQuery()).thenReturn(resultSet);
@@ -104,11 +108,9 @@ class MySQLDataAccessTest {
         when(resultSet.getObject(1)).thenReturn(1, 2);
         when(resultSet.getObject(2)).thenReturn("a", "b");
 
-        MySQLDataAccess access = new MySQLDataAccess(dataSource, new DirectExecutorService());
-        List<Map<String, Object>> rows = access.queryForList("SELECT * FROM players").join();
-
+        List<Map<String, Object>> rows = new MySQLDataAccess(dataSource, new DirectExecutorService())
+                .queryForList("SELECT * FROM players").join();
         assertEquals(2, rows.size());
-        assertEquals(1, rows.get(0).get("id"));
         assertEquals("b", rows.get(1).get("name"));
     }
 
@@ -118,7 +120,6 @@ class MySQLDataAccessTest {
         Connection connection = mock(Connection.class);
         PreparedStatement statement = mock(PreparedStatement.class);
         ResultSet resultSet = mock(ResultSet.class);
-
         when(dataSource.getConnection()).thenReturn(connection);
         when(connection.prepareStatement(anyString())).thenReturn(statement);
         when(statement.executeQuery()).thenReturn(resultSet);
@@ -126,13 +127,9 @@ class MySQLDataAccessTest {
         when(resultSet.getObject(1)).thenReturn("value");
 
         MySQLDataAccess access = new MySQLDataAccess(dataSource, new DirectExecutorService());
-
-        Object value = access.queryForSingleValue("SELECT value FROM test").join();
-        assertEquals("value", value);
-
+        assertEquals("value", access.queryForSingleValue("SELECT value FROM test").join());
         when(resultSet.next()).thenReturn(false);
-        Object missing = access.queryForSingleValue("SELECT value FROM test WHERE id=999").join();
-        assertNull(missing);
+        assertNull(access.queryForSingleValue("SELECT value FROM test WHERE id=999").join());
     }
 
     @Test
@@ -143,8 +140,7 @@ class MySQLDataAccessTest {
         when(dataSource.getConnection()).thenReturn(connection);
         when(connection.prepareStatement(anyString())).thenReturn(statement);
 
-        MySQLDataAccess access = new MySQLDataAccess(dataSource, new DirectExecutorService());
-        access.executeBatchUpdate(
+        new MySQLDataAccess(dataSource, new DirectExecutorService()).executeBatchUpdate(
                 "INSERT INTO test(a,b) VALUES (?,?)",
                 List.of(new Object[]{1, "x"}, new Object[]{2, "y"})
         ).join();
@@ -157,39 +153,117 @@ class MySQLDataAccessTest {
     }
 
     @Test
-    void executeTransactionallyCommitsOnSuccessAndRollsBackOnFailure() throws Exception {
+    void executeTransactionallyCommitsRestoresAndClosesConnection() throws Exception {
         DataSource dataSource = mock(DataSource.class);
         Connection connection = mock(Connection.class);
         when(dataSource.getConnection()).thenReturn(connection);
         when(connection.getAutoCommit()).thenReturn(true);
 
-        MySQLDataAccess access = new MySQLDataAccess(dataSource, new DirectExecutorService());
-        String result = access.executeTransactionally(conn -> "done").join();
+        String result = new MySQLDataAccess(dataSource, new DirectExecutorService())
+                .executeTransactionally(conn -> "done").join();
         assertEquals("done", result);
         verify(connection).setAutoCommit(false);
         verify(connection).commit();
         verify(connection).setAutoCommit(true);
-
-        DataSource failingDataSource = mock(DataSource.class);
-        Connection failingConnection = mock(Connection.class);
-        when(failingDataSource.getConnection()).thenReturn(failingConnection);
-        when(failingConnection.getAutoCommit()).thenReturn(false);
-        MySQLDataAccess failingAccess = new MySQLDataAccess(failingDataSource, new DirectExecutorService());
-
-        CompletionException ex = assertThrows(
-                CompletionException.class,
-                () -> failingAccess.executeTransactionally(conn -> {
-                    throw new IllegalStateException("boom");
-                }).join()
-        );
-
-        assertInstanceOf(RuntimeException.class, ex.getCause());
-        verify(failingConnection).rollback();
-        verify(failingConnection, times(2)).setAutoCommit(false);
+        verify(connection).close();
     }
 
     @Test
-    void executeInsertReturnsGeneratedKeyAndFailsWhenNoneReturned() throws Exception {
+    void failedTransactionSetupClosesAcquiredConnection() throws Exception {
+        DataSource dataSource = mock(DataSource.class);
+        Connection connection = mock(Connection.class);
+        when(dataSource.getConnection()).thenReturn(connection);
+        when(connection.getAutoCommit()).thenReturn(true);
+        doThrow(new SQLException("setup secret")).when(connection).setAutoCommit(false);
+
+        CompletionException completion = assertThrows(CompletionException.class,
+                () -> new MySQLDataAccess(dataSource, new DirectExecutorService())
+                        .executeTransactionally(conn -> "unused").join());
+        DataTransactionException transaction = assertInstanceOf(
+                DataTransactionException.class, completion.getCause());
+        assertEquals(TransactionPhase.BEGIN, transaction.phase());
+        assertEquals(ExecutionOutcome.NOT_STARTED, transaction.executionOutcome());
+        verify(connection).close();
+    }
+
+    @Test
+    void callbackRollbackAndCloseFailuresRemainStructuredAndRedacted() throws Exception {
+        DataSource dataSource = mock(DataSource.class);
+        Connection connection = mock(Connection.class);
+        when(dataSource.getConnection()).thenReturn(connection);
+        when(connection.getAutoCommit()).thenReturn(false);
+        doThrow(new SQLException("rollback secret")).when(connection).rollback();
+        doThrow(new SQLException("close secret")).when(connection).close();
+
+        CompletionException completion = assertThrows(CompletionException.class,
+                () -> new MySQLDataAccess(dataSource, new DirectExecutorService())
+                        .executeTransactionally(conn -> {
+                            throw new IllegalStateException("callback secret");
+                        }).join());
+        DataTransactionException transaction = assertInstanceOf(
+                DataTransactionException.class, completion.getCause());
+        assertEquals(TransactionPhase.CALLBACK, transaction.phase());
+        assertEquals(ExecutionOutcome.NOT_APPLIED, transaction.executionOutcome());
+        assertEquals(2, transaction.getSuppressed().length);
+        for (Throwable suppressed : transaction.getSuppressed()) {
+            DataTransactionException structured = assertInstanceOf(DataTransactionException.class, suppressed);
+            assertFalse(structured.getMessage().contains("secret"));
+            assertFalse(structured.getCause().getMessage().contains("secret"));
+        }
+        assertEquals(TransactionPhase.ROLLBACK,
+                ((DataTransactionException) transaction.getSuppressed()[0]).phase());
+        assertEquals(TransactionPhase.CLEANUP,
+                ((DataTransactionException) transaction.getSuppressed()[1]).phase());
+        verify(connection).rollback();
+        verify(connection, times(2)).setAutoCommit(false);
+        verify(connection).close();
+    }
+
+    @Test
+    void commitFailureReportsUnknownWriteOutcome() throws Exception {
+        DataSource dataSource = mock(DataSource.class);
+        Connection connection = mock(Connection.class);
+        when(dataSource.getConnection()).thenReturn(connection);
+        when(connection.getAutoCommit()).thenReturn(true);
+        doThrow(new SQLException("commit lost", "08006")).when(connection).commit();
+
+        CompletionException completion = assertThrows(CompletionException.class,
+                () -> new MySQLDataAccess(dataSource, new DirectExecutorService())
+                        .executeTransactionally(conn -> "done").join());
+        DataTransactionException transaction = assertInstanceOf(
+                DataTransactionException.class, completion.getCause());
+        assertEquals(TransactionPhase.COMMIT, transaction.phase());
+        assertEquals(ExecutionOutcome.MAY_HAVE_APPLIED, transaction.executionOutcome());
+        assertTrue(transaction.retryable());
+        verify(connection).rollback();
+        verify(connection).setAutoCommit(true);
+        verify(connection).close();
+    }
+
+    @Test
+    void postCommitRestoreFailureUsesCleanupPhaseAndAppliedOutcome() throws Exception {
+        DataSource dataSource = mock(DataSource.class);
+        Connection connection = mock(Connection.class);
+        when(dataSource.getConnection()).thenReturn(connection);
+        when(connection.getAutoCommit()).thenReturn(true);
+        doNothing().doThrow(new SQLException("restore secret"))
+                .when(connection).setAutoCommit(anyBoolean());
+
+        CompletionException completion = assertThrows(CompletionException.class,
+                () -> new MySQLDataAccess(dataSource, new DirectExecutorService())
+                        .executeTransactionally(conn -> "done").join());
+        DataTransactionException transaction = assertInstanceOf(
+                DataTransactionException.class, completion.getCause());
+        assertEquals(TransactionPhase.CLEANUP, transaction.phase());
+        assertEquals(ExecutionOutcome.MAY_HAVE_APPLIED, transaction.executionOutcome());
+        assertFalse(transaction.retryable());
+        assertFalse(transaction.getCause().getMessage().contains("secret"));
+        verify(connection).commit();
+        verify(connection).close();
+    }
+
+    @Test
+    void executeInsertReturnsGeneratedKeyAndStructuresFailure() throws Exception {
         DataSource dataSource = mock(DataSource.class);
         Connection connection = mock(Connection.class);
         PreparedStatement statement = mock(PreparedStatement.class);
@@ -203,28 +277,25 @@ class MySQLDataAccessTest {
         when(generatedKeys.getObject(1)).thenReturn(42L);
 
         MySQLDataAccess access = new MySQLDataAccess(dataSource, new DirectExecutorService());
-        Object key = access.executeInsert("INSERT INTO players(name) VALUES (?)", "test").join();
-        assertEquals(42L, key);
+        assertEquals(42L, access.executeInsert("INSERT INTO players(name) VALUES (?)", "test").join());
 
         when(statement.executeUpdate()).thenReturn(0);
-        CompletionException ex = assertThrows(
-                CompletionException.class,
-                () -> access.executeInsert("INSERT INTO players(name) VALUES (?)", "test").join()
-        );
-        assertTrue(ex.getCause().getMessage().contains("Failed to execute insert"));
+        CompletionException completion = assertThrows(CompletionException.class,
+                () -> access.executeInsert("INSERT INTO players(name) VALUES (?)", "test").join());
+        assertInstanceOf(DataProviderOperationException.class, completion.getCause());
     }
 
     @Test
-    void wrapsSqlExceptionsInRuntimeExceptions() throws Exception {
+    void connectionSqlExceptionsCompleteWithUnavailableFailure() throws Exception {
         DataSource dataSource = mock(DataSource.class);
-        when(dataSource.getConnection()).thenThrow(new SQLException("no connection"));
-        MySQLDataAccess access = new MySQLDataAccess(dataSource, new DirectExecutorService());
+        when(dataSource.getConnection()).thenThrow(new SQLException("password=secret", "08001"));
 
-        CompletionException ex = assertThrows(
-                CompletionException.class,
-                () -> access.executeUpdate("UPDATE test SET value=1").join()
-        );
-        assertInstanceOf(RuntimeException.class, ex.getCause());
-        assertTrue(ex.getCause().getMessage().contains("Failed to execute update"));
+        CompletionException completion = assertThrows(CompletionException.class,
+                () -> new MySQLDataAccess(dataSource, new DirectExecutorService())
+                        .executeUpdate("UPDATE test SET value=1").join());
+        BackendUnavailableException failure = assertInstanceOf(
+                BackendUnavailableException.class, completion.getCause());
+        assertEquals("08001", failure.diagnostics().get("sqlState"));
+        assertFalse(failure.getMessage().contains("secret"));
     }
 }

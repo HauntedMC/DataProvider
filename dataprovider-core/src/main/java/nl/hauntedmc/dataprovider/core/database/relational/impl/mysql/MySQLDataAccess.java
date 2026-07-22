@@ -1,8 +1,12 @@
 package nl.hauntedmc.dataprovider.core.database.relational.impl.mysql;
 
 import nl.hauntedmc.dataprovider.core.concurrent.AsyncTaskSupport;
+import nl.hauntedmc.dataprovider.core.exception.DataProviderExceptionMapper;
 import nl.hauntedmc.dataprovider.database.relational.RelationalDataAccess;
 import nl.hauntedmc.dataprovider.database.relational.TransactionCallback;
+import nl.hauntedmc.dataprovider.exception.DataTransactionException;
+import nl.hauntedmc.dataprovider.exception.ExecutionOutcome;
+import nl.hauntedmc.dataprovider.exception.TransactionPhase;
 
 import javax.sql.DataSource;
 import java.sql.Connection;
@@ -21,6 +25,8 @@ import java.util.concurrent.Executor;
 
 /** MySQL implementation of RelationalDataAccess. */
 public class MySQLDataAccess implements RelationalDataAccess {
+
+    private static final String TRANSACTION_OPERATION = "mysql.executeTransactionally";
 
     private final DataSource dataSource;
     private final Executor executor;
@@ -47,8 +53,6 @@ public class MySQLDataAccess implements RelationalDataAccess {
                 applyStatementTuning(stmt);
                 setParameters(stmt, params);
                 stmt.executeUpdate();
-            } catch (SQLException e) {
-                throw new RuntimeException("Failed to execute update", e);
             }
         });
     }
@@ -64,8 +68,6 @@ public class MySQLDataAccess implements RelationalDataAccess {
                 try (ResultSet rs = stmt.executeQuery()) {
                     return rs.next() ? mapRow(rs) : null;
                 }
-            } catch (SQLException e) {
-                throw new RuntimeException("Failed to execute queryForSingle", e);
             }
         });
     }
@@ -85,8 +87,6 @@ public class MySQLDataAccess implements RelationalDataAccess {
                     }
                 }
                 return result;
-            } catch (SQLException e) {
-                throw new RuntimeException("Failed to execute queryForList", e);
             }
         });
     }
@@ -102,8 +102,6 @@ public class MySQLDataAccess implements RelationalDataAccess {
                 try (ResultSet rs = stmt.executeQuery()) {
                     return rs.next() ? rs.getObject(1) : null;
                 }
-            } catch (SQLException e) {
-                throw new RuntimeException("Failed to execute queryForSingleValue", e);
             }
         });
     }
@@ -127,14 +125,16 @@ public class MySQLDataAccess implements RelationalDataAccess {
                     }
                     stmt.executeBatch();
                     connection.commit();
-                } catch (SQLException e) {
-                    connection.rollback();
-                    throw e;
+                } catch (SQLException primary) {
+                    try {
+                        connection.rollback();
+                    } catch (SQLException rollbackFailure) {
+                        primary.addSuppressed(rollbackFailure);
+                    }
+                    throw primary;
                 } finally {
                     connection.setAutoCommit(oldAutoCommit);
                 }
-            } catch (SQLException e) {
-                throw new RuntimeException("Failed to execute batch update", e);
             }
         });
     }
@@ -142,24 +142,159 @@ public class MySQLDataAccess implements RelationalDataAccess {
     @Override
     public <T> CompletableFuture<T> executeTransactionally(TransactionCallback<T> callback) {
         Objects.requireNonNull(callback, "Transaction callback cannot be null.");
-        return AsyncTaskSupport.supplyAsync(executor, "mysql.executeTransactionally", () -> {
-            try (Connection connection = dataSource.getConnection()) {
-                boolean oldAutoCommit = connection.getAutoCommit();
-                connection.setAutoCommit(false);
-                try {
-                    T result = callback.doInTransaction(connection);
-                    connection.commit();
-                    return result;
-                } catch (Exception e) {
-                    connection.rollback();
-                    throw new RuntimeException("Transaction failed, rolled back.", e);
-                } finally {
-                    connection.setAutoCommit(oldAutoCommit);
-                }
-            } catch (SQLException e) {
-                throw new RuntimeException("Failed to execute transactionally", e);
-            }
-        });
+        return AsyncTaskSupport.supplyAsync(executor, TRANSACTION_OPERATION, () -> executeTransaction(callback));
+    }
+
+    private <T> T executeTransaction(TransactionCallback<T> callback) {
+        Connection connection = null;
+        boolean oldAutoCommit;
+        try {
+            connection = dataSource.getConnection();
+            oldAutoCommit = connection.getAutoCommit();
+            connection.setAutoCommit(false);
+        } catch (Error fatal) {
+            closeAfterFatal(connection, fatal);
+            throw fatal;
+        } catch (Exception beginFailure) {
+            DataTransactionException structured = transactionFailure(
+                    beginFailure, TransactionPhase.BEGIN, ExecutionOutcome.NOT_STARTED);
+            closeConnection(connection, structured, ExecutionOutcome.NOT_STARTED);
+            throw structured;
+        }
+
+        T result;
+        try {
+            result = callback.doInTransaction(connection);
+        } catch (Error fatal) {
+            cleanupAfterFatal(connection, oldAutoCommit, fatal);
+            throw fatal;
+        } catch (Exception callbackFailure) {
+            DataTransactionException structured = transactionFailure(
+                    callbackFailure, TransactionPhase.CALLBACK, ExecutionOutcome.NOT_APPLIED);
+            rollback(connection, structured);
+            restoreAutoCommit(connection, oldAutoCommit, structured, ExecutionOutcome.NOT_APPLIED);
+            closeConnection(connection, structured, ExecutionOutcome.NOT_APPLIED);
+            throw structured;
+        }
+
+        try {
+            connection.commit();
+        } catch (Error fatal) {
+            cleanupAfterFatal(connection, oldAutoCommit, fatal);
+            throw fatal;
+        } catch (Exception commitFailure) {
+            DataTransactionException structured = transactionFailure(
+                    commitFailure, TransactionPhase.COMMIT, ExecutionOutcome.MAY_HAVE_APPLIED);
+            rollback(connection, structured);
+            restoreAutoCommit(connection, oldAutoCommit, structured, ExecutionOutcome.MAY_HAVE_APPLIED);
+            closeConnection(connection, structured, ExecutionOutcome.MAY_HAVE_APPLIED);
+            throw structured;
+        }
+
+        try {
+            connection.setAutoCommit(oldAutoCommit);
+        } catch (Error fatal) {
+            closeAfterFatal(connection, fatal);
+            throw fatal;
+        } catch (Exception restoreFailure) {
+            DataTransactionException structured = transactionFailure(
+                    restoreFailure, TransactionPhase.CLEANUP, ExecutionOutcome.MAY_HAVE_APPLIED);
+            closeConnection(connection, structured, ExecutionOutcome.MAY_HAVE_APPLIED);
+            throw structured;
+        }
+
+        try {
+            connection.close();
+        } catch (Error fatal) {
+            throw fatal;
+        } catch (Exception closeFailure) {
+            throw transactionFailure(closeFailure, TransactionPhase.CLEANUP, ExecutionOutcome.MAY_HAVE_APPLIED);
+        }
+        return result;
+    }
+
+    private DataTransactionException transactionFailure(
+            Throwable failure,
+            TransactionPhase phase,
+            ExecutionOutcome outcome
+    ) {
+        return DataProviderExceptionMapper.transactionFailure(
+                failure, executor, TRANSACTION_OPERATION, phase, outcome);
+    }
+
+    private void rollback(Connection connection, DataTransactionException primary) {
+        try {
+            connection.rollback();
+        } catch (Error fatal) {
+            fatal.addSuppressed(primary);
+            closeAfterFatal(connection, fatal);
+            throw fatal;
+        } catch (Exception rollbackFailure) {
+            primary.addSuppressed(transactionFailure(
+                    rollbackFailure, TransactionPhase.ROLLBACK, ExecutionOutcome.UNKNOWN));
+        }
+    }
+
+    private void restoreAutoCommit(
+            Connection connection,
+            boolean oldAutoCommit,
+            DataTransactionException primary,
+            ExecutionOutcome outcome
+    ) {
+        try {
+            connection.setAutoCommit(oldAutoCommit);
+        } catch (Error fatal) {
+            fatal.addSuppressed(primary);
+            closeAfterFatal(connection, fatal);
+            throw fatal;
+        } catch (Exception restoreFailure) {
+            primary.addSuppressed(transactionFailure(
+                    restoreFailure, TransactionPhase.CLEANUP, outcome));
+        }
+    }
+
+    private void closeConnection(
+            Connection connection,
+            DataTransactionException primary,
+            ExecutionOutcome outcome
+    ) {
+        if (connection == null) {
+            return;
+        }
+        try {
+            connection.close();
+        } catch (Error fatal) {
+            fatal.addSuppressed(primary);
+            throw fatal;
+        } catch (Exception closeFailure) {
+            primary.addSuppressed(transactionFailure(
+                    closeFailure, TransactionPhase.CLEANUP, outcome));
+        }
+    }
+
+    private static void cleanupAfterFatal(Connection connection, boolean oldAutoCommit, Error fatal) {
+        try {
+            connection.rollback();
+        } catch (Throwable cleanupFailure) {
+            fatal.addSuppressed(cleanupFailure);
+        }
+        try {
+            connection.setAutoCommit(oldAutoCommit);
+        } catch (Throwable cleanupFailure) {
+            fatal.addSuppressed(cleanupFailure);
+        }
+        closeAfterFatal(connection, fatal);
+    }
+
+    private static void closeAfterFatal(Connection connection, Error fatal) {
+        if (connection == null) {
+            return;
+        }
+        try {
+            connection.close();
+        } catch (Throwable closeFailure) {
+            fatal.addSuppressed(closeFailure);
+        }
     }
 
     @Override
@@ -179,8 +314,6 @@ public class MySQLDataAccess implements RelationalDataAccess {
                     }
                     throw new SQLException("Insert succeeded but no generated key was returned.");
                 }
-            } catch (SQLException e) {
-                throw new RuntimeException("Failed to execute insert", e);
             }
         });
     }

@@ -1,5 +1,7 @@
 package nl.hauntedmc.dataprovider.core.concurrent;
 
+import nl.hauntedmc.dataprovider.database.DatabaseType;
+
 import java.util.concurrent.Executor;
 
 /** Connection-scoped execution handle backed by the shared runtime. */
@@ -8,6 +10,18 @@ public interface ExecutionHandle extends Executor, AutoCloseable {
     ExecutionMetricsSnapshot metrics();
 
     boolean isClosed();
+
+    default DatabaseType backendType() {
+        return null;
+    }
+
+    default String connectionIdentifier() {
+        return null;
+    }
+
+    default String pluginId() {
+        return null;
+    }
 
     default boolean tryAcquireSubscription() {
         return true;

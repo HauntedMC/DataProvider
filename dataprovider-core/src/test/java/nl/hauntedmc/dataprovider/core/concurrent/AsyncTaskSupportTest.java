@@ -1,5 +1,9 @@
 package nl.hauntedmc.dataprovider.core.concurrent;
 
+import nl.hauntedmc.dataprovider.exception.DataProviderOperationException;
+import nl.hauntedmc.dataprovider.exception.ExecutionOutcome;
+import nl.hauntedmc.dataprovider.exception.QueueSaturatedException;
+import nl.hauntedmc.dataprovider.exception.RetryAdvice;
 import org.junit.jupiter.api.Test;
 
 import java.util.concurrent.CompletableFuture;
@@ -8,56 +12,69 @@ import java.util.concurrent.Executor;
 import java.util.concurrent.RejectedExecutionException;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertThrows;
-import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class AsyncTaskSupportTest {
 
     @Test
     void supplyAsyncRunsOnExecutorAndReturnsValue() {
         Executor directExecutor = Runnable::run;
-
         CompletableFuture<Integer> result = AsyncTaskSupport.supplyAsync(
-                directExecutor,
-                "unit.supply",
-                () -> 42
-        );
-
+                directExecutor, "unit.supply", () -> 42);
         assertEquals(42, result.join());
     }
 
     @Test
-    void runAsyncReturnsFailedFutureWhenExecutorRejects() {
+    void runAsyncReturnsStructuredFailureWhenExecutorRejects() {
         Executor rejectingExecutor = command -> {
-            throw new RejectedExecutionException("full");
+            throw new RejectedExecutionException("full internal queue detail");
         };
-
         CompletableFuture<Void> future = AsyncTaskSupport.runAsync(
-                rejectingExecutor,
-                "unit.reject",
-                () -> {
-                }
-        );
+                rejectingExecutor, "unit.reject", () -> { });
 
-        CompletionException ex = assertThrows(CompletionException.class, future::join);
-        assertTrue(ex.getCause() instanceof RejectedExecutionException);
-        assertTrue(ex.getCause().getMessage().contains("unit.reject"));
+        CompletionException completion = assertThrows(CompletionException.class, future::join);
+        QueueSaturatedException rejection = assertInstanceOf(
+                QueueSaturatedException.class, completion.getCause());
+        assertEquals("unit.reject", rejection.operationName());
+        assertEquals(RetryAdvice.SAFE, rejection.retryAdvice());
+        assertEquals(ExecutionOutcome.NOT_STARTED, rejection.executionOutcome());
     }
 
     @Test
-    void runAsyncPropagatesTaskFailures() {
+    void runAsyncRedactsAndStructuresUnclassifiedFailures() {
         Executor directExecutor = Runnable::run;
-
         CompletableFuture<Void> future = AsyncTaskSupport.runAsync(
                 directExecutor,
                 "unit.failure",
                 () -> {
-                    throw new IllegalStateException("boom");
+                    throw new IllegalStateException("password=boom");
                 }
         );
 
-        CompletionException ex = assertThrows(CompletionException.class, future::join);
-        assertTrue(ex.getCause() instanceof IllegalStateException);
-        assertEquals("boom", ex.getCause().getMessage());
+        CompletionException completion = assertThrows(CompletionException.class, future::join);
+        DataProviderOperationException failure = assertInstanceOf(
+                DataProviderOperationException.class, completion.getCause());
+        assertEquals("unit.failure", failure.operationName());
+        assertEquals("java.lang.IllegalStateException", failure.diagnostics().get("causeType"));
+    }
+
+    @Test
+    void supplyAsyncPreservesCallerValidationFailures() {
+        Executor directExecutor = Runnable::run;
+        CompletableFuture<Void> future = AsyncTaskSupport.runAsync(
+                directExecutor,
+                "unit.validation",
+                () -> {
+                    throw new IllegalArgumentException("invalid identifier");
+                }
+        );
+
+        CompletionException completion = assertThrows(CompletionException.class, future::join);
+        IllegalArgumentException validation = assertInstanceOf(
+                IllegalArgumentException.class,
+                completion.getCause()
+        );
+        assertEquals("invalid identifier", validation.getMessage());
     }
 }

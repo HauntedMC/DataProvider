@@ -1,6 +1,7 @@
 package nl.hauntedmc.dataprovider.core.concurrent;
 
 import nl.hauntedmc.dataprovider.database.DatabaseType;
+import nl.hauntedmc.dataprovider.exception.QueueSaturatedException;
 import org.junit.jupiter.api.Test;
 
 import java.time.Duration;
@@ -70,14 +71,10 @@ class DataProviderExecutionRuntimeHardeningTest {
             CompletableFuture<Void> rejected = AsyncTaskSupport.runAsync(scope, "rejected", () -> { });
 
             CompletionException completion = org.junit.jupiter.api.Assertions.assertThrows(
-                    CompletionException.class,
-                    rejected::join
-            );
-            ExecutionRejectedException rejection = assertInstanceOf(
-                    ExecutionRejectedException.class,
-                    completion.getCause()
-            );
-            assertEquals(ExecutionRejectedException.Reason.CONNECTION_QUEUE_LIMIT, rejection.reason());
+                    CompletionException.class, rejected::join);
+            QueueSaturatedException rejection = assertInstanceOf(
+                    QueueSaturatedException.class, completion.getCause());
+            assertEquals("CONNECTION_QUEUE_LIMIT", rejection.diagnostics().get("reason"));
             release.countDown();
         }
     }
@@ -126,10 +123,7 @@ class DataProviderExecutionRuntimeHardeningTest {
             first.close();
 
             CompletableFuture<Boolean> next = AsyncTaskSupport.supplyAsync(
-                    second,
-                    "check-interrupt",
-                    () -> Thread.currentThread().isInterrupted()
-            );
+                    second, "check-interrupt", () -> Thread.currentThread().isInterrupted());
             assertFalse(next.get(2, TimeUnit.SECONDS));
         }
     }
@@ -144,24 +138,12 @@ class DataProviderExecutionRuntimeHardeningTest {
             long scopeGraceMs
     ) {
         ExecutionRuntimeConfig.LaneConfig lane = new ExecutionRuntimeConfig.LaneConfig(
-                workers,
-                queueCapacity,
-                pluginActive,
-                pluginQueue,
-                connectionActive,
-                connectionQueue
-        );
+                workers, queueCapacity, pluginActive, pluginQueue, connectionActive, connectionQueue);
         EnumMap<ExecutionLane, ExecutionRuntimeConfig.LaneConfig> lanes = new EnumMap<>(ExecutionLane.class);
         for (ExecutionLane executionLane : ExecutionLane.values()) {
             lanes.put(executionLane, lane);
         }
         return new DataProviderExecutionRuntime(new ExecutionRuntimeConfig(
-                Map.copyOf(lanes),
-                Duration.ofMillis(scopeGraceMs),
-                Duration.ofMillis(250),
-                16,
-                8,
-                4
-        ));
+                Map.copyOf(lanes), Duration.ofMillis(scopeGraceMs), Duration.ofMillis(250), 16, 8, 4));
     }
 }

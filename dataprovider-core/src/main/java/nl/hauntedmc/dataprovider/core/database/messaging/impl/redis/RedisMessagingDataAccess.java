@@ -2,6 +2,9 @@ package nl.hauntedmc.dataprovider.core.database.messaging.impl.redis;
 
 import nl.hauntedmc.dataprovider.core.concurrent.AsyncTaskSupport;
 import nl.hauntedmc.dataprovider.core.concurrent.ExecutionHandle;
+import nl.hauntedmc.dataprovider.core.concurrent.ExecutionRejectedException;
+import nl.hauntedmc.dataprovider.core.exception.DataProviderExceptionMapper;
+import nl.hauntedmc.dataprovider.core.exception.StructuredFailures;
 import nl.hauntedmc.dataprovider.database.messaging.MessagingDataAccess;
 import nl.hauntedmc.dataprovider.database.messaging.api.EventMessage;
 import nl.hauntedmc.dataprovider.database.messaging.api.MessageRegistry;
@@ -96,12 +99,21 @@ final class RedisMessagingDataAccess implements MessagingDataAccess {
         String validatedDestination = validateDestination(destination);
         Objects.requireNonNull(message, "Message cannot be null");
         if (shuttingDown.get()) {
-            return CompletableFuture.failedFuture(new IllegalStateException("Messaging provider is shutting down"));
+            return CompletableFuture.failedFuture(StructuredFailures.closed(workers, "redis.messaging.publish"));
         }
-        String json = messageRegistry.toJson(message);
+        final String json;
+        try {
+            json = messageRegistry.toJson(message);
+        } catch (RuntimeException failure) {
+            return CompletableFuture.failedFuture(
+                    StructuredFailures.serialization(failure, workers, "redis.messaging.serialize"));
+        }
         if (json.length() > maxPayloadChars) {
-            return CompletableFuture.failedFuture(new IllegalArgumentException(
-                    "Message payload exceeds maxPayloadChars (" + maxPayloadChars + ")"));
+            return CompletableFuture.failedFuture(StructuredFailures.serialization(
+                    new IllegalArgumentException("Serialized message exceeds configured size limit."),
+                    workers,
+                    "redis.messaging.serialize"
+            ));
         }
         return AsyncTaskSupport.runAsync(workers, "redis.messaging.publish", () -> {
             try (Jedis jedis = pool.getResource()) {
@@ -120,7 +132,7 @@ final class RedisMessagingDataAccess implements MessagingDataAccess {
         Objects.requireNonNull(type, "Type cannot be null");
         Objects.requireNonNull(handler, "Handler cannot be null");
         if (shuttingDown.get()) {
-            throw new IllegalStateException("Messaging provider is shutting down");
+            throw StructuredFailures.closed(workers, "redis.messaging.subscribe");
         }
 
         ChannelSubscription channelSubscription;
@@ -129,11 +141,22 @@ final class RedisMessagingDataAccess implements MessagingDataAccess {
             channelSubscription = channelSubscriptions.get(validatedDestination);
             if (channelSubscription == null) {
                 if (channelSubscriptions.size() >= maxSubscriptions) {
-                    throw new IllegalStateException(
-                            "Maximum active Redis subscriptions reached (" + maxSubscriptions + ")");
+                    throw DataProviderExceptionMapper.translate(
+                            new ExecutionRejectedException(
+                                    ExecutionRejectedException.Reason.SUBSCRIPTION_LIMIT,
+                                    "Connection subscription limit reached."),
+                            workers,
+                            "redis.messaging.subscribe"
+                    );
                 }
                 if (executionBudget != null && !executionBudget.tryAcquireSubscription()) {
-                    throw new IllegalStateException("DataProvider messaging subscription budget exhausted");
+                    throw DataProviderExceptionMapper.translate(
+                            new ExecutionRejectedException(
+                                    ExecutionRejectedException.Reason.SUBSCRIPTION_LIMIT,
+                                    "Runtime subscription limit reached."),
+                            workers,
+                            "redis.messaging.subscribe"
+                    );
                 }
                 channelSubscription = new ChannelSubscription(validatedDestination, executionBudget != null);
                 channelSubscriptions.put(validatedDestination, channelSubscription);
