@@ -4,6 +4,7 @@ import com.zaxxer.hikari.HikariConfig;
 import com.zaxxer.hikari.HikariDataSource;
 import nl.hauntedmc.dataprovider.core.ManagedDatabaseProvider;
 import nl.hauntedmc.dataprovider.core.concurrent.ExecutionHandle;
+import nl.hauntedmc.dataprovider.core.concurrent.ExecutionDataSource;
 import nl.hauntedmc.dataprovider.database.relational.RelationalDataAccess;
 import nl.hauntedmc.dataprovider.database.relational.RelationalDatabaseProvider;
 import nl.hauntedmc.dataprovider.database.relational.schema.SchemaManager;
@@ -33,6 +34,9 @@ public class MySQLDatabase implements RelationalDatabaseProvider, ManagedDatabas
     private volatile RelationalDataAccess dataAccess;
     private volatile SchemaManager schemaManager;
     private volatile Throwable lifecycleFailure;
+    private volatile int queryTimeoutSeconds;
+    private volatile int defaultFetchSize;
+    private volatile int connectionPoolSize;
 
     public MySQLDatabase(CommentedConfigurationNode config, LoggerAdapter logger) {
         this(config, logger, ExecutionHandle.direct());
@@ -139,6 +143,9 @@ public class MySQLDatabase implements RelationalDatabaseProvider, ManagedDatabas
             }
 
             dataSource = createdDataSource;
+            connectionPoolSize = poolSize;
+            this.queryTimeoutSeconds = queryTimeoutSeconds;
+            this.defaultFetchSize = defaultFetchSize;
             dataAccess = new MySQLDataAccess(dataSource, execution, queryTimeoutSeconds, defaultFetchSize);
             schemaManager = new MySQLSchemaManager(dataSource, execution);
             lifecycleFailure = null;
@@ -212,6 +219,31 @@ public class MySQLDatabase implements RelationalDatabaseProvider, ManagedDatabas
     @Override
     public DataSource getDataSource() {
         return dataSource;
+    }
+
+    public int executionCapacity() {
+        if (!isConnected() || connectionPoolSize < 1) {
+            throw new IllegalStateException("[MySQLDatabase] DataSource not initialized!");
+        }
+        return connectionPoolSize;
+    }
+
+    /** Creates a logical provider view without creating another Hikari pool. */
+    public RelationalDatabaseProvider scoped(ExecutionHandle scopedExecution) {
+        HikariDataSource source = dataSource;
+        if (source == null || source.isClosed()) {
+            throw new IllegalStateException("[MySQLDatabase] DataSource not initialized!");
+        }
+        DataSource jdbcView = new ExecutionDataSource(source, scopedExecution);
+        RelationalDataAccess accessView = new MySQLDataAccess(source, scopedExecution,
+                queryTimeoutSeconds, defaultFetchSize);
+        SchemaManager schemaView = new MySQLSchemaManager(source, scopedExecution);
+        return new RelationalDatabaseProvider() {
+            @Override public boolean isConnected() { return MySQLDatabase.this.isConnected() && !scopedExecution.isClosed(); }
+            @Override public RelationalDataAccess getDataAccess() { return accessView; }
+            @Override public DataSource getDataSource() { return jdbcView; }
+            @Override public SchemaManager getSchemaManager() { return schemaView; }
+        };
     }
 
     HikariDataSource createDataSource(HikariConfig hikariConfig) {

@@ -139,6 +139,8 @@ ORMContext orm = api.createOrmContext(
 );
 ```
 
+Pass the `DataSource` returned by the registered relational provider. DataProvider rejects unmanaged data sources here so ORM connection acquisition stays within the same bounded resource admission policy as JDBC and `RelationalDataAccess`.
+
 `ORMContext` is part of the public API. Add only `dataprovider-api` as `compileOnly`, import
 `nl.hauntedmc.dataprovider.api.orm.ORMContext`, and create contexts with
 `DataProviderAPI.createOrmContext(...)`.

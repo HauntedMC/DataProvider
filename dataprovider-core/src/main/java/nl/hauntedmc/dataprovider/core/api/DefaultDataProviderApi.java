@@ -5,6 +5,7 @@ import nl.hauntedmc.dataprovider.api.DataProviderScope;
 import nl.hauntedmc.dataprovider.api.OwnerScope;
 import nl.hauntedmc.dataprovider.api.orm.ORMContext;
 import nl.hauntedmc.dataprovider.core.DataProviderHandler;
+import nl.hauntedmc.dataprovider.core.concurrent.ExecutionDataSource;
 import nl.hauntedmc.dataprovider.database.DataAccess;
 import nl.hauntedmc.dataprovider.database.DatabaseProvider;
 import nl.hauntedmc.dataprovider.database.DatabaseType;
@@ -38,6 +39,11 @@ public final class DefaultDataProviderApi implements DataProviderAPI {
             String schemaMode,
             Class<?>... entityClasses
     ) {
+        if (!(Objects.requireNonNull(dataSource, "DataSource cannot be null") instanceof ExecutionDataSource)) {
+            throw new IllegalArgumentException(
+                    "ORMContext requires the scoped DataSource returned by a registered relational provider."
+            );
+        }
         return new nl.hauntedmc.dataprovider.core.orm.ORMContext(
                 pluginName, dataSource, logger, schemaMode, entityClasses);
     }

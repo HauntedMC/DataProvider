@@ -24,7 +24,7 @@ class DataProviderExecutionRuntimeHardeningTest {
 
     @Test
     void pluginWithManyConnectionsDoesNotReceiveExtraDispatchTurns() throws Exception {
-        try (DataProviderExecutionRuntime runtime = runtime(1, 64, 1, 32, 1, 16, 100)) {
+        try (DataProviderExecutionRuntime runtime = runtime(1, 64, 32, 16, 100)) {
             List<ExecutionHandle> noisyScopes = new ArrayList<>();
             for (int index = 0; index < 8; index++) {
                 noisyScopes.add(runtime.openScope("noisy", DatabaseType.MYSQL, "connection-" + index));
@@ -58,7 +58,7 @@ class DataProviderExecutionRuntimeHardeningTest {
 
     @Test
     void exceptionalFuturePreservesStructuredRejectionReason() throws Exception {
-        try (DataProviderExecutionRuntime runtime = runtime(1, 4, 1, 4, 1, 1, 100)) {
+        try (DataProviderExecutionRuntime runtime = runtime(1, 4, 4, 1, 100)) {
             ExecutionHandle scope = runtime.openScope("plugin", DatabaseType.REDIS, "cache");
             CountDownLatch release = new CountDownLatch(1);
             CountDownLatch started = new CountDownLatch(1);
@@ -81,7 +81,7 @@ class DataProviderExecutionRuntimeHardeningTest {
 
     @Test
     void graceExpiryCompletesActiveFutureExceptionally() throws Exception {
-        try (DataProviderExecutionRuntime runtime = runtime(1, 4, 1, 4, 1, 2, 25)) {
+        try (DataProviderExecutionRuntime runtime = runtime(1, 4, 4, 2, 25)) {
             ExecutionHandle scope = runtime.openScope("plugin", DatabaseType.MONGODB, "documents");
             CountDownLatch started = new CountDownLatch(1);
             AtomicBoolean stop = new AtomicBoolean();
@@ -106,7 +106,7 @@ class DataProviderExecutionRuntimeHardeningTest {
 
     @Test
     void interruptedWorkerDoesNotLeakInterruptFlagToNextTask() throws Exception {
-        try (DataProviderExecutionRuntime runtime = runtime(1, 8, 1, 8, 1, 4, 25)) {
+        try (DataProviderExecutionRuntime runtime = runtime(1, 8, 8, 4, 25)) {
             ExecutionHandle first = runtime.openScope("first", DatabaseType.REDIS, "one");
             ExecutionHandle second = runtime.openScope("second", DatabaseType.REDIS, "two");
             CountDownLatch started = new CountDownLatch(1);
@@ -131,14 +131,12 @@ class DataProviderExecutionRuntimeHardeningTest {
     private static DataProviderExecutionRuntime runtime(
             int workers,
             int queueCapacity,
-            int pluginActive,
             int pluginQueue,
-            int connectionActive,
-            int connectionQueue,
+            int resourceQueue,
             long scopeGraceMs
     ) {
         ExecutionRuntimeConfig.LaneConfig lane = new ExecutionRuntimeConfig.LaneConfig(
-                workers, queueCapacity, pluginActive, pluginQueue, connectionActive, connectionQueue);
+                workers, queueCapacity, pluginQueue, resourceQueue);
         EnumMap<ExecutionLane, ExecutionRuntimeConfig.LaneConfig> lanes = new EnumMap<>(ExecutionLane.class);
         for (ExecutionLane executionLane : ExecutionLane.values()) {
             lanes.put(executionLane, lane);

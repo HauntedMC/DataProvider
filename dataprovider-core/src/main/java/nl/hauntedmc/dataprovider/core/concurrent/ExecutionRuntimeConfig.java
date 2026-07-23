@@ -44,10 +44,10 @@ public record ExecutionRuntimeConfig(
     public static ExecutionRuntimeConfig from(CommentedConfigurationNode root) {
         Objects.requireNonNull(root, "Configuration root cannot be null.");
         EnumMap<ExecutionLane, LaneConfig> configs = new EnumMap<>(ExecutionLane.class);
-        configs.put(ExecutionLane.RELATIONAL, lane(root, "relational", 8, 2_048, 4, 512, 2, 128));
-        configs.put(ExecutionLane.DOCUMENT, lane(root, "document", 8, 2_048, 4, 512, 2, 128));
-        configs.put(ExecutionLane.REDIS, lane(root, "redis", 8, 2_048, 4, 512, 2, 128));
-        configs.put(ExecutionLane.MESSAGING, lane(root, "messaging", 8, 4_096, 4, 1_024, 2, 256));
+        configs.put(ExecutionLane.RELATIONAL, lane(root, "relational", 8, 2_048, 512, 128));
+        configs.put(ExecutionLane.DOCUMENT, lane(root, "document", 8, 2_048, 512, 128));
+        configs.put(ExecutionLane.REDIS, lane(root, "redis", 8, 2_048, 512, 128));
+        configs.put(ExecutionLane.MESSAGING, lane(root, "messaging", 8, 4_096, 1_024, 256));
         long scopeGraceMs = bounded(root.node("execution", "scope_shutdown_grace_ms").getLong(2_000L),
                 0, 60_000, "execution.scope_shutdown_grace_ms");
         long runtimeGraceMs = bounded(root.node("execution", "runtime_shutdown_grace_ms").getLong(5_000L),
@@ -74,21 +74,16 @@ public record ExecutionRuntimeConfig(
             String name,
             int workers,
             int queue,
-            int pluginActive,
             int pluginQueue,
-            int connectionActive,
-            int connectionQueue
+            int resourceQueue
     ) {
         CommentedConfigurationNode node = root.node("execution", "lanes", name);
         return new LaneConfig(
                 bounded(node.node("workers").getInt(workers), 1, 256, name + ".workers"),
                 bounded(node.node("queue_capacity").getInt(queue), 1, 1_000_000, name + ".queue_capacity"),
-                bounded(node.node("per_plugin_active").getInt(pluginActive), 1, 256, name + ".per_plugin_active"),
                 bounded(node.node("per_plugin_queue").getInt(pluginQueue), 1, 1_000_000, name + ".per_plugin_queue"),
-                bounded(node.node("per_connection_active").getInt(connectionActive), 1, 256,
-                        name + ".per_connection_active"),
-                bounded(node.node("per_connection_queue").getInt(connectionQueue), 1, 1_000_000,
-                        name + ".per_connection_queue")
+                bounded(node.node("per_resource_queue").getInt(resourceQueue), 1, 1_000_000,
+                        name + ".per_resource_queue")
         );
     }
 
@@ -109,27 +104,18 @@ public record ExecutionRuntimeConfig(
     public record LaneConfig(
             int workers,
             int queueCapacity,
-            int perPluginActive,
             int perPluginQueue,
-            int perConnectionActive,
-            int perConnectionQueue
+            int perResourceQueue
     ) {
         public LaneConfig {
-            if (workers < 1 || queueCapacity < 1 || perPluginActive < 1 || perPluginQueue < 1
-                    || perConnectionActive < 1 || perConnectionQueue < 1) {
+            if (workers < 1 || queueCapacity < 1 || perPluginQueue < 1 || perResourceQueue < 1) {
                 throw new IllegalArgumentException("Execution limits must be positive.");
-            }
-            if (perPluginActive > workers) {
-                throw new IllegalArgumentException("Per-plugin active limit cannot exceed lane workers.");
-            }
-            if (perConnectionActive > perPluginActive) {
-                throw new IllegalArgumentException("Per-connection active limit cannot exceed per-plugin active limit.");
             }
             if (perPluginQueue > queueCapacity) {
                 throw new IllegalArgumentException("Per-plugin queue limit cannot exceed lane queue capacity.");
             }
-            if (perConnectionQueue > perPluginQueue) {
-                throw new IllegalArgumentException("Per-connection queue limit cannot exceed per-plugin queue limit.");
+            if (perResourceQueue > queueCapacity) {
+                throw new IllegalArgumentException("Per-resource queue limit cannot exceed lane queue capacity.");
             }
         }
     }

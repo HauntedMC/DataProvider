@@ -28,6 +28,9 @@ public class RedisDatabase implements KeyValueDatabaseProvider, ManagedDatabaseP
     private volatile RedisDataAccess dataAccess;
     private volatile boolean connected;
     private volatile Throwable lifecycleFailure;
+    private volatile int scanCount;
+    private volatile int maxScanResults;
+    private volatile int connectionPoolSize;
 
     public RedisDatabase(CommentedConfigurationNode config, LoggerAdapter logger) {
         this(config, logger, ExecutionHandle.direct());
@@ -117,6 +120,9 @@ public class RedisDatabase implements KeyValueDatabaseProvider, ManagedDatabaseP
             }
 
             jedisPool = createdPool;
+            this.connectionPoolSize = connectionPoolSize;
+            this.scanCount = scanCount;
+            this.maxScanResults = maxScanResults;
             dataAccess = new RedisDataAccess(jedisPool, execution, scanCount, maxScanResults);
             connected = true;
             lifecycleFailure = null;
@@ -174,6 +180,26 @@ public class RedisDatabase implements KeyValueDatabaseProvider, ManagedDatabaseP
     @Override
     public KeyValueDataAccess getDataAccess() {
         return dataAccess;
+    }
+
+    public int executionCapacity() {
+        if (!isConnected() || connectionPoolSize < 1) {
+            throw new IllegalStateException("[RedisDatabase] Jedis pool not initialized!");
+        }
+        return connectionPoolSize;
+    }
+
+    /** Creates a logical provider view without creating another Jedis pool. */
+    public KeyValueDatabaseProvider scoped(ExecutionHandle scopedExecution) {
+        JedisPool source = jedisPool;
+        if (!connected || source == null || source.isClosed()) {
+            throw new IllegalStateException("[RedisDatabase] Jedis pool not initialized!");
+        }
+        KeyValueDataAccess accessView = new RedisDataAccess(source, scopedExecution, scanCount, maxScanResults);
+        return new KeyValueDatabaseProvider() {
+            @Override public boolean isConnected() { return RedisDatabase.this.isConnected() && !scopedExecution.isClosed(); }
+            @Override public KeyValueDataAccess getDataAccess() { return accessView; }
+        };
     }
 
     private static String requireNonBlank(String value, String fieldName) {

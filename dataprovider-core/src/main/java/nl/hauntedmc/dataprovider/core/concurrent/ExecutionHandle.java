@@ -33,6 +33,14 @@ public interface ExecutionHandle extends Executor, AutoCloseable {
     default void recordDroppedMessages(long count) {
     }
 
+    /** Reserves a bounded queue slot for work held by a resource admission gate. */
+    default void reserveDeferredQueueSlot() {
+    }
+
+    /** Releases a queue slot previously reserved by a resource admission gate. */
+    default void releaseDeferredQueueSlot() {
+    }
+
     @Override
     void close();
 

@@ -3,11 +3,15 @@ package nl.hauntedmc.dataprovider.core.integration;
 import nl.hauntedmc.dataprovider.core.database.document.impl.mongodb.MongoDBDatabase;
 import nl.hauntedmc.dataprovider.core.database.keyvalue.impl.redis.RedisDatabase;
 import nl.hauntedmc.dataprovider.core.database.relational.impl.mysql.MySQLDatabase;
+import nl.hauntedmc.dataprovider.core.DataProvider;
+import nl.hauntedmc.dataprovider.core.identity.CallerContext;
 import nl.hauntedmc.dataprovider.core.testutil.RecordingLoggerAdapter;
 import nl.hauntedmc.dataprovider.database.document.model.DocumentQuery;
 import nl.hauntedmc.dataprovider.database.document.model.DocumentUpdate;
 import nl.hauntedmc.dataprovider.database.document.model.DocumentUpdateOptions;
+import nl.hauntedmc.dataprovider.database.DatabaseType;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 import org.spongepowered.configurate.CommentedConfigurationNode;
 import org.testcontainers.containers.GenericContainer;
 import org.testcontainers.containers.MongoDBContainer;
@@ -21,6 +25,10 @@ import java.util.HashMap;
 import java.util.Map;
 import java.util.concurrent.CompletionException;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicReference;
+import java.nio.file.Files;
+import java.nio.file.Path;
+
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -32,6 +40,9 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 class BackendIntegrationIT {
 
     private static final String REDIS_PASSWORD = "integration-secret";
+
+    @TempDir
+    Path dataDirectory;
 
     @Container
     private static final MySQLContainer<?> MYSQL = new MySQLContainer<>(DockerImageName.parse("mysql:8.4"))
@@ -197,6 +208,68 @@ class BackendIntegrationIT {
         assertFalse(redis.isConnected());
         assertNull(redis.getDataAccess());
         redis.disconnect();
+    }
+
+    @Test
+    void pluginLeasesShareOneMysqlPoolAndCloseItAfterTheLastLease() throws Exception {
+        Files.createDirectories(dataDirectory.resolve("databases"));
+        Files.writeString(dataDirectory.resolve("databases/mysql.yml"), """
+                default:
+                  host: %s
+                  port: %d
+                  database: %s
+                  username: %s
+                  password: %s
+                  ssl_mode: DISABLED
+                  allow_public_key_retrieval: true
+                  pool_size: 2
+                  min_idle: 0
+                  connection_timeout_ms: 2000
+                  validation_timeout_ms: 1000
+                  idle_timeout_ms: 10000
+                  max_lifetime_ms: 30000
+                  leak_detection_threshold_ms: 0
+                  connect_timeout_ms: 2000
+                  socket_timeout_ms: 2000
+                  query_timeout_seconds: 0
+                  default_fetch_size: 0
+                  cache_prepared_statements: true
+                  prepared_statement_cache_size: 25
+                  prepared_statement_cache_sql_limit: 256
+                """.formatted(
+                MYSQL.getHost(), MYSQL.getMappedPort(3306), MYSQL.getDatabaseName(),
+                MYSQL.getUsername(), MYSQL.getPassword()
+        ));
+        AtomicReference<String> plugin = new AtomicReference<>("first-plugin");
+        DataProvider provider = new DataProvider(
+                logger(),
+                dataDirectory,
+                getClass().getClassLoader(),
+                () -> new CallerContext(plugin.get(), getClass().getClassLoader())
+        );
+        try {
+            var handler = provider.getDataProviderHandler();
+            var first = (nl.hauntedmc.dataprovider.database.relational.RelationalDatabaseProvider)
+                    handler.registerDatabase(DatabaseType.MYSQL, "default");
+            plugin.set("second-plugin");
+            var second = (nl.hauntedmc.dataprovider.database.relational.RelationalDatabaseProvider)
+                    handler.registerDatabase(DatabaseType.MYSQL, "default");
+
+            first.getDataAccess().executeUpdate("CREATE TABLE shared_pool_it (id INT PRIMARY KEY)").join();
+            var firstConnection = first.getDataSource().getConnection();
+
+            plugin.set("first-plugin");
+            handler.unregisterDatabase(DatabaseType.MYSQL, "default");
+            assertTrue(firstConnection.isClosed());
+            plugin.set("second-plugin");
+            second.getDataAccess().executeUpdate("INSERT INTO shared_pool_it VALUES (1)").join();
+            assertEquals(1L, ((Number) second.getDataAccess()
+                    .queryForSingleValue("SELECT COUNT(*) FROM shared_pool_it").join()).longValue());
+            handler.unregisterDatabase(DatabaseType.MYSQL, "default");
+            assertThrows(Exception.class, () -> second.getDataSource().getConnection());
+        } finally {
+            provider.shutdownAllDatabases();
+        }
     }
 
     private static CommentedConfigurationNode mysqlConfig(String username, String password) throws Exception {

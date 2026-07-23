@@ -32,12 +32,10 @@ Each execution lane (`relational`, `document`, `redis`, `messaging`) supports:
 
 - `workers`: shared worker count for the lane
 - `queue_capacity`: total queued-task limit for the lane
-- `per_plugin_active`: maximum simultaneously active tasks for one plugin
 - `per_plugin_queue`: maximum queued tasks for one plugin
-- `per_connection_active`: maximum simultaneously active tasks for one connection
-- `per_connection_queue`: maximum queued tasks for one connection
+- `per_resource_queue`: maximum queued tasks for one named backend resource, shared by its plugin leases
 
-Scheduling is fair between plugins first and between each plugin's connections second. A plugin opening many connections therefore does not gain extra dispatch turns.
+Scheduling is fair between plugins first and between each plugin's connections second, but is work-conserving: an idle lane is available to whichever plugin has work. A named backend resource owns one physical pool/client and is shared by its plugin leases.
 
 Example:
 
@@ -56,34 +54,26 @@ execution:
     relational:
       workers: 8
       queue_capacity: 2048
-      per_plugin_active: 4
       per_plugin_queue: 512
-      per_connection_active: 2
-      per_connection_queue: 128
+      per_resource_queue: 128
 
     document:
       workers: 8
       queue_capacity: 2048
-      per_plugin_active: 4
       per_plugin_queue: 512
-      per_connection_active: 2
-      per_connection_queue: 128
+      per_resource_queue: 128
 
     redis:
       workers: 8
       queue_capacity: 2048
-      per_plugin_active: 4
       per_plugin_queue: 512
-      per_connection_active: 2
-      per_connection_queue: 128
+      per_resource_queue: 128
 
     messaging:
       workers: 8
       queue_capacity: 4096
-      per_plugin_active: 4
       per_plugin_queue: 1024
-      per_connection_active: 2
-      per_connection_queue: 256
+      per_resource_queue: 256
 
 databases:
   mysql:

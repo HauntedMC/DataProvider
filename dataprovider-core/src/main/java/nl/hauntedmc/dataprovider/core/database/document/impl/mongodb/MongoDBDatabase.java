@@ -34,6 +34,7 @@ public class MongoDBDatabase implements DocumentDatabaseProvider, ManagedDatabas
     private volatile boolean connected;
     private volatile String databaseName;
     private volatile Throwable lifecycleFailure;
+    private volatile int connectionPoolSize;
 
     public MongoDBDatabase(CommentedConfigurationNode config, LoggerAdapter logger) {
         this(config, logger, ExecutionHandle.direct());
@@ -126,6 +127,7 @@ public class MongoDBDatabase implements DocumentDatabaseProvider, ManagedDatabas
             createdClient.getDatabase(configuredDatabaseName).runCommand(new Document("ping", 1));
             mongoClient = createdClient;
             databaseName = configuredDatabaseName;
+            connectionPoolSize = clientMaxPoolSize;
             dataAccess = new MongoDBDataAccess(mongoClient, databaseName, execution);
             connected = true;
             lifecycleFailure = null;
@@ -187,6 +189,27 @@ public class MongoDBDatabase implements DocumentDatabaseProvider, ManagedDatabas
     @Override
     public DocumentDataAccess getDataAccess() {
         return dataAccess;
+    }
+
+    public int executionCapacity() {
+        if (!isConnected() || connectionPoolSize < 1) {
+            throw new IllegalStateException("[MongoDBDatabase] Mongo client not initialized!");
+        }
+        return connectionPoolSize;
+    }
+
+    /** Creates a logical provider view without creating another Mongo client. */
+    public DocumentDatabaseProvider scoped(ExecutionHandle scopedExecution) {
+        MongoClient client = mongoClient;
+        String database = databaseName;
+        if (!connected || client == null || database == null) {
+            throw new IllegalStateException("[MongoDBDatabase] Mongo client not initialized!");
+        }
+        DocumentDataAccess accessView = new MongoDBDataAccess(client, database, scopedExecution);
+        return new DocumentDatabaseProvider() {
+            @Override public boolean isConnected() { return MongoDBDatabase.this.isConnected() && !scopedExecution.isClosed(); }
+            @Override public DocumentDataAccess getDataAccess() { return accessView; }
+        };
     }
 
     private static String encodeCredential(String value) {

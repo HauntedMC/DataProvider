@@ -23,7 +23,7 @@ class DataProviderExecutionRuntimeTest {
     @Test
     void floodedPluginCannotStarveAnotherPlugin() throws Exception {
         try (DataProviderExecutionRuntime runtime = runtime(
-                new ExecutionRuntimeConfig.LaneConfig(1, 32, 1, 16, 1, 16))) {
+                new ExecutionRuntimeConfig.LaneConfig(1, 32, 16, 16))) {
             ExecutionHandle noisy = runtime.openScope("noisy", DatabaseType.MYSQL, "main");
             ExecutionHandle quiet = runtime.openScope("quiet", DatabaseType.MYSQL, "main");
             CountDownLatch release = new CountDownLatch(1);
@@ -66,8 +66,55 @@ class DataProviderExecutionRuntimeTest {
     }
 
     @Test
+    void idleWorkerCapacityIsNotReservedForAbsentPlugins() throws Exception {
+        try (DataProviderExecutionRuntime runtime = runtime(
+                new ExecutionRuntimeConfig.LaneConfig(2, 8, 8, 8))) {
+            ExecutionHandle onlyPlugin = runtime.openScope("only", DatabaseType.MYSQL, "main");
+            CountDownLatch bothStarted = new CountDownLatch(2);
+            CountDownLatch release = new CountDownLatch(1);
+
+            CompletableFuture<Void> first = AsyncTaskSupport.runAsync(onlyPlugin, "first", () -> {
+                bothStarted.countDown();
+                release.await();
+            });
+            CompletableFuture<Void> second = AsyncTaskSupport.runAsync(onlyPlugin, "second", () -> {
+                bothStarted.countDown();
+                release.await();
+            });
+
+            assertTrue(bothStarted.await(2, TimeUnit.SECONDS),
+                    "One plugin must be able to use every otherwise-idle worker.");
+            release.countDown();
+            CompletableFuture.allOf(first, second).get(2, TimeUnit.SECONDS);
+        }
+    }
+
+    @Test
+    void resourceQueueIsSharedByPluginLeases() throws Exception {
+        try (DataProviderExecutionRuntime runtime = runtime(
+                new ExecutionRuntimeConfig.LaneConfig(1, 8, 8, 1))) {
+            ExecutionHandle firstPlugin = runtime.openScope("first", DatabaseType.REDIS, "shared");
+            ExecutionHandle secondPlugin = runtime.openScope("second", DatabaseType.REDIS, "shared");
+            CountDownLatch started = new CountDownLatch(1);
+            CountDownLatch release = new CountDownLatch(1);
+            CompletableFuture<Void> active = AsyncTaskSupport.runAsync(firstPlugin, "active", () -> {
+                started.countDown();
+                release.await();
+            });
+            assertTrue(started.await(2, TimeUnit.SECONDS));
+            CompletableFuture<Void> queued = AsyncTaskSupport.runAsync(firstPlugin, "queued", () -> { });
+            CompletableFuture<Void> rejected = AsyncTaskSupport.runAsync(secondPlugin, "rejected", () -> { });
+
+            assertTrue(rejected.isCompletedExceptionally());
+            release.countDown();
+            active.get(2, TimeUnit.SECONDS);
+            queued.get(2, TimeUnit.SECONDS);
+        }
+    }
+
+    @Test
     void connectionQueueLimitReturnsExceptionalFuture() throws Exception {
-        DataProviderExecutionRuntime runtime = runtime(new ExecutionRuntimeConfig.LaneConfig(1, 8, 1, 8, 1, 1));
+        DataProviderExecutionRuntime runtime = runtime(new ExecutionRuntimeConfig.LaneConfig(1, 8, 8, 1));
         ExecutionHandle scope = runtime.openScope("plugin", DatabaseType.REDIS, "cache");
         CountDownLatch release = new CountDownLatch(1);
         CountDownLatch started = new CountDownLatch(1);
@@ -89,7 +136,7 @@ class DataProviderExecutionRuntimeTest {
 
     @Test
     void closingScopeFailsQueuedWorkAndRejectsNewWork() throws Exception {
-        DataProviderExecutionRuntime runtime = runtime(new ExecutionRuntimeConfig.LaneConfig(1, 8, 1, 8, 1, 4));
+        DataProviderExecutionRuntime runtime = runtime(new ExecutionRuntimeConfig.LaneConfig(1, 8, 8, 4));
         ExecutionHandle scope = runtime.openScope("plugin", DatabaseType.MONGODB, "documents");
         CountDownLatch release = new CountDownLatch(1);
         CountDownLatch started = new CountDownLatch(1);
@@ -116,7 +163,7 @@ class DataProviderExecutionRuntimeTest {
     @Test
     void messagingBudgetsAreHierarchicalAndMetricsTrackDrops() {
         DataProviderExecutionRuntime runtime = runtime(
-                new ExecutionRuntimeConfig.LaneConfig(1, 8, 1, 8, 1, 4), 2, 1, 1);
+                new ExecutionRuntimeConfig.LaneConfig(1, 8, 8, 4), 2, 1, 1);
         ExecutionHandle first = runtime.openScope("plugin-a", DatabaseType.REDIS_MESSAGING, "one");
         ExecutionHandle second = runtime.openScope("plugin-a", DatabaseType.REDIS_MESSAGING, "two");
         ExecutionHandle third = runtime.openScope("plugin-b", DatabaseType.REDIS_MESSAGING, "one");
@@ -137,7 +184,7 @@ class DataProviderExecutionRuntimeTest {
 
     @Test
     void lanesAreIsolatedAndShutdownRejectsNewScopes() throws Exception {
-        DataProviderExecutionRuntime runtime = runtime(new ExecutionRuntimeConfig.LaneConfig(1, 8, 1, 8, 1, 4));
+        DataProviderExecutionRuntime runtime = runtime(new ExecutionRuntimeConfig.LaneConfig(1, 8, 8, 4));
         ExecutionHandle relational = runtime.openScope("plugin", DatabaseType.MYSQL, "sql");
         ExecutionHandle redis = runtime.openScope("plugin", DatabaseType.REDIS, "redis");
         CountDownLatch release = new CountDownLatch(1);

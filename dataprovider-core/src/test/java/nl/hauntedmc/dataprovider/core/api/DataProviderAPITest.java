@@ -37,6 +37,18 @@ class DataProviderAPITest {
     }
 
     @Test
+    void ormRejectsUnmanagedDataSource() {
+        DataProviderAPI api = new DefaultDataProviderApi(mock(DataProviderHandler.class));
+
+        assertThrows(IllegalArgumentException.class, () -> api.createOrmContext(
+                "plugin",
+                mock(DataSource.class),
+                mock(nl.hauntedmc.dataprovider.logging.LoggerAdapter.class),
+                "none"
+        ));
+    }
+
+    @Test
     void registerAndLookupOptionalApisHandleNullProvider() {
         DataProviderHandler handler = mock(DataProviderHandler.class);
         when(handler.registerDatabase(DatabaseType.MYSQL, "default")).thenReturn(null);

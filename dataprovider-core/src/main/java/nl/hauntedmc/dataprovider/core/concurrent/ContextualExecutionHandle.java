@@ -70,6 +70,16 @@ public final class ContextualExecutionHandle implements ExecutionHandle {
     }
 
     @Override
+    public void reserveDeferredQueueSlot() {
+        delegate.reserveDeferredQueueSlot();
+    }
+
+    @Override
+    public void releaseDeferredQueueSlot() {
+        delegate.releaseDeferredQueueSlot();
+    }
+
+    @Override
     public void close() {
         delegate.close();
     }

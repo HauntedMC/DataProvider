@@ -32,6 +32,11 @@ public final class RedisMessagingDatabase implements MessagingDatabaseProvider, 
     private volatile RedisMessagingDataAccess bus;
     private volatile boolean connected;
     private volatile Throwable lifecycleFailure;
+    private volatile int maxSubscriptions;
+    private volatile int maxPayloadChars;
+    private volatile int maxQueuedMessagesPerHandler;
+    private volatile int handlerBatchSize;
+    private volatile int commandPoolSize;
 
     public RedisMessagingDatabase(CommentedConfigurationNode config, LoggerAdapter logger) {
         this(config, logger, ExecutionHandle.direct());
@@ -133,6 +138,11 @@ public final class RedisMessagingDatabase implements MessagingDatabaseProvider, 
             }
 
             pool = createdPool;
+            this.commandPoolSize = commandPoolSize;
+            this.maxSubscriptions = maxSubscriptions;
+            this.maxPayloadChars = maxPayloadChars;
+            this.maxQueuedMessagesPerHandler = maxQueuedMessagesPerHandler;
+            this.handlerBatchSize = handlerBatchSize;
             bus = new RedisMessagingDataAccess(
                     pool,
                     execution,
@@ -207,6 +217,45 @@ public final class RedisMessagingDatabase implements MessagingDatabaseProvider, 
     @Override
     public MessagingDataAccess getDataAccess() {
         return bus;
+    }
+
+    public int executionCapacity() {
+        if (!isConnected() || commandPoolSize < 1) {
+            throw new IllegalStateException("[RedisMessagingDatabase] Jedis pool not initialized!");
+        }
+        return commandPoolSize;
+    }
+
+    /** Number of long-lived subscription connections reserved by this physical pool. */
+    public int subscriptionCapacity() {
+        if (!isConnected() || maxSubscriptions < 1) {
+            throw new IllegalStateException("[RedisMessagingDatabase] Jedis pool not initialized!");
+        }
+        return maxSubscriptions;
+    }
+
+    /** Creates a logical provider view without creating another Redis messaging pool. */
+    public MessagingDatabaseProvider scoped(ExecutionHandle scopedExecution) {
+        JedisPool source = pool;
+        if (!connected || source == null || source.isClosed()) {
+            throw new IllegalStateException("[RedisMessagingDatabase] Jedis pool not initialized!");
+        }
+        RedisMessagingDataAccess accessView = new RedisMessagingDataAccess(
+                source,
+                scopedExecution,
+                logger,
+                new MessageRegistry(logger),
+                maxSubscriptions,
+                maxPayloadChars,
+                maxQueuedMessagesPerHandler,
+                handlerBatchSize
+        );
+        return new MessagingDatabaseProvider() {
+            @Override public boolean isConnected() {
+                return RedisMessagingDatabase.this.isConnected() && !scopedExecution.isClosed();
+            }
+            @Override public MessagingDataAccess getDataAccess() { return accessView; }
+        };
     }
 
     private static String requireNonBlank(String value, String fieldName) {

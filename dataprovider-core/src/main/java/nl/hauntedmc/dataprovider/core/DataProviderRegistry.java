@@ -548,7 +548,10 @@ class DataProviderRegistry {
                 return;
             }
             try {
-                ManagedDatabaseProvider created = factory.createDatabaseProvider(key.type(), key.connectionIdentifier());
+                ManagedDatabaseProvider created = DatabaseFactory.withCreationPlugin(
+                        key.pluginId(),
+                        () -> factory.createDatabaseProvider(key.type(), key.connectionIdentifier())
+                );
                 if (created == null) {
                     throw new IllegalStateException("Database factory returned null provider for " + key);
                 }

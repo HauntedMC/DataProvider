@@ -24,6 +24,7 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Consumer;
 import java.util.regex.Pattern;
 
@@ -191,6 +192,8 @@ final class RedisMessagingDataAccess implements MessagingDataAccess {
         private final AtomicBoolean started = new AtomicBoolean(false);
         private final AtomicBoolean closed = new AtomicBoolean(false);
         private final AtomicBoolean budgetReleased = new AtomicBoolean(false);
+        private final AtomicReference<Jedis> listenerConnection = new AtomicReference<>();
+        private final CompletableFuture<Void> terminated = new CompletableFuture<>();
         private final AtomicLong handlerSequence = new AtomicLong();
         private final Map<Long, HandlerRegistration<?>> handlers = new ConcurrentHashMap<>();
         private final boolean budgetHeld;
@@ -220,22 +223,32 @@ final class RedisMessagingDataAccess implements MessagingDataAccess {
 
         private void listen() {
             try (Jedis jedis = pool.getResource()) {
-                jedis.subscribe(pubSub, destination);
+                listenerConnection.set(jedis);
+                if (!closed.get()) {
+                    jedis.subscribe(pubSub, destination);
+                }
             } catch (Exception e) {
                 if (!closed.get()) {
                     logger.error("Error while subscribing to " + destination, e);
                 }
             } finally {
+                listenerConnection.set(null);
                 channelSubscriptions.remove(destination, this);
                 closeAndClearHandlers();
                 closed.set(true);
                 releaseBudget();
+                terminated.complete(null);
             }
         }
 
         private void start() {
             if (started.compareAndSet(false, true)) {
-                thread.start();
+                if (closed.get()) {
+                    releaseBudget();
+                    terminated.complete(null);
+                } else {
+                    thread.start();
+                }
             }
         }
 
@@ -255,21 +268,23 @@ final class RedisMessagingDataAccess implements MessagingDataAccess {
 
         private CompletableFuture<Void> unsubscribeChannel() {
             if (!closed.compareAndSet(false, true)) {
-                return CompletableFuture.completedFuture(null);
+                return terminated;
             }
             channelSubscriptions.remove(destination, this);
-            return AsyncTaskSupport.runAsync(workers, "redis.messaging.unsubscribeChannel", () -> {
-                closeAndClearHandlers();
+            closeAndClearHandlers();
+            Jedis listener = listenerConnection.get();
+            if (listener != null) {
                 try {
                     pubSub.unsubscribe();
                 } catch (Exception ignored) {
-                    // Best-effort during shutdown.
+                    // The listener's socket will still be closed by physical-resource shutdown if needed.
                 }
-                if (started.get() && Thread.currentThread() != thread) {
-                    thread.join(500L);
-                }
+            }
+            if (!started.get()) {
                 releaseBudget();
-            });
+                terminated.complete(null);
+            }
+            return terminated;
         }
 
         private void closeAndClearHandlers() {
