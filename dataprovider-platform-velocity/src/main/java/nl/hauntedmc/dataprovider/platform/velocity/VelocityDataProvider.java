@@ -25,7 +25,7 @@ import java.nio.file.Path;
 @Plugin(
         id = "dataprovider",
         name = "DataProvider",
-        version = "3.0.1",
+        version = "3.0.2",
         description = "A cross-platform data provider plugin.",
         authors = {"HauntedMC"}
 )
