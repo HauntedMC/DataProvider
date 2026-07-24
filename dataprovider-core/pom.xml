@@ -10,8 +10,8 @@
     <name>DataProvider Core</name>
 
     <properties>
-        <testcontainers.version>1.20.6</testcontainers.version>
-        <maven.failsafe.version>3.2.5</maven.failsafe.version>
+        <testcontainers.version>1.21.4</testcontainers.version>
+        <maven.failsafe.version>3.5.6</maven.failsafe.version>
     </properties>
 
     <dependencies>
