@@ -16,7 +16,7 @@ Each backend file supports named sections (`default`, `analytics`, etc.). Use th
 
 `/dataprovider reload` loads and validates `config.yml` and every file in `databases/` as one snapshot. If any file is missing, malformed or invalid, the reload is rejected and the active configuration remains unchanged.
 
-Existing database connections retain their current client and pool settings until explicitly reconnected. Shared execution lanes are runtime-owned and are created once during DataProvider startup; changes below `execution` require a DataProvider/server restart.
+Existing database connections retain their current client and pool settings until recovery requires a local rebuild. Shared execution lanes are runtime-owned and are created once during DataProvider startup; changes below `execution` require a DataProvider/server restart. Changes below `resilience` take effect immediately after a successful reload.
 
 ## Global Keys (`config.yml`)
 
@@ -74,6 +74,18 @@ execution:
       queue_capacity: 4096
       per_plugin_queue: 1024
       per_resource_queue: 256
+
+resilience:
+  workers: 2
+  queue_capacity: 128
+  health_interval_ms: 15000
+  stale_threshold_ms: 45000
+  failure_threshold: 3
+  recovery_threshold: 1
+  initial_backoff_ms: 1000
+  max_backoff_ms: 30000
+  jitter: 0.20
+  shutdown_grace_ms: 2000
 
 databases:
   mysql:
@@ -177,3 +189,14 @@ Each active Redis subscription owns a long-lived physical connection. DataProvid
 - Use `default` for single-backend setups and explicit identifiers such as `rw`, `ro` or `analytics` for multi-backend setups.
 - Never commit production credentials.
 - During full plugin shutdown, pair cleanup with `unregisterAllDatabasesForPlugin()`.
+## Resilience Runtime
+
+`config.yml` has a `resilience` section for core-owned health and recovery work. `workers` and
+`queue_capacity` bound remote probes; `health_interval_ms` and `stale_threshold_ms` control cached
+status freshness; `failure_threshold`/`recovery_threshold` control circuit transitions; and
+`initial_backoff_ms`, `max_backoff_ms`, and `jitter` control recovery pacing. Invalid values reject a
+reload atomically. Reloaded settings apply to future probes without changing endpoint credentials or
+replacing consumer handles.
+
+When repeated probes open a circuit, new operations fail immediately with `BACKEND_UNAVAILABLE` and
+`ExecutionOutcome.NOT_STARTED`. DataProvider never queues, retries, or replays application work.

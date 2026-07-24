@@ -139,6 +139,27 @@ public final class DataProviderExceptionMapper {
                         ExecutionOutcome.NOT_STARTED, Map.of()), null);
     }
 
+    /** Failure-fast mapping used when the resilience circuit has rejected work before it was submitted. */
+    public static BackendUnavailableException resilienceUnavailable(
+            DatabaseType backend, String connectionIdentifier, String operation, String circuit
+    ) {
+        return new BackendUnavailableException(
+                DataProviderErrorCode.BACKEND_UNAVAILABLE,
+                "The configured backend is temporarily unavailable.",
+                context(backend, connectionIdentifier, operation, RetryAdvice.SAFE,
+                        ExecutionOutcome.NOT_STARTED, Map.of("circuit", circuit)), null);
+    }
+
+    /** Failure mapping for an operation attempted through a provider whose lifecycle has ended. */
+    public static ProviderClosedException providerClosed(
+            DatabaseType backend, String connectionIdentifier, String operation
+    ) {
+        return new ProviderClosedException(
+                "The DataProvider provider is closed.",
+                context(backend, connectionIdentifier, operation, RetryAdvice.NEVER,
+                        ExecutionOutcome.NOT_STARTED, Map.of()), null);
+    }
+
     public static DataProviderConfigurationException configurationFailure(Throwable failure, String operationName) {
         Throwable root = unwrapAsync(failure);
         return new DataProviderConfigurationException(

@@ -1,6 +1,7 @@
 package nl.hauntedmc.dataprovider.core.config;
 
 import nl.hauntedmc.dataprovider.core.concurrent.ExecutionRuntimeConfig;
+import nl.hauntedmc.dataprovider.core.resilience.ResilienceRuntimeConfig;
 import nl.hauntedmc.dataprovider.core.security.FilePermissionHardening;
 import nl.hauntedmc.dataprovider.database.DatabaseType;
 import nl.hauntedmc.dataprovider.logging.LoggerAdapter;
@@ -84,6 +85,7 @@ public class ConfigHandler {
             String normalizedSchemaMode = normalizeSchemaMode(schemaMode);
             // Execution lanes are runtime-scoped, but every reload must still reject invalid future settings.
             ExecutionRuntimeConfig.from(candidate);
+            ResilienceRuntimeConfig.from(candidate);
             return new ConfigSnapshot(candidate, enabledTypes, normalizedSchemaMode);
         } catch (IOException e) {
             throw new IllegalStateException("Error loading config file at " + configFile, e);
@@ -130,10 +132,36 @@ public class ConfigHandler {
             changed = true;
         }
 
+        changed |= injectDefault("resilience", "workers", 2);
+        changed |= injectDefault("resilience", "queue_capacity", 128);
+        changed |= injectDefault("resilience", "health_interval_ms", 15_000);
+        changed |= injectDefault("resilience", "stale_threshold_ms", 45_000);
+        changed |= injectDefault("resilience", "failure_threshold", 3);
+        changed |= injectDefault("resilience", "recovery_threshold", 1);
+        changed |= injectDefault("resilience", "initial_backoff_ms", 1_000);
+        changed |= injectDefault("resilience", "max_backoff_ms", 30_000);
+        changed |= injectDefault("resilience", "jitter", 0.20D);
+        changed |= injectDefault("resilience", "shutdown_grace_ms", 2_000);
+
         if (changed) {
             saveConfig();
             reloadConfig();
             logger.info("Updated config.yml with missing default values.");
+        }
+    }
+
+    private boolean injectDefault(Object... pathAndValue) {
+        Object value = pathAndValue[pathAndValue.length - 1];
+        Object[] path = java.util.Arrays.copyOf(pathAndValue, pathAndValue.length - 1);
+        CommentedConfigurationNode node = snapshot.root().node(path);
+        if (!node.virtual()) {
+            return false;
+        }
+        try {
+            node.set(value);
+            return true;
+        } catch (SerializationException exception) {
+            throw new IllegalStateException("Unable to add missing resilience configuration key.", exception);
         }
     }
 

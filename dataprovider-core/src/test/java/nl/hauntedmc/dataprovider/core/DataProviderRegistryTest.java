@@ -186,7 +186,7 @@ class DataProviderRegistryTest {
     }
 
     @Test
-    void staleProviderIsRemovedDuringLookup() {
+    void locallyDisconnectedProviderRemainsRegisteredForRecovery() {
         DatabaseFactory factory = mock(DatabaseFactory.class);
         ConfigHandler configHandler = mock(ConfigHandler.class);
         when(configHandler.isDatabaseTypeEnabled(DatabaseType.MYSQL)).thenReturn(true);
@@ -201,9 +201,9 @@ class DataProviderRegistryTest {
         provider.connected = false;
 
         DatabaseProvider lookedUp = registry.getDatabase("plugin", DatabaseType.MYSQL, "default");
-        assertNull(lookedUp);
-        assertEquals(1, provider.disconnectCalls);
-        assertTrue(registry.getActiveDatabases().isEmpty());
+        assertSame(provider, lookedUp);
+        assertEquals(0, provider.disconnectCalls);
+        assertTrue(!registry.getActiveDatabases().isEmpty());
     }
 
     @Test
@@ -246,7 +246,7 @@ class DataProviderRegistryTest {
     }
 
     @Test
-    void staleProviderIsReplacedOnRegister() {
+    void temporarilyDisconnectedProviderIsReusedOnRegister() {
         DatabaseFactory factory = mock(DatabaseFactory.class);
         ConfigHandler configHandler = mock(ConfigHandler.class);
         when(configHandler.isDatabaseTypeEnabled(DatabaseType.MYSQL)).thenReturn(true);
@@ -263,9 +263,29 @@ class DataProviderRegistryTest {
         stale.connected = false;
         DatabaseProvider result = registry.registerDatabase("plugin", "feature-a", DatabaseType.MYSQL, "default");
 
-        assertSame(replacement, result);
-        assertEquals(1, stale.disconnectCalls);
-        assertEquals(1, replacement.connectCalls);
+        assertSame(stale, result);
+        assertEquals(0, stale.disconnectCalls);
+        assertEquals(0, replacement.connectCalls);
+    }
+
+    @Test
+    void sharedPhysicalDiagnosticsRetainEachLogicalProvidersLifecycle() {
+        DatabaseFactory factory = mock(DatabaseFactory.class);
+        ConfigHandler configHandler = mock(ConfigHandler.class);
+        when(configHandler.isDatabaseTypeEnabled(DatabaseType.REDIS)).thenReturn(true);
+        DataProviderRegistry registry = new DataProviderRegistry(factory, configHandler, new RecordingLoggerAdapter());
+        RecordingProvider sharedPhysicalProvider = new RecordingProvider(true);
+        when(factory.createDatabaseProvider(DatabaseType.REDIS, ConnectionIdentifier.of("cache")))
+                .thenReturn(sharedPhysicalProvider);
+
+        registry.registerDatabase("first-plugin", "feature", DatabaseType.REDIS, "cache");
+        registry.registerDatabase("second-plugin", "feature", DatabaseType.REDIS, "cache");
+        registry.unregisterDatabase("first-plugin", "feature", DatabaseType.REDIS, "cache");
+
+        ConnectionHealthSnapshot snapshot = registry.getCachedHealthSnapshots().get(
+                new DatabaseConnectionKey("second-plugin", DatabaseType.REDIS, "cache"));
+        assertEquals(ProviderLifecycleState.READY, snapshot.lifecycleState());
+        registry.shutdownAllDatabases();
     }
 
     @Test

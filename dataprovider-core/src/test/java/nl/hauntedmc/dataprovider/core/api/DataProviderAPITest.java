@@ -12,6 +12,7 @@ import nl.hauntedmc.dataprovider.database.messaging.api.EventMessage;
 import nl.hauntedmc.dataprovider.database.messaging.api.Subscription;
 import nl.hauntedmc.dataprovider.core.ManagedDatabaseProvider;
 import nl.hauntedmc.dataprovider.core.DataProviderHandler;
+import nl.hauntedmc.dataprovider.core.concurrent.ScopedDataSource;
 import org.junit.jupiter.api.Test;
 
 import javax.sql.DataSource;
@@ -46,6 +47,11 @@ class DataProviderAPITest {
                 mock(nl.hauntedmc.dataprovider.logging.LoggerAdapter.class),
                 "none"
         ));
+    }
+
+    @Test
+    void ormAcceptsBothDirectAndStableScopedDataSourceContracts() {
+        assertTrue(DefaultDataProviderApi.isManagedDataSource(mock(ScopedDataSource.class)));
     }
 
     @Test

@@ -7,6 +7,7 @@ import com.mongodb.client.MongoClients;
 import nl.hauntedmc.dataprovider.core.ManagedDatabaseProvider;
 import nl.hauntedmc.dataprovider.core.concurrent.ExecutionHandle;
 import nl.hauntedmc.dataprovider.core.database.security.TlsSupport;
+import nl.hauntedmc.dataprovider.core.logging.RateLimitedLogger;
 import nl.hauntedmc.dataprovider.database.document.DocumentDataAccess;
 import nl.hauntedmc.dataprovider.database.document.DocumentDatabaseProvider;
 import nl.hauntedmc.dataprovider.logging.LoggerAdapter;
@@ -14,6 +15,7 @@ import org.bson.Document;
 import org.spongepowered.configurate.CommentedConfigurationNode;
 
 import javax.net.ssl.SSLContext;
+import java.time.Duration;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.util.Objects;
@@ -29,6 +31,7 @@ public class MongoDBDatabase implements DocumentDatabaseProvider, ManagedDatabas
     private final CommentedConfigurationNode config;
     private final LoggerAdapter logger;
     private final ExecutionHandle execution;
+    private final RateLimitedLogger outageLogger = new RateLimitedLogger(Duration.ofSeconds(30));
     private volatile MongoClient mongoClient;
     private volatile MongoDBDataAccess dataAccess;
     private volatile boolean connected;
@@ -142,7 +145,7 @@ public class MongoDBDatabase implements DocumentDatabaseProvider, ManagedDatabas
             connected = false;
             dataAccess = null;
             databaseName = null;
-            logger.error("[MongoDBDatabase] Connection failed.", e);
+            outageLogger.error(logger, "[MongoDBDatabase] Connection failed. (" + e.getClass().getSimpleName() + ").");
         }
     }
 

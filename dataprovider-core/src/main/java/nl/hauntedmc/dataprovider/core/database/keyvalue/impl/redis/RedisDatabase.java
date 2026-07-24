@@ -3,6 +3,7 @@ package nl.hauntedmc.dataprovider.core.database.keyvalue.impl.redis;
 import nl.hauntedmc.dataprovider.core.ManagedDatabaseProvider;
 import nl.hauntedmc.dataprovider.core.concurrent.ExecutionHandle;
 import nl.hauntedmc.dataprovider.core.database.security.TlsSupport;
+import nl.hauntedmc.dataprovider.core.logging.RateLimitedLogger;
 import nl.hauntedmc.dataprovider.database.keyvalue.KeyValueDataAccess;
 import nl.hauntedmc.dataprovider.database.keyvalue.KeyValueDatabaseProvider;
 import nl.hauntedmc.dataprovider.logging.LoggerAdapter;
@@ -13,6 +14,7 @@ import redis.clients.jedis.JedisPool;
 import redis.clients.jedis.JedisPoolConfig;
 
 import javax.net.ssl.SSLContext;
+import java.time.Duration;
 import java.util.Objects;
 import java.util.regex.Pattern;
 
@@ -24,6 +26,7 @@ public class RedisDatabase implements KeyValueDatabaseProvider, ManagedDatabaseP
     private final CommentedConfigurationNode config;
     private final LoggerAdapter logger;
     private final ExecutionHandle execution;
+    private final RateLimitedLogger outageLogger = new RateLimitedLogger(Duration.ofSeconds(30));
     private volatile JedisPool jedisPool;
     private volatile RedisDataAccess dataAccess;
     private volatile boolean connected;
@@ -137,7 +140,7 @@ public class RedisDatabase implements KeyValueDatabaseProvider, ManagedDatabaseP
             }
             connected = false;
             dataAccess = null;
-            logger.error("[RedisDatabase] Connection failed.", e);
+            outageLogger.error(logger, "[RedisDatabase] Connection failed. (" + e.getClass().getSimpleName() + ").");
         }
     }
 

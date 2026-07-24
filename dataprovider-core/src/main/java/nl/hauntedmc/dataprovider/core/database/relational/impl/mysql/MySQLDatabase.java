@@ -8,10 +8,12 @@ import nl.hauntedmc.dataprovider.core.concurrent.ExecutionDataSource;
 import nl.hauntedmc.dataprovider.database.relational.RelationalDataAccess;
 import nl.hauntedmc.dataprovider.database.relational.RelationalDatabaseProvider;
 import nl.hauntedmc.dataprovider.database.relational.schema.SchemaManager;
+import nl.hauntedmc.dataprovider.core.logging.RateLimitedLogger;
 import nl.hauntedmc.dataprovider.logging.LoggerAdapter;
 import org.spongepowered.configurate.CommentedConfigurationNode;
 
 import javax.sql.DataSource;
+import java.time.Duration;
 import java.util.Locale;
 import java.util.Objects;
 import java.util.Set;
@@ -30,6 +32,7 @@ public class MySQLDatabase implements RelationalDatabaseProvider, ManagedDatabas
     private final CommentedConfigurationNode config;
     private final LoggerAdapter logger;
     private final ExecutionHandle execution;
+    private final RateLimitedLogger outageLogger = new RateLimitedLogger(Duration.ofSeconds(30));
     private volatile HikariDataSource dataSource;
     private volatile RelationalDataAccess dataAccess;
     private volatile SchemaManager schemaManager;
@@ -159,7 +162,7 @@ public class MySQLDatabase implements RelationalDatabaseProvider, ManagedDatabas
             }
             dataAccess = null;
             schemaManager = null;
-            logger.error("[MySQLDatabase] Connection failed!", e);
+            outageLogger.error(logger, "[MySQLDatabase] Connection failed! (" + e.getClass().getSimpleName() + ").");
         }
     }
 
@@ -194,8 +197,9 @@ public class MySQLDatabase implements RelationalDatabaseProvider, ManagedDatabas
         }
         try (var conn = snapshot.getConnection()) {
             return conn.isValid(2);
-        } catch (Exception e) {
-            logger.error("[MySQLDatabase] Connection validation failed.", e);
+        } catch (Exception ignored) {
+            // Probes are periodic. The resilience runtime retains the redacted failure summary
+            // and applies exponential backoff, so logging every failed validation would flood logs.
             return false;
         }
     }

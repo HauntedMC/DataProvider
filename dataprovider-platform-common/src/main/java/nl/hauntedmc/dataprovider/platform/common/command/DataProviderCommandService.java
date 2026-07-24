@@ -362,7 +362,6 @@ public final class DataProviderCommandService {
             activeDatabases = dataProviderHandler.getActiveDatabases();
             healthSnapshots = dataProviderHandler.getCachedDatabaseHealth();
             referenceCounts = dataProviderHandler.getActiveDatabaseReferenceCounts();
-            dataProviderHandler.probeDatabaseHealthAsync();
         } catch (RuntimeException exception) {
             messageSink.accept(failedOperationMessage("Failed to inspect active connections", exception));
             return null;
@@ -477,7 +476,13 @@ public final class DataProviderCommandService {
                     .append(Component.text(", health=", NamedTextColor.YELLOW))
                     .append(Component.text(status.health().remoteHealth().name().toLowerCase(Locale.ROOT), NamedTextColor.WHITE))
                     .append(Component.text(", health_age=", NamedTextColor.YELLOW))
-                    .append(Component.text(formatHealthAge(status.health()), NamedTextColor.WHITE)));
+                    .append(Component.text(formatHealthAge(status.health()), NamedTextColor.WHITE))
+                    .append(Component.text(", runtime=", NamedTextColor.YELLOW))
+                    .append(Component.text(status.health().runtimeHealth().name().toLowerCase(Locale.ROOT), NamedTextColor.WHITE))
+                    .append(Component.text(", circuit=", NamedTextColor.YELLOW))
+                    .append(Component.text(status.health().circuit().name().toLowerCase(Locale.ROOT), NamedTextColor.WHITE))
+                    .append(Component.text(", recovery_attempts=", NamedTextColor.YELLOW))
+                    .append(Component.text(status.health().reconnectAttempts(), NamedTextColor.WHITE)));
         }
     }
 

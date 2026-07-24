@@ -36,7 +36,7 @@ Public packages stay under `nl.hauntedmc.dataprovider.api` and `nl.hauntedmc.dat
 - Default API methods use plugin-level owner scope for predictable lifecycle behavior.
 - If one plugin/software process multiplexes multiple components through one wrapper class, use optional scoped lifecycle facades (`DataProviderAPI.scope(...)`) to preserve component isolation.
 - Explicit plugin-wide cleanup is available for shutdown flows that span multiple caller scopes.
-- Stale/disconnected providers are evicted from registry lookup paths.
+- Temporary local or remote outages never evict a registration; recovery is managed behind its stable logical handle.
 - Shutdown hooks unregister or stop backend resources cleanly.
 - Bounded executors are used for asynchronous backend work queues.
 - Platform runtime wrappers use a shared thread-safe lifecycle holder to prevent stale instance leaks across enable/disable cycles.
@@ -61,3 +61,16 @@ Schema mode is selected explicitly by the consuming plugin.
 - Use TLS transport options for production backends.
 - Never log credentials or secrets.
 - Keep plugin boundaries explicit and avoid cross-plugin identity leakage.
+## Runtime Resilience
+
+Registrations have two independent dimensions: lifecycle (`NEW` through `CLOSED`) and runtime health
+(`HEALTHY`, `DEGRADED`, `RECOVERING`, `UNAVAILABLE`). A core-owned bounded worker/scheduler performs
+coalesced health probes and recovery attempts per registration. A transient outage does not evict a
+registry slot. Stable logical provider, data-access, schema-manager, and messaging-access delegates
+resolve the current scoped physical view, so a locally recreated pool/client remains reachable through
+existing consumer references. Drivers/pools are allowed to recover normally before local recreation.
+
+The status command consumes cached snapshots and requests only stale refreshes; it never performs
+remote I/O on a platform thread. Snapshot diagnostics include lifecycle, health, circuit, probe time,
+failure/recovery counts, backoff, and next recovery attempt. Messaging subscription resubscription and
+endpoint migration are intentionally outside this layer.

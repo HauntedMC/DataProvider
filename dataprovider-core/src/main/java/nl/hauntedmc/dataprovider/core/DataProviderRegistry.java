@@ -1,6 +1,9 @@
 package nl.hauntedmc.dataprovider.core;
 
 import nl.hauntedmc.dataprovider.core.config.ConfigHandler;
+import nl.hauntedmc.dataprovider.core.resilience.ResilienceRuntime;
+import nl.hauntedmc.dataprovider.core.resilience.ResilienceRuntimeConfig;
+import nl.hauntedmc.dataprovider.core.resilience.ResilienceTargetAware;
 import nl.hauntedmc.dataprovider.database.DatabaseConnectionKey;
 import nl.hauntedmc.dataprovider.database.DatabaseProvider;
 import nl.hauntedmc.dataprovider.database.DatabaseType;
@@ -29,19 +32,20 @@ class DataProviderRegistry {
             "DataProvider is shut down. Obtain a fresh API instance after plugin enable.";
 
     private final ConcurrentMap<RegistrationKey, ProviderSlot> activeDatabases = new ConcurrentHashMap<>();
-    private final ConcurrentMap<RegistrationKey, ConnectionHealthSnapshot> healthSnapshots = new ConcurrentHashMap<>();
     private final ConcurrentMap<RegistrationKey, ProviderLifecycleSnapshot> lifecycleSnapshots =
             new ConcurrentHashMap<>();
     private final ReadWriteLock lifecycleLock = new ReentrantReadWriteLock(true);
     private final DatabaseFactory factory;
     private final ConfigHandler configHandler;
     private final LoggerAdapter logger;
+    private volatile ResilienceRuntime resilienceRuntime;
     private volatile boolean closed;
 
     public DataProviderRegistry(DatabaseFactory factory, ConfigHandler configHandler, LoggerAdapter logger) {
         this.factory = Objects.requireNonNull(factory, "Factory cannot be null.");
         this.configHandler = Objects.requireNonNull(configHandler, "Config handler cannot be null.");
         this.logger = Objects.requireNonNull(logger, "Logger cannot be null.");
+        this.resilienceRuntime = new ResilienceRuntime(resilienceConfig());
     }
 
     protected DatabaseProvider registerDatabase(
@@ -119,7 +123,8 @@ class DataProviderRegistry {
             detachFailedSlot(key, slot);
             Throwable failure = slot.failure();
             if (failure != null) {
-                logger.error("Failed to register database for " + pluginId.value(), failure);
+                logger.error("Failed to register database for " + pluginId.value() + " ("
+                        + failure.getClass().getSimpleName() + ").");
             }
             return null;
         }
@@ -130,7 +135,7 @@ class DataProviderRegistry {
             if (activeDatabases.get(key) != slot || slot.state() != ProviderLifecycleState.READY) {
                 return null;
             }
-            healthSnapshots.putIfAbsent(key, ConnectionHealthSnapshot.unprobed(true));
+            slot.startResilience();
         } finally {
             readLock.unlock();
         }
@@ -145,7 +150,6 @@ class DataProviderRegistry {
         readLock.lock();
         try {
             activeDatabases.remove(key, slot);
-            healthSnapshots.remove(key);
         } finally {
             readLock.unlock();
         }
@@ -180,7 +184,6 @@ class DataProviderRegistry {
     }
 
     private DatabaseProvider lookupProvider(RegistrationKey key, OwnerScopeId ownerScope) {
-        ProviderSlot stale = null;
         DatabaseProvider result = null;
         Lock readLock = lifecycleLock.readLock();
         readLock.lock();
@@ -190,32 +193,11 @@ class DataProviderRegistry {
             if (slot == null || ownerScope != null && !slot.hasReference(ownerScope)) {
                 return null;
             }
-            if (slot.state() == ProviderLifecycleState.READY) {
-                ManagedDatabaseProvider provider = slot.provider();
-                if (provider != null && safeLocalState(provider, key)) {
-                    result = provider;
-                } else if (activeDatabases.remove(key, slot)) {
-                    healthSnapshots.remove(key);
-                    stale = slot;
-                }
-            }
+            if (slot.state() == ProviderLifecycleState.READY) result = slot.provider();
         } finally {
             readLock.unlock();
         }
-        if (stale != null) {
-            stale.close("stale provider lookup");
-            logger.warn("Removed stale provider for " + key + ".");
-        }
         return result;
-    }
-
-    private boolean safeLocalState(ManagedDatabaseProvider provider, RegistrationKey key) {
-        try {
-            return provider.isLocallyConnected();
-        } catch (RuntimeException e) {
-            logger.warn("Provider local connection-state check failed for " + key + ".");
-            return false;
-        }
     }
 
     protected void unregisterDatabase(
@@ -256,7 +238,6 @@ class DataProviderRegistry {
             }
             result = slot.releaseReference(ownerScope);
             if (result.ownerHadReference() && result.totalReferences() == 0 && activeDatabases.remove(key, slot)) {
-                healthSnapshots.remove(key);
                 toClose = slot;
             }
         } finally {
@@ -289,7 +270,6 @@ class DataProviderRegistry {
                 if (key.pluginId().equals(pluginId)
                         && slot.releaseAllForOwner(ownerScope) == 0
                         && activeDatabases.remove(key, slot)) {
-                    healthSnapshots.remove(key);
                     toClose.add(slot);
                 }
             });
@@ -312,7 +292,6 @@ class DataProviderRegistry {
             ensureOpen();
             activeDatabases.forEach((key, slot) -> {
                 if (key.pluginId().equals(pluginId) && activeDatabases.remove(key, slot)) {
-                    healthSnapshots.remove(key);
                     slot.forceReleaseAll();
                     toClose.add(slot);
                 }
@@ -334,11 +313,11 @@ class DataProviderRegistry {
             closed = true;
             toClose = new ArrayList<>(activeDatabases.values());
             activeDatabases.clear();
-            healthSnapshots.clear();
         } finally {
             writeLock.unlock();
         }
         toClose.forEach(slot -> slot.close("registry shutdown"));
+        resilienceRuntime.close();
         logger.info("All database connections have been closed.");
     }
 
@@ -365,19 +344,15 @@ class DataProviderRegistry {
         try {
             ensureOpen();
             Map<DatabaseConnectionKey, ConnectionHealthSnapshot> snapshots = new HashMap<>();
+            ResilienceRuntime runtime = resilienceRuntime;
+            java.time.Duration staleThreshold = runtime.staleThreshold();
             activeDatabases.forEach((key, slot) -> {
-                boolean connected = slot.state() == ProviderLifecycleState.READY;
-                ConnectionHealthSnapshot cached = healthSnapshots.getOrDefault(
-                        key,
-                        ConnectionHealthSnapshot.unprobed(connected)
-                );
-                snapshots.put(key.toExternalKey(), new ConnectionHealthSnapshot(
-                        connected
-                                ? ConnectionHealthSnapshot.LocalConnectionState.CONNECTED
-                                : ConnectionHealthSnapshot.LocalConnectionState.DISCONNECTED,
-                        cached.remoteHealth(),
-                        cached.checkedAt()
-                ));
+                ConnectionHealthSnapshot cached = slot.healthSnapshot();
+                snapshots.put(key.toExternalKey(), cached);
+                if (cached.checkedAt() == null || java.time.Duration.between(cached.checkedAt(), Instant.now())
+                        .compareTo(staleThreshold) > 0) {
+                    slot.requestHealthRefresh();
+                }
             });
             return Map.copyOf(snapshots);
         } finally {
@@ -392,36 +367,8 @@ class DataProviderRegistry {
     }
 
     protected CompletableFuture<Void> probeRemoteHealthAsync() {
-        Map<RegistrationKey, ProviderSlot> registrations;
-        Lock readLock = lifecycleLock.readLock();
-        readLock.lock();
-        try {
-            ensureOpen();
-            registrations = new HashMap<>(activeDatabases);
-        } finally {
-            readLock.unlock();
-        }
-        return CompletableFuture.runAsync(() -> registrations.forEach((key, slot) -> {
-            ManagedDatabaseProvider provider = slot.provider();
-            if (slot.state() != ProviderLifecycleState.READY || provider == null) {
-                return;
-            }
-            ConnectionHealthSnapshot.RemoteHealth health;
-            try {
-                health = provider.probeRemoteHealth()
-                        ? ConnectionHealthSnapshot.RemoteHealth.HEALTHY
-                        : ConnectionHealthSnapshot.RemoteHealth.UNHEALTHY;
-            } catch (RuntimeException e) {
-                health = ConnectionHealthSnapshot.RemoteHealth.ERROR;
-            }
-            if (activeDatabases.get(key) == slot && slot.state() == ProviderLifecycleState.READY) {
-                healthSnapshots.put(key, new ConnectionHealthSnapshot(
-                        ConnectionHealthSnapshot.LocalConnectionState.CONNECTED,
-                        health,
-                        Instant.now()
-                ));
-            }
-        }));
+        ensureOpen();
+        return resilienceRuntime.requestAll();
     }
 
     protected Map<DatabaseConnectionKey, Integer> getActiveDatabaseReferenceCounts() {
@@ -474,6 +421,10 @@ class DataProviderRegistry {
             DatabaseConfigMap.DatabaseConfigSnapshot databaseSnapshot = factory.loadConfigurationSnapshot();
             configHandler.applySnapshot(mainSnapshot);
             factory.applyConfigurationSnapshot(databaseSnapshot);
+            ResilienceRuntime previousRuntime = resilienceRuntime;
+            previousRuntime.close();
+            resilienceRuntime = new ResilienceRuntime(resilienceConfig());
+            activeDatabases.values().forEach(ProviderSlot::restartResilience);
             logger.info("Reloaded DataProvider configuration snapshot from disk: "
                     + describeMainConfigurationChanges(previousMainSnapshot, mainSnapshot)
                     + ", changed database files=" + previousDatabaseSnapshot.changedTypeCount(databaseSnapshot)
@@ -498,6 +449,13 @@ class DataProviderRegistry {
         }
         boolean schemaModeChanged = !previous.ormSchemaMode().equals(current.ormSchemaMode());
         return "changed backends=" + changedBackendCount + ", orm.schema_mode changed=" + schemaModeChanged;
+    }
+
+    private ResilienceRuntimeConfig resilienceConfig() {
+        org.spongepowered.configurate.CommentedConfigurationNode root = configHandler.getConfig();
+        // Null is supported only for lightweight legacy mocks used by core tests. A real
+        // ConfigHandler always supplies a validated snapshot and must surface invalid settings.
+        return root == null ? ResilienceRuntimeConfig.defaults() : ResilienceRuntimeConfig.from(root);
     }
 
     protected boolean isClosed() {
@@ -533,6 +491,8 @@ class DataProviderRegistry {
         private volatile ManagedDatabaseProvider provider;
         private volatile Throwable failure;
         private volatile Instant changedAt = Instant.now();
+        private volatile ResilienceRuntime.Control resilience;
+        private volatile Object resilienceKey;
         private int referenceCount;
 
         private ProviderSlot(RegistrationKey key, OwnerScopeId initialOwnerScope) {
@@ -603,12 +563,7 @@ class DataProviderRegistry {
                     || current == ProviderLifecycleState.FAILED) {
                 return false;
             }
-            if (current == ProviderLifecycleState.READY) {
-                ManagedDatabaseProvider snapshot = provider;
-                if (snapshot == null || !safeLocalState(snapshot, key)) {
-                    return false;
-                }
-            }
+            if (current == ProviderLifecycleState.READY && provider == null) return false;
             referenceCount++;
             ownerReferenceCounts.merge(ownerScope, 1, Integer::sum);
             return true;
@@ -652,6 +607,11 @@ class DataProviderRegistry {
         private void close(String reason) {
             if (!closeStarted.compareAndSet(false, true)) {
                 return;
+            }
+            Object target = resilienceKey;
+            if (target != null) {
+                resilienceRuntime.untrack(target);
+                resilienceKey = null;
             }
             while (true) {
                 ProviderLifecycleState current = state.get();
@@ -716,6 +676,38 @@ class DataProviderRegistry {
 
         private ManagedDatabaseProvider provider() {
             return provider;
+        }
+
+        private void startResilience() {
+            if (resilience == null && provider != null) {
+                ManagedDatabaseProvider target = provider instanceof ResilienceTargetAware targetAware
+                        ? targetAware.resilienceTarget()
+                        : provider;
+                resilienceKey = target;
+                resilience = resilienceRuntime.track(
+                        target,
+                        target,
+                        this::state
+                );
+            }
+        }
+
+        private void restartResilience() {
+            resilience = null;
+            resilienceKey = null;
+            startResilience();
+        }
+
+        private ConnectionHealthSnapshot healthSnapshot() {
+            ResilienceRuntime.Control control = resilience;
+            return control == null
+                    ? ConnectionHealthSnapshot.unprobed(provider != null && provider.isLocallyConnected(), state())
+                    : control.snapshot().withLifecycleState(state());
+        }
+
+        private void requestHealthRefresh() {
+            ResilienceRuntime.Control control = resilience;
+            if (control != null) control.requestRefresh();
         }
 
         private Throwable failure() {

@@ -18,6 +18,17 @@ public interface ManagedDatabaseProvider extends DatabaseProvider {
     }
 
     /**
+     * Performs bounded recovery work on the resilience worker.  Implementations normally let their
+     * native driver/pool recover first; a local client is rebuilt only when it is no longer valid.
+     */
+    default boolean recover() {
+        if (!isLocallyConnected()) {
+            connect();
+        }
+        return probeRemoteHealth();
+    }
+
+    /**
      * Returns the most recent retained local lifecycle failure, when the provider exposes one.
      * Registry-level lifecycle failures are retained independently.
      */

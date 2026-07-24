@@ -4,12 +4,18 @@ import nl.hauntedmc.dataprovider.core.database.document.impl.mongodb.MongoDBData
 import nl.hauntedmc.dataprovider.core.database.keyvalue.impl.redis.RedisDatabase;
 import nl.hauntedmc.dataprovider.core.database.relational.impl.mysql.MySQLDatabase;
 import nl.hauntedmc.dataprovider.core.DataProvider;
+import nl.hauntedmc.dataprovider.core.ManagedDatabaseProvider;
+import nl.hauntedmc.dataprovider.api.DataProviderAPI;
+import nl.hauntedmc.dataprovider.core.api.DefaultDataProviderApi;
 import nl.hauntedmc.dataprovider.core.identity.CallerContext;
 import nl.hauntedmc.dataprovider.core.testutil.RecordingLoggerAdapter;
 import nl.hauntedmc.dataprovider.database.document.model.DocumentQuery;
 import nl.hauntedmc.dataprovider.database.document.model.DocumentUpdate;
 import nl.hauntedmc.dataprovider.database.document.model.DocumentUpdateOptions;
 import nl.hauntedmc.dataprovider.database.DatabaseType;
+import nl.hauntedmc.dataprovider.database.document.DocumentDatabaseProvider;
+import nl.hauntedmc.dataprovider.database.keyvalue.KeyValueDatabaseProvider;
+import nl.hauntedmc.dataprovider.database.relational.RelationalDatabaseProvider;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.spongepowered.configurate.CommentedConfigurationNode;
@@ -270,6 +276,123 @@ class BackendIntegrationIT {
         } finally {
             provider.shutdownAllDatabases();
         }
+    }
+
+    @Test
+    void stableLogicalReferencesWorkAfterEachBackendIsPausedAndRestored() throws Exception {
+        writeResilienceConnectionFiles();
+        DataProvider provider = new DataProvider(
+                logger(), dataDirectory, getClass().getClassLoader(),
+                () -> new CallerContext("resilience-it", getClass().getClassLoader())
+        );
+        try {
+            var handler = provider.getDataProviderHandler();
+            DataProviderAPI api = new DefaultDataProviderApi(handler);
+            RelationalDatabaseProvider mysql = (RelationalDatabaseProvider)
+                    api.registerDatabase(DatabaseType.MYSQL, "default");
+            DocumentDatabaseProvider mongo = (DocumentDatabaseProvider)
+                    api.registerDatabase(DatabaseType.MONGODB, "default");
+            KeyValueDatabaseProvider redis = (KeyValueDatabaseProvider)
+                    api.registerDatabase(DatabaseType.REDIS, "default");
+            assertFalse(mysql instanceof ManagedDatabaseProvider);
+            assertFalse(mongo instanceof ManagedDatabaseProvider);
+            assertFalse(redis instanceof ManagedDatabaseProvider);
+            ManagedDatabaseProvider mysqlRecovery = (ManagedDatabaseProvider)
+                    handler.getRegisteredDatabase(DatabaseType.MYSQL, "default");
+            ManagedDatabaseProvider mongoRecovery = (ManagedDatabaseProvider)
+                    handler.getRegisteredDatabase(DatabaseType.MONGODB, "default");
+            ManagedDatabaseProvider redisRecovery = (ManagedDatabaseProvider)
+                    handler.getRegisteredDatabase(DatabaseType.REDIS, "default");
+
+            // Keep the original facade and access references: recovery must not require callers to reacquire either.
+            var mysqlAccess = mysql.getDataAccess();
+            var mongoAccess = mongo.getDataAccess();
+            var redisAccess = redis.getDataAccess();
+            var stableDataSource = mysql.getDataSource();
+            assertTrue(stableDataSource.isWrapperFor(javax.sql.DataSource.class));
+            assertTrue(stableDataSource.unwrap(javax.sql.DataSource.class) == stableDataSource);
+            mysqlAccess.executeUpdate("CREATE TABLE resilience_it (id INT PRIMARY KEY, value VARCHAR(64))").join();
+
+            MYSQL.getDockerClient().pauseContainerCmd(MYSQL.getContainerId()).exec();
+            try {
+                assertFalse(mysqlRecovery.probeRemoteHealth());
+            } finally {
+                MYSQL.getDockerClient().unpauseContainerCmd(MYSQL.getContainerId()).exec();
+            }
+            assertTrue(mysqlRecovery.recover());
+            mysqlAccess.executeUpdate("INSERT INTO resilience_it VALUES (?, ?)", 1, "restored").join();
+            assertEquals("restored", mysqlAccess.queryForSingleValue(
+                    "SELECT value FROM resilience_it WHERE id = ?", 1).join());
+
+            MONGODB.getDockerClient().pauseContainerCmd(MONGODB.getContainerId()).exec();
+            try {
+                assertFalse(mongoRecovery.probeRemoteHealth());
+            } finally {
+                MONGODB.getDockerClient().unpauseContainerCmd(MONGODB.getContainerId()).exec();
+            }
+            assertTrue(mongoRecovery.recover());
+            mongoAccess.insertOne("resilience_it", Map.of("key", "restored")).join();
+            assertEquals("restored", mongoAccess.findOne("resilience_it",
+                    new DocumentQuery().eq("key", "restored")).join().get("key"));
+
+            REDIS.getDockerClient().pauseContainerCmd(REDIS.getContainerId()).exec();
+            try {
+                assertFalse(redisRecovery.probeRemoteHealth());
+            } finally {
+                REDIS.getDockerClient().unpauseContainerCmd(REDIS.getContainerId()).exec();
+            }
+            assertTrue(redisRecovery.recover());
+            redisAccess.setKey("resilience:stable-reference", "restored").join();
+            assertEquals("restored", redisAccess.getKey("resilience:stable-reference").join());
+        } finally {
+            provider.shutdownAllDatabases();
+        }
+    }
+
+    private void writeResilienceConnectionFiles() throws Exception {
+        Files.createDirectories(dataDirectory.resolve("databases"));
+        Files.writeString(dataDirectory.resolve("databases/mysql.yml"), """
+                default:
+                  host: %s
+                  port: %d
+                  database: %s
+                  username: %s
+                  password: %s
+                  ssl_mode: DISABLED
+                  allow_public_key_retrieval: true
+                  pool_size: 2
+                  min_idle: 0
+                  connection_timeout_ms: 2000
+                  validation_timeout_ms: 1000
+                  idle_timeout_ms: 10000
+                  max_lifetime_ms: 30000
+                  connect_timeout_ms: 1000
+                  socket_timeout_ms: 1000
+                """.formatted(MYSQL.getHost(), MYSQL.getMappedPort(3306), MYSQL.getDatabaseName(),
+                MYSQL.getUsername(), MYSQL.getPassword()));
+        Files.writeString(dataDirectory.resolve("databases/mongodb.yml"), """
+                default:
+                  host: %s
+                  port: %d
+                  database: dataprovider
+                  authSource: admin
+                  pool_size: 2
+                  connect_timeout_ms: 1000
+                  socket_timeout_ms: 1000
+                  server_selection_timeout_ms: 1000
+                """.formatted(MONGODB.getHost(), MONGODB.getMappedPort(27017)));
+        Files.writeString(dataDirectory.resolve("databases/redis.yml"), """
+                default:
+                  host: %s
+                  port: %d
+                  password: %s
+                  database: 0
+                  pool:
+                    connections: 2
+                    min_idle: 0
+                  connection_timeout_ms: 1000
+                  socket_timeout_ms: 1000
+                """.formatted(REDIS.getHost(), REDIS.getMappedPort(6379), REDIS_PASSWORD));
     }
 
     private static CommentedConfigurationNode mysqlConfig(String username, String password) throws Exception {

@@ -3,6 +3,7 @@ package nl.hauntedmc.dataprovider.core.database.messaging.impl.redis;
 import nl.hauntedmc.dataprovider.core.ManagedDatabaseProvider;
 import nl.hauntedmc.dataprovider.core.concurrent.ExecutionHandle;
 import nl.hauntedmc.dataprovider.core.database.security.TlsSupport;
+import nl.hauntedmc.dataprovider.core.logging.RateLimitedLogger;
 import nl.hauntedmc.dataprovider.database.messaging.MessagingDataAccess;
 import nl.hauntedmc.dataprovider.database.messaging.MessagingDatabaseProvider;
 import nl.hauntedmc.dataprovider.database.messaging.api.MessageRegistry;
@@ -15,6 +16,7 @@ import redis.clients.jedis.JedisPool;
 import redis.clients.jedis.JedisPoolConfig;
 
 import javax.net.ssl.SSLContext;
+import java.time.Duration;
 import java.util.Objects;
 import java.util.concurrent.TimeUnit;
 import java.util.regex.Pattern;
@@ -28,6 +30,7 @@ public final class RedisMessagingDatabase implements MessagingDatabaseProvider, 
     private final LoggerAdapter logger;
     private final MessageRegistry messageRegistry;
     private final ExecutionHandle execution;
+    private final RateLimitedLogger outageLogger = new RateLimitedLogger(Duration.ofSeconds(30));
     private volatile JedisPool pool;
     private volatile RedisMessagingDataAccess bus;
     private volatile boolean connected;
@@ -167,7 +170,7 @@ public final class RedisMessagingDatabase implements MessagingDatabaseProvider, 
             }
             pool = null;
             bus = null;
-            logger.error("[RedisMessagingDatabase] Connection failed.", e);
+            outageLogger.error(logger, "[RedisMessagingDatabase] Connection failed. (" + e.getClass().getSimpleName() + ").");
         }
     }
 

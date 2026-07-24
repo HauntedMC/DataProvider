@@ -16,7 +16,7 @@ import java.util.logging.Logger;
  * same bounded execution scope as DataAccess.  The underlying pool remains the
  * sole owner of physical connections.
  */
-public final class ExecutionDataSource implements DataSource {
+public final class ExecutionDataSource implements ScopedDataSource {
 
     private final DataSource delegate;
     private final ExecutionHandle execution;

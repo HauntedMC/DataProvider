@@ -5,6 +5,7 @@ import nl.hauntedmc.dataprovider.core.concurrent.ExecutionHandle;
 import nl.hauntedmc.dataprovider.core.concurrent.ExecutionRejectedException;
 import nl.hauntedmc.dataprovider.database.DatabaseType;
 import nl.hauntedmc.dataprovider.exception.BackendAuthenticationException;
+import nl.hauntedmc.dataprovider.exception.BackendUnavailableException;
 import nl.hauntedmc.dataprovider.exception.DataConflictException;
 import nl.hauntedmc.dataprovider.exception.DataProviderException;
 import nl.hauntedmc.dataprovider.exception.DataProviderOperationException;
@@ -63,6 +64,29 @@ class DataProviderExceptionMapperTest {
         );
         assertEquals(RetryAdvice.NEVER, closed.retryAdvice());
         assertEquals(ExecutionOutcome.NOT_STARTED, closed.executionOutcome());
+    }
+
+    @Test
+    void resilienceRejectionIsSafeBecauseNoApplicationWorkStarted() {
+        BackendUnavailableException unavailable = DataProviderExceptionMapper.resilienceUnavailable(
+                DatabaseType.REDIS, "cache", "setKey", "OPEN");
+
+        assertEquals(DatabaseType.REDIS, unavailable.backendType());
+        assertEquals("cache", unavailable.connectionIdentifier());
+        assertEquals("setKey", unavailable.operationName());
+        assertEquals(RetryAdvice.SAFE, unavailable.retryAdvice());
+        assertEquals(ExecutionOutcome.NOT_STARTED, unavailable.executionOutcome());
+        assertEquals("OPEN", unavailable.diagnostics().get("circuit"));
+    }
+
+    @Test
+    void explicitProviderClosureIsStructuredAndCannotHaveStartedWork() {
+        ProviderClosedException closed = DataProviderExceptionMapper.providerClosed(
+                DatabaseType.MONGODB, "players", "insertOne");
+
+        assertEquals(RetryAdvice.NEVER, closed.retryAdvice());
+        assertEquals(ExecutionOutcome.NOT_STARTED, closed.executionOutcome());
+        assertEquals("insertOne", closed.operationName());
     }
 
     @Test
