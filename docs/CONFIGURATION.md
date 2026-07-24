@@ -29,6 +29,14 @@ network-data:
 
 Only `ServerFeatures`, `Economy`, and `Moderation` can register `network-data`. The owner is the administrative steward and resource-key anchor; it has no greater database permissions than a plugin in `shared_with`. A non-empty `shared_with` is also the explicit opt-in to share one physical pool/client across those plugin leases. A connection with `shared_with: []` is private and its physical resource key includes the owner plugin. Connections with the same identifier never share merely because their names match.
 
+### Trust boundary
+
+`owner_plugin` and `shared_with` protect against configuration mistakes and misuse by cooperative plugins; they are not a sandbox or a security boundary against malicious installed code. Every plugin in one Paper or Velocity process shares the JVM and operating-system account. A hostile plugin can bypass classloader-derived checks by reading DataProvider files, connecting to a database directly, using reflection, or invoking an authorized plugin as a confused deputy. Install only trusted, reviewed plugins in the same process.
+
+DataProvider binds returned providers, data-access objects, schema managers, subscriptions, and JDBC data sources/objects to the plugin identity that obtained them. Each public operation revalidates that identity, preventing ordinary accidental handle transfer between plugins. This is defence against cooperative-plugin mistakes only, not a malicious-code mitigation.
+
+If you need to support genuinely untrusted modules, keep database credentials and access in a separate service or sidecar process and use authenticated RPC. JVM classloader checks cannot provide that isolation.
+
 The generated `default` sections intentionally start with a blank owner and are unusable until configured. This prevents a new installation or upgrade from accidentally exposing default credentials. Plugin ids must be changed in the files before the relevant plugin registers the connection.
 
 ## Reloading Configuration

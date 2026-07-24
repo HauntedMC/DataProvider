@@ -13,9 +13,12 @@ import nl.hauntedmc.dataprovider.exception.ProviderClosedException;
 import org.junit.jupiter.api.Test;
 
 import javax.sql.DataSource;
+import java.util.concurrent.atomic.AtomicReference;
 
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -25,6 +28,7 @@ class CurrentApiTest {
     @Test
     void strictRegistrationAndLookupDelegateToTheHandler() {
         DataProviderHandler handler = mock(DataProviderHandler.class);
+        when(handler.getCurrentPluginId()).thenReturn("plugin");
         DatabaseProvider provider = mock(DatabaseProvider.class);
         when(handler.registerDatabaseOrThrow(DatabaseType.MYSQL, "default")).thenReturn(provider);
         when(handler.requireRegisteredDatabase(DatabaseType.MYSQL, "default")).thenReturn(provider);
@@ -39,6 +43,7 @@ class CurrentApiTest {
     @Test
     void scopedStrictRegistrationDelegatesToTheHandler() {
         DataProviderHandler handler = mock(DataProviderHandler.class);
+        when(handler.getCurrentPluginId()).thenReturn("plugin");
         DatabaseProvider provider = mock(DatabaseProvider.class);
         OwnerScope ownerScope = OwnerScope.of("component.scope");
         when(handler.registerDatabaseForScopeOrThrow(ownerScope, DatabaseType.REDIS, "cache")).thenReturn(provider);
@@ -51,6 +56,7 @@ class CurrentApiTest {
     @Test
     void strictRegistrationPreservesTheBackendSpecificProviderContract() {
         DataProviderHandler handler = mock(DataProviderHandler.class);
+        when(handler.getCurrentPluginId()).thenReturn("plugin");
         RelationalDatabaseProvider provider = mock(RelationalDatabaseProvider.class);
         RelationalDataAccess dataAccess = mock(RelationalDataAccess.class);
         when(provider.getDataAccess()).thenReturn(dataAccess);
@@ -60,12 +66,59 @@ class CurrentApiTest {
                 .registerDatabaseOrThrow(DatabaseType.MYSQL, "default");
 
         assertTrue(result instanceof RelationalDatabaseProvider);
-        assertTrue(((RelationalDatabaseProvider) result).getDataAccess() == dataAccess);
+        assertTrue(((RelationalDatabaseProvider) result).getDataAccess() instanceof RelationalDataAccess);
+        verify(handler).requireCallerIdentity("plugin");
+    }
+
+    @Test
+    void providerRejectsAnOrdinarilyTransferredHandle() {
+        DataProviderHandler handler = mock(DataProviderHandler.class);
+        RelationalDatabaseProvider provider = mock(RelationalDatabaseProvider.class);
+        AtomicReference<String> currentPlugin = new AtomicReference<>("owner");
+        when(handler.getCurrentPluginId()).thenAnswer(ignored -> currentPlugin.get());
+        doAnswer(invocation -> {
+            if (!invocation.getArgument(0, String.class).equals(currentPlugin.get())) {
+                throw new SecurityException("This DataProvider handle belongs to a different plugin.");
+            }
+            return null;
+        }).when(handler).requireCallerIdentity("owner");
+        when(handler.registerDatabaseOrThrow(DatabaseType.MYSQL, "default")).thenReturn(provider);
+
+        DatabaseProvider result = new DefaultDataProviderApi(handler)
+                .registerDatabaseOrThrow(DatabaseType.MYSQL, "default");
+
+        assertDoesNotThrow(result::isConnected);
+        currentPlugin.set("other");
+        assertThrows(SecurityException.class, result::isConnected);
+    }
+
+    @Test
+    void dataSourceRejectsAnOrdinarilyTransferredHandle() throws Exception {
+        DataProviderHandler handler = mock(DataProviderHandler.class);
+        RelationalDatabaseProvider provider = mock(RelationalDatabaseProvider.class);
+        DataSource dataSource = mock(DataSource.class);
+        AtomicReference<String> currentPlugin = new AtomicReference<>("owner");
+        when(handler.getCurrentPluginId()).thenAnswer(ignored -> currentPlugin.get());
+        doAnswer(invocation -> {
+            if (!invocation.getArgument(0, String.class).equals(currentPlugin.get())) {
+                throw new SecurityException("This DataProvider handle belongs to a different plugin.");
+            }
+            return null;
+        }).when(handler).requireCallerIdentity("owner");
+        when(provider.getDataSource()).thenReturn(dataSource);
+        when(handler.registerDatabaseOrThrow(DatabaseType.MYSQL, "default")).thenReturn(provider);
+
+        DataSource boundDataSource = ((RelationalDatabaseProvider) new DefaultDataProviderApi(handler)
+                .registerDatabaseOrThrow(DatabaseType.MYSQL, "default")).getDataSource();
+
+        currentPlugin.set("other");
+        assertThrows(SecurityException.class, boundDataSource::getConnection);
     }
 
     @Test
     void closedScopeRejectsAllPublicOperationsWithStructuredFailure() {
         DataProviderHandler handler = mock(DataProviderHandler.class);
+        when(handler.getCurrentPluginId()).thenReturn("plugin");
         DataProviderScope scope = new DefaultDataProviderApi(handler).scope("component.scope");
         scope.close();
 

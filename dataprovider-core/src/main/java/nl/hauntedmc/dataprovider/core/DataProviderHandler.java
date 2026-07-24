@@ -37,7 +37,7 @@ public class DataProviderHandler {
     private final ClassLoader ownClassLoader;
     private final DataProviderExecutionRuntime executionRuntime;
 
-    public DataProviderHandler(
+    DataProviderHandler(
             Path dataPath,
             ClassLoader resourceClassLoader,
             ConfigHandler configHandler,
@@ -175,6 +175,17 @@ public class DataProviderHandler {
     public String getCurrentPluginId() {
         requireOpen("createOrmContext");
         return resolvePluginId().value();
+    }
+
+    /** Verifies that a public handle is used by the plugin that originally obtained it. */
+    public void requireCallerIdentity(String expectedPluginId) {
+        Objects.requireNonNull(expectedPluginId, "Expected plugin id cannot be null.");
+        String actualPluginId = resolvePluginId().value();
+        if (!expectedPluginId.equals(actualPluginId)) {
+            logger.error("Rejected DataProvider handle use by " + actualPluginId
+                    + "; it belongs to " + expectedPluginId + ".");
+            throw new SecurityException("This DataProvider handle belongs to a different plugin.");
+        }
     }
 
     public DatabaseProvider requireRegisteredDatabase(DatabaseType databaseType, String connectionIdentifier) {

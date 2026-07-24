@@ -2,6 +2,9 @@ package nl.hauntedmc.dataprovider.core.identity;
 
 /**
  * Resolves the active caller identity from the platform runtime.
+ *
+ * <p>This is a platform integration SPI used for cooperative-plugin access checks. It does not
+ * create a security boundary against code installed in the same JVM.</p>
  */
 public interface CallerContextResolver {
 

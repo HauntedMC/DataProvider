@@ -20,21 +20,25 @@ public final class DefaultDataProviderScope implements DataProviderScope {
 
     private final DataProviderHandler handler;
     private final OwnerScope ownerScope;
+    private final String pluginId;
     private final Object lifecycleMonitor = new Object();
     private volatile LifecycleState lifecycleState = LifecycleState.OPEN;
 
-    DefaultDataProviderScope(DataProviderHandler handler, OwnerScope ownerScope) {
+    DefaultDataProviderScope(DataProviderHandler handler, OwnerScope ownerScope, String pluginId) {
         this.handler = Objects.requireNonNull(handler, "DataProviderHandler cannot be null.");
         this.ownerScope = Objects.requireNonNull(ownerScope, "Owner scope cannot be null.");
+        this.pluginId = Objects.requireNonNull(pluginId, "Plugin id cannot be null.");
     }
 
     @Override
     public OwnerScope ownerScope() {
+        requireOwner();
         return ownerScope;
     }
 
     @Override
     public LifecycleState lifecycleState() {
+        requireOwner();
         return lifecycleState;
     }
 
@@ -42,7 +46,7 @@ public final class DefaultDataProviderScope implements DataProviderScope {
     public DatabaseProvider registerDatabaseOrThrow(DatabaseType databaseType, String connectionIdentifier) {
         synchronized (lifecycleMonitor) {
             requireStructuredOpen("scope.registerDatabase");
-            return DefaultDataProviderApi.wrapProvider(
+            return DefaultDataProviderApi.wrapProvider(handler, pluginId,
                     handler.registerDatabaseForScopeOrThrow(ownerScope, databaseType, connectionIdentifier)
             );
         }
@@ -68,7 +72,7 @@ public final class DefaultDataProviderScope implements DataProviderScope {
     public DatabaseProvider requireRegisteredDatabase(DatabaseType databaseType, String connectionIdentifier) {
         synchronized (lifecycleMonitor) {
             requireStructuredOpen("scope.requireRegisteredDatabase");
-            return DefaultDataProviderApi.wrapProvider(
+            return DefaultDataProviderApi.wrapProvider(handler, pluginId,
                     handler.requireRegisteredDatabaseForScope(ownerScope, databaseType, connectionIdentifier)
             );
         }
@@ -77,6 +81,7 @@ public final class DefaultDataProviderScope implements DataProviderScope {
     @Override
     public void close() {
         synchronized (lifecycleMonitor) {
+            requireOwner();
             if (lifecycleState != LifecycleState.OPEN) {
                 return;
             }
@@ -90,6 +95,7 @@ public final class DefaultDataProviderScope implements DataProviderScope {
     }
 
     private void requireStructuredOpen(String operation) {
+        requireOwner();
         if (lifecycleState != LifecycleState.OPEN) {
             throw new ProviderClosedException(
                     CLOSED_MESSAGE,
@@ -107,5 +113,9 @@ public final class DefaultDataProviderScope implements DataProviderScope {
 
     private void requireOpen(String operation) {
         requireStructuredOpen(operation);
+    }
+
+    private void requireOwner() {
+        handler.requireCallerIdentity(pluginId);
     }
 }
