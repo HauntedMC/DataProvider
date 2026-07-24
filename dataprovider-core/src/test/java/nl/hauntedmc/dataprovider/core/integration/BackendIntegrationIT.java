@@ -319,7 +319,7 @@ class BackendIntegrationIT {
             } finally {
                 MYSQL.getDockerClient().unpauseContainerCmd(MYSQL.getContainerId()).exec();
             }
-            assertTrue(mysqlRecovery.recover());
+            awaitRecovery(mysqlRecovery, "MySQL");
             mysqlAccess.executeUpdate("INSERT INTO resilience_it VALUES (?, ?)", 1, "restored").join();
             assertEquals("restored", mysqlAccess.queryForSingleValue(
                     "SELECT value FROM resilience_it WHERE id = ?", 1).join());
@@ -330,7 +330,7 @@ class BackendIntegrationIT {
             } finally {
                 MONGODB.getDockerClient().unpauseContainerCmd(MONGODB.getContainerId()).exec();
             }
-            assertTrue(mongoRecovery.recover());
+            awaitRecovery(mongoRecovery, "MongoDB");
             mongoAccess.insertOne("resilience_it", Map.of("key", "restored")).join();
             assertEquals("restored", mongoAccess.findOne("resilience_it",
                     new DocumentQuery().eq("key", "restored")).join().get("key"));
@@ -341,7 +341,7 @@ class BackendIntegrationIT {
             } finally {
                 REDIS.getDockerClient().unpauseContainerCmd(REDIS.getContainerId()).exec();
             }
-            assertTrue(redisRecovery.recover());
+            awaitRecovery(redisRecovery, "Redis");
             redisAccess.setKey("resilience:stable-reference", "restored").join();
             assertEquals("restored", redisAccess.getKey("resilience:stable-reference").join());
         } finally {
@@ -393,6 +393,21 @@ class BackendIntegrationIT {
                   connection_timeout_ms: 1000
                   socket_timeout_ms: 1000
                 """.formatted(REDIS.getHost(), REDIS.getMappedPort(6379), REDIS_PASSWORD));
+    }
+
+    /**
+     * Docker unpause is deterministic, but the resumed server may need a short moment before it
+     * accepts a new socket. This probes only the recovery path; no application operation is retried.
+     */
+    private static void awaitRecovery(ManagedDatabaseProvider provider, String backend) throws InterruptedException {
+        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(10);
+        do {
+            if (provider.recover()) {
+                return;
+            }
+            TimeUnit.MILLISECONDS.sleep(50);
+        } while (System.nanoTime() < deadline);
+        assertTrue(provider.recover(), backend + " did not recover within the bounded integration-test window.");
     }
 
     private static CommentedConfigurationNode mysqlConfig(String username, String password) throws Exception {
