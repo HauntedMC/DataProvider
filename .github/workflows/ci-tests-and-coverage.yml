@@ -33,6 +33,18 @@ jobs:
         id: tests
         run: mvn -U -B -ntp -Pintegration-tests verify
 
+      - name: Verify Adventure dependency alignment
+        shell: bash
+        run: |
+          mkdir -p target/ci
+          mvn -B -ntp dependency:tree \
+            '-Dincludes=net.kyori:adventure-*' \
+            | tee target/ci/adventure-dependency-tree.txt
+          if grep -E 'net\.kyori:(adventure-api|adventure-key|adventure-nbt|adventure-resource-pack|adventure-serializer-configurate4|adventure-text-logger-slf4j|adventure-text-minimessage|adventure-text-serializer-(ansi|commons|gson|gson-legacy-impl|json|json-legacy-impl|legacy|plain)):[^:]+:4\.' target/ci/adventure-dependency-tree.txt; then
+            echo "Adventure 4.x core modules remain in the resolved dependency graph." >&2
+            exit 1
+          fi
+
       - name: Print failing test reports
         if: failure() && steps.tests.outcome == 'failure'
         shell: bash
@@ -58,3 +70,4 @@ jobs:
           path: |
             **/target/surefire-reports
             **/target/failsafe-reports
+            target/ci
