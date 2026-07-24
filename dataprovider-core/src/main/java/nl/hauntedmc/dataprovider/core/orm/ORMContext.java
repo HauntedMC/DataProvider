@@ -181,15 +181,23 @@ public class ORMContext implements nl.hauntedmc.dataprovider.api.orm.ORMContext 
      * @throws RuntimeException if the transaction fails.
      */
     public <T> T runInTransaction(TransactionCallback<T> callback) {
+        Objects.requireNonNull(callback, "Transaction callback cannot be null.");
         try (Session session = openSession()) {
             Transaction tx = session.beginTransaction();
+            TransactionalSession callbackSession = TransactionalSession.create(session);
             try {
-                T result = callback.execute(session);
+                T result = callback.execute(callbackSession.view());
+                callbackSession.expire();
                 tx.commit();
                 return result;
             } catch (Exception e) {
+                callbackSession.expire();
                 rollback(tx, e);
                 throw e;
+            } catch (Error fatal) {
+                callbackSession.expire();
+                rollback(tx, fatal);
+                throw fatal;
             }
         } catch (Exception e) {
             logger.error("Transaction failed in plugin: " + plugin + " - " + e.getMessage(), e);
@@ -197,7 +205,7 @@ public class ORMContext implements nl.hauntedmc.dataprovider.api.orm.ORMContext 
         }
     }
 
-    private void rollback(Transaction tx, Exception transactionException) {
+    private void rollback(Transaction tx, Throwable transactionException) {
         try {
             if (tx.isActive()) {
                 tx.rollback();

@@ -1,6 +1,8 @@
 package nl.hauntedmc.dataprovider.core.database.relational.impl.mysql;
 
 import nl.hauntedmc.dataprovider.core.concurrent.AsyncTaskSupport;
+import nl.hauntedmc.dataprovider.core.concurrent.ConnectionStateSnapshot;
+import nl.hauntedmc.dataprovider.core.concurrent.TransactionalConnection;
 import nl.hauntedmc.dataprovider.core.exception.DataProviderExceptionMapper;
 import nl.hauntedmc.dataprovider.database.relational.RelationalDataAccess;
 import nl.hauntedmc.dataprovider.database.relational.TransactionCallback;
@@ -147,10 +149,10 @@ public class MySQLDataAccess implements RelationalDataAccess {
 
     private <T> T executeTransaction(TransactionCallback<T> callback) {
         Connection connection = null;
-        boolean oldAutoCommit;
+        ConnectionStateSnapshot originalState;
         try {
             connection = dataSource.getConnection();
-            oldAutoCommit = connection.getAutoCommit();
+            originalState = ConnectionStateSnapshot.capture(connection);
             connection.setAutoCommit(false);
         } catch (Error fatal) {
             closeAfterFatal(connection, fatal);
@@ -163,36 +165,40 @@ public class MySQLDataAccess implements RelationalDataAccess {
         }
 
         T result;
+        TransactionalConnection callbackConnection = TransactionalConnection.create(connection);
         try {
-            result = callback.doInTransaction(connection);
+            result = callback.doInTransaction(callbackConnection.view());
         } catch (Error fatal) {
-            cleanupAfterFatal(connection, oldAutoCommit, fatal);
+            callbackConnection.expire();
+            cleanupAfterFatal(connection, originalState, fatal);
             throw fatal;
         } catch (Exception callbackFailure) {
+            callbackConnection.expire();
             DataTransactionException structured = transactionFailure(
                     callbackFailure, TransactionPhase.CALLBACK, ExecutionOutcome.NOT_APPLIED);
             rollback(connection, structured);
-            restoreAutoCommit(connection, oldAutoCommit, structured, ExecutionOutcome.NOT_APPLIED);
+            restoreConnectionState(connection, originalState, structured, ExecutionOutcome.NOT_APPLIED);
             closeConnection(connection, structured, ExecutionOutcome.NOT_APPLIED);
             throw structured;
         }
+        callbackConnection.expire();
 
         try {
             connection.commit();
         } catch (Error fatal) {
-            cleanupAfterFatal(connection, oldAutoCommit, fatal);
+            cleanupAfterFatal(connection, originalState, fatal);
             throw fatal;
         } catch (Exception commitFailure) {
             DataTransactionException structured = transactionFailure(
                     commitFailure, TransactionPhase.COMMIT, ExecutionOutcome.MAY_HAVE_APPLIED);
             rollback(connection, structured);
-            restoreAutoCommit(connection, oldAutoCommit, structured, ExecutionOutcome.MAY_HAVE_APPLIED);
+            restoreConnectionState(connection, originalState, structured, ExecutionOutcome.MAY_HAVE_APPLIED);
             closeConnection(connection, structured, ExecutionOutcome.MAY_HAVE_APPLIED);
             throw structured;
         }
 
         try {
-            connection.setAutoCommit(oldAutoCommit);
+            originalState.restore(connection);
         } catch (Error fatal) {
             closeAfterFatal(connection, fatal);
             throw fatal;
@@ -235,14 +241,14 @@ public class MySQLDataAccess implements RelationalDataAccess {
         }
     }
 
-    private void restoreAutoCommit(
+    private void restoreConnectionState(
             Connection connection,
-            boolean oldAutoCommit,
+            ConnectionStateSnapshot originalState,
             DataTransactionException primary,
             ExecutionOutcome outcome
     ) {
         try {
-            connection.setAutoCommit(oldAutoCommit);
+            originalState.restore(connection);
         } catch (Error fatal) {
             fatal.addSuppressed(primary);
             closeAfterFatal(connection, fatal);
@@ -272,14 +278,14 @@ public class MySQLDataAccess implements RelationalDataAccess {
         }
     }
 
-    private static void cleanupAfterFatal(Connection connection, boolean oldAutoCommit, Error fatal) {
+    private static void cleanupAfterFatal(Connection connection, ConnectionStateSnapshot originalState, Error fatal) {
         try {
             connection.rollback();
         } catch (Throwable cleanupFailure) {
             fatal.addSuppressed(cleanupFailure);
         }
         try {
-            connection.setAutoCommit(oldAutoCommit);
+            originalState.restore(connection);
         } catch (Throwable cleanupFailure) {
             fatal.addSuppressed(cleanupFailure);
         }

@@ -25,7 +25,12 @@ public interface ORMContext extends AutoCloseable {
     }
 
     /**
-     * Work executed within a Hibernate transaction.
+     * Work executed within a callback-scoped Hibernate Session.
+     *
+     * <p>DataProvider owns transaction completion and Session lifecycle. The
+     * callback view cannot commit, roll back, close, unwrap, or outlive the
+     * transaction. JDBC work performed through the view receives the same
+     * callback-scoped Connection protection.</p>
      *
      * @param <T> result type
      */

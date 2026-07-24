@@ -10,23 +10,33 @@ import org.junit.jupiter.api.Test;
 
 import javax.sql.DataSource;
 import java.sql.Connection;
+import java.sql.DatabaseMetaData;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.ResultSetMetaData;
 import java.sql.SQLException;
+import java.sql.SQLFeatureNotSupportedException;
 import java.sql.Statement;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Properties;
 import java.util.concurrent.CompletionException;
+import java.util.concurrent.Executor;
+import java.util.concurrent.atomic.AtomicReference;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertNotSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.anyBoolean;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doNothing;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
@@ -165,6 +175,147 @@ class MySQLDataAccessTest {
         verify(connection).setAutoCommit(false);
         verify(connection).commit();
         verify(connection).setAutoCommit(true);
+        verify(connection).close();
+    }
+
+    @Test
+    void transactionConnectionExpiresImmediatelyAfterCallback() throws Exception {
+        DataSource dataSource = mock(DataSource.class);
+        Connection connection = mock(Connection.class);
+        Statement statement = mock(Statement.class);
+        DatabaseMetaData metadata = mock(DatabaseMetaData.class);
+        AtomicReference<Connection> retained = new AtomicReference<>();
+        when(dataSource.getConnection()).thenReturn(connection);
+        when(connection.getAutoCommit()).thenReturn(true);
+        when(connection.createStatement()).thenReturn(statement);
+        when(connection.getMetaData()).thenReturn(metadata);
+
+        new MySQLDataAccess(dataSource, new DirectExecutorService())
+                .executeTransactionally(callbackConnection -> {
+                    retained.set(callbackConnection);
+                    assertNotSame(connection, callbackConnection.createStatement().getConnection());
+                    assertNotSame(connection, callbackConnection.getMetaData().getConnection());
+                    return "done";
+                }).join();
+
+        assertTrue(retained.get().isClosed());
+        assertThrows(SQLException.class, retained.get()::createStatement);
+        verify(connection).commit();
+        verify(connection).close();
+    }
+
+    @Test
+    void transactionCallbackCannotControlConnectionLifecycleOrUnwrapThePoolConnection() throws Exception {
+        DataSource dataSource = mock(DataSource.class);
+        Connection connection = mock(Connection.class);
+        when(dataSource.getConnection()).thenReturn(connection);
+        when(connection.getAutoCommit()).thenReturn(true);
+
+        new MySQLDataAccess(dataSource, new DirectExecutorService())
+                .executeTransactionally(callbackConnection -> {
+                    assertThrows(SQLException.class, callbackConnection::close);
+                    assertThrows(SQLException.class, callbackConnection::close);
+                    assertThrows(SQLException.class, () -> callbackConnection.abort(Runnable::run));
+                    assertThrows(SQLException.class, callbackConnection::commit);
+                    assertThrows(SQLException.class, callbackConnection::rollback);
+                    assertThrows(SQLException.class, () -> callbackConnection.setAutoCommit(true));
+                    assertNotSame(connection, callbackConnection.unwrap(Connection.class));
+                    assertThrows(SQLException.class, () -> callbackConnection.unwrap(java.sql.SQLXML.class));
+                    return null;
+                }).join();
+
+        verify(connection, times(1)).commit();
+        verify(connection, times(1)).close();
+    }
+
+    @Test
+    void transactionRestoresMutableConnectionPropertiesBeforePoolReturn() throws Exception {
+        DataSource dataSource = mock(DataSource.class);
+        Connection connection = mock(Connection.class);
+        Map<String, Class<?>> initialTypeMap = new HashMap<>();
+        initialTypeMap.put("initial", String.class);
+        Properties initialClientInfo = new Properties();
+        initialClientInfo.setProperty("applicationName", "initial");
+        when(dataSource.getConnection()).thenReturn(connection);
+        when(connection.getAutoCommit()).thenReturn(true);
+        when(connection.isReadOnly()).thenReturn(true);
+        when(connection.getTransactionIsolation()).thenReturn(Connection.TRANSACTION_SERIALIZABLE);
+        when(connection.getCatalog()).thenReturn("initial_catalog");
+        when(connection.getTypeMap()).thenReturn(initialTypeMap);
+        when(connection.getHoldability()).thenReturn(ResultSet.HOLD_CURSORS_OVER_COMMIT);
+        when(connection.getSchema()).thenReturn("initial_schema");
+        when(connection.getNetworkTimeout()).thenReturn(123);
+        when(connection.getClientInfo()).thenReturn(initialClientInfo);
+
+        new MySQLDataAccess(dataSource, new DirectExecutorService())
+                .executeTransactionally(callbackConnection -> {
+                    callbackConnection.setReadOnly(false);
+                    callbackConnection.setTransactionIsolation(Connection.TRANSACTION_READ_UNCOMMITTED);
+                    callbackConnection.setCatalog("callback_catalog");
+                    callbackConnection.setTypeMap(Map.of("callback", Integer.class));
+                    callbackConnection.setHoldability(ResultSet.CLOSE_CURSORS_AT_COMMIT);
+                    callbackConnection.setSchema("callback_schema");
+                    callbackConnection.setNetworkTimeout(Runnable::run, 456);
+                    callbackConnection.setClientInfo("applicationName", "callback");
+                    return null;
+                }).join();
+
+        verify(connection).setReadOnly(true);
+        verify(connection).setTransactionIsolation(Connection.TRANSACTION_SERIALIZABLE);
+        verify(connection).setCatalog("initial_catalog");
+        verify(connection).setTypeMap(initialTypeMap);
+        verify(connection).setHoldability(ResultSet.HOLD_CURSORS_OVER_COMMIT);
+        verify(connection).setSchema("initial_schema");
+        verify(connection).setNetworkTimeout(any(Executor.class), eq(123));
+        verify(connection).setClientInfo("applicationName", "initial");
+        verify(connection).setAutoCommit(true);
+    }
+
+    @Test
+    void transactionAttemptsAllPropertyRestorationWhenOneRestoreFails() throws Exception {
+        DataSource dataSource = mock(DataSource.class);
+        Connection connection = mock(Connection.class);
+        when(dataSource.getConnection()).thenReturn(connection);
+        when(connection.getAutoCommit()).thenReturn(true);
+        when(connection.isReadOnly()).thenReturn(true);
+        when(connection.getSchema()).thenReturn("initial_schema");
+        doThrow(new SQLException("read-only restore failed")).when(connection).setReadOnly(true);
+
+        CompletionException completion = assertThrows(CompletionException.class,
+                () -> new MySQLDataAccess(dataSource, new DirectExecutorService())
+                        .executeTransactionally(callbackConnection -> {
+                            callbackConnection.setReadOnly(false);
+                            callbackConnection.setSchema("callback_schema");
+                            return null;
+                        }).join());
+
+        DataTransactionException transaction = assertInstanceOf(
+                DataTransactionException.class, completion.getCause());
+        assertEquals(TransactionPhase.CLEANUP, transaction.phase());
+        verify(connection).setSchema("initial_schema");
+        verify(connection).setAutoCommit(true);
+        verify(connection).close();
+    }
+
+    @Test
+    void transactionFailsClosedWhenDriverCannotExposeMutableState() throws Exception {
+        DataSource dataSource = mock(DataSource.class);
+        Connection connection = mock(Connection.class);
+        AtomicBoolean callbackCalled = new AtomicBoolean();
+        when(dataSource.getConnection()).thenReturn(connection);
+        doThrow(new SQLFeatureNotSupportedException("schema unavailable")).when(connection).getSchema();
+
+        CompletionException completion = assertThrows(CompletionException.class,
+                () -> new MySQLDataAccess(dataSource, new DirectExecutorService())
+                        .executeTransactionally(callbackConnection -> {
+                            callbackCalled.set(true);
+                            return null;
+                        }).join());
+
+        DataTransactionException transaction = assertInstanceOf(
+                DataTransactionException.class, completion.getCause());
+        assertEquals(TransactionPhase.BEGIN, transaction.phase());
+        assertFalse(callbackCalled.get());
         verify(connection).close();
     }
 
