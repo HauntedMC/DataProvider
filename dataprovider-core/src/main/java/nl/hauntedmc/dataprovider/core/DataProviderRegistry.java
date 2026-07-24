@@ -462,8 +462,7 @@ class DataProviderRegistry {
 
     private ResilienceRuntimeConfig resilienceConfig() {
         org.spongepowered.configurate.CommentedConfigurationNode root = configHandler.getConfig();
-        // Null is supported only for lightweight legacy mocks used by core tests. A real
-        // ConfigHandler always supplies a validated snapshot and must surface invalid settings.
+        // A real ConfigHandler always supplies a validated snapshot and must surface invalid settings.
         return root == null ? ResilienceRuntimeConfig.defaults() : ResilienceRuntimeConfig.from(root);
     }
 

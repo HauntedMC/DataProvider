@@ -25,13 +25,6 @@ public record ConnectionHealthSnapshot(
     public enum RuntimeHealth { HEALTHY, DEGRADED, RECOVERING, UNAVAILABLE }
     public enum Circuit { CLOSED, OPEN, HALF_OPEN }
 
-    /** Compatibility constructor retained for integrations compiled against earlier releases. */
-    public ConnectionHealthSnapshot(LocalConnectionState localState, RemoteHealth remoteHealth, Instant checkedAt) {
-        this(localState, remoteHealth, checkedAt, ProviderLifecycleState.READY,
-                remoteHealth == RemoteHealth.HEALTHY ? RuntimeHealth.HEALTHY : RuntimeHealth.DEGRADED,
-                Circuit.CLOSED, 0, 0, null, null, 0, Duration.ZERO, null);
-    }
-
     public ConnectionHealthSnapshot {
         localState = Objects.requireNonNull(localState, "localState");
         remoteHealth = Objects.requireNonNull(remoteHealth, "remoteHealth");

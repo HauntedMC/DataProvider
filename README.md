@@ -59,16 +59,9 @@ DataProviderAPI api = registration.getProvider();
 ```
 
 ```java
-Optional<RelationalDatabaseProvider> mysql = api.registerDatabaseAs(
-        DatabaseType.MYSQL,
-        "default",
-        RelationalDatabaseProvider.class
+RelationalDatabaseProvider mysql = (RelationalDatabaseProvider) api.registerDatabaseOrThrow(
+        DatabaseType.MYSQL, "default"
 );
-
-if (mysql.isEmpty() || !mysql.get().isConnected()) {
-    // Handle unavailable connection
-    return;
-}
 
 api.unregisterDatabase(DatabaseType.MYSQL, "default");
 ```

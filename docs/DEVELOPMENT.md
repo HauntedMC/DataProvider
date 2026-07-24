@@ -28,7 +28,7 @@ mvn -B package
 
 ## Coding Guidelines
 
-- Prefer typed APIs (`registerDatabaseAs`, `registerDataAccess`) over manual casting.
+- Use `registerDatabaseOrThrow` and cast only after selecting the expected backend type.
 - Keep connection registration in startup lifecycle paths, not request hot paths.
 - Handle external IO failures as non-fatal where possible and log actionable context.
 - Keep platform-specific integration (`platform.bukkit`, `platform.velocity`) thin and isolated.

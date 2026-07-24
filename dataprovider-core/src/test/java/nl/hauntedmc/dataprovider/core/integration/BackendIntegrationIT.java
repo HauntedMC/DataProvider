@@ -261,10 +261,10 @@ class BackendIntegrationIT {
         try {
             var handler = provider.getDataProviderHandler();
             var first = (nl.hauntedmc.dataprovider.database.relational.RelationalDatabaseProvider)
-                    handler.registerDatabase(DatabaseType.MYSQL, "default");
+                    handler.registerDatabaseOrThrow(DatabaseType.MYSQL, "default");
             plugin.set("second-plugin");
             var second = (nl.hauntedmc.dataprovider.database.relational.RelationalDatabaseProvider)
-                    handler.registerDatabase(DatabaseType.MYSQL, "default");
+                    handler.registerDatabaseOrThrow(DatabaseType.MYSQL, "default");
 
             first.getDataAccess().executeUpdate("CREATE TABLE shared_pool_it (id INT PRIMARY KEY)").join();
             var firstConnection = first.getDataSource().getConnection();
@@ -294,20 +294,20 @@ class BackendIntegrationIT {
             var handler = provider.getDataProviderHandler();
             DataProviderAPI api = new DefaultDataProviderApi(handler);
             RelationalDatabaseProvider mysql = (RelationalDatabaseProvider)
-                    api.registerDatabase(DatabaseType.MYSQL, "default");
+                    api.registerDatabaseOrThrow(DatabaseType.MYSQL, "default");
             DocumentDatabaseProvider mongo = (DocumentDatabaseProvider)
-                    api.registerDatabase(DatabaseType.MONGODB, "default");
+                    api.registerDatabaseOrThrow(DatabaseType.MONGODB, "default");
             KeyValueDatabaseProvider redis = (KeyValueDatabaseProvider)
-                    api.registerDatabase(DatabaseType.REDIS, "default");
+                    api.registerDatabaseOrThrow(DatabaseType.REDIS, "default");
             assertFalse(mysql instanceof ManagedDatabaseProvider);
             assertFalse(mongo instanceof ManagedDatabaseProvider);
             assertFalse(redis instanceof ManagedDatabaseProvider);
             ManagedDatabaseProvider mysqlRecovery = (ManagedDatabaseProvider)
-                    handler.getRegisteredDatabase(DatabaseType.MYSQL, "default");
+                    handler.requireRegisteredDatabase(DatabaseType.MYSQL, "default");
             ManagedDatabaseProvider mongoRecovery = (ManagedDatabaseProvider)
-                    handler.getRegisteredDatabase(DatabaseType.MONGODB, "default");
+                    handler.requireRegisteredDatabase(DatabaseType.MONGODB, "default");
             ManagedDatabaseProvider redisRecovery = (ManagedDatabaseProvider)
-                    handler.getRegisteredDatabase(DatabaseType.REDIS, "default");
+                    handler.requireRegisteredDatabase(DatabaseType.REDIS, "default");
 
             // Keep the original facade and access references: recovery must not require callers to reacquire either.
             var mysqlAccess = mysql.getDataAccess();

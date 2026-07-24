@@ -80,17 +80,6 @@ public class DataProviderHandler {
         executionRuntime = null;
     }
 
-    public DatabaseProvider registerDatabase(DatabaseType databaseType, String connectionIdentifier) {
-        requireLegacyOpen();
-        PluginId pluginId = resolvePluginId();
-        return registerLegacy(
-                pluginId,
-                OwnerScopeId.of(pluginId.value()),
-                requireType(databaseType),
-                ConnectionIdentifier.of(connectionIdentifier)
-        );
-    }
-
     public DatabaseProvider registerDatabaseOrThrow(DatabaseType databaseType, String connectionIdentifier) {
         requireStructuredOpen("registerDatabase");
         PluginId pluginId = resolvePluginId();
@@ -100,29 +89,6 @@ public class DataProviderHandler {
                 requireType(databaseType),
                 ConnectionIdentifier.of(connectionIdentifier),
                 "registerDatabase"
-        );
-    }
-
-    public DatabaseProvider registerDatabaseForScope(
-            String ownerScope,
-            DatabaseType databaseType,
-            String connectionIdentifier
-    ) {
-        return registerDatabaseForScope(OwnerScope.of(ownerScope), databaseType, connectionIdentifier);
-    }
-
-    public DatabaseProvider registerDatabaseForScope(
-            OwnerScope ownerScope,
-            DatabaseType databaseType,
-            String connectionIdentifier
-    ) {
-        requireLegacyOpen();
-        PluginId pluginId = resolvePluginId();
-        return registerLegacy(
-                pluginId,
-                OwnerScopeId.from(Objects.requireNonNull(ownerScope, "Owner scope cannot be null.")),
-                requireType(databaseType),
-                ConnectionIdentifier.of(connectionIdentifier)
         );
     }
 
@@ -143,7 +109,7 @@ public class DataProviderHandler {
     }
 
     public void unregisterDatabase(DatabaseType databaseType, String connectionIdentifier) {
-        requireLegacyOpen();
+        requireOpen("unregisterDatabase");
         PluginId pluginId = resolvePluginId();
         registry.unregisterDatabase(
                 pluginId,
@@ -162,7 +128,7 @@ public class DataProviderHandler {
             DatabaseType databaseType,
             String connectionIdentifier
     ) {
-        requireLegacyOpen();
+        requireOpen("scope.unregisterDatabase");
         registry.unregisterDatabase(
                 resolvePluginId(),
                 OwnerScopeId.from(Objects.requireNonNull(ownerScope, "Owner scope cannot be null.")),
@@ -172,7 +138,7 @@ public class DataProviderHandler {
     }
 
     public void unregisterAllDatabases() {
-        requireLegacyOpen();
+        requireOpen("unregisterAllDatabases");
         PluginId pluginId = resolvePluginId();
         registry.unregisterAllDatabases(pluginId, OwnerScopeId.of(pluginId.value()));
     }
@@ -182,7 +148,7 @@ public class DataProviderHandler {
     }
 
     public void unregisterAllDatabasesForScope(OwnerScope ownerScope) {
-        requireLegacyOpen();
+        requireOpen("scope.unregisterAllDatabases");
         registry.unregisterAllDatabases(
                 resolvePluginId(),
                 OwnerScopeId.from(Objects.requireNonNull(ownerScope, "Owner scope cannot be null."))
@@ -190,7 +156,7 @@ public class DataProviderHandler {
     }
 
     public void unregisterAllDatabasesForPlugin() {
-        requireLegacyOpen();
+        requireOpen("unregisterAllDatabasesForPlugin");
         registry.unregisterAllDatabasesForPlugin(resolvePluginId());
     }
 
@@ -205,13 +171,10 @@ public class DataProviderHandler {
         }
     }
 
-    public DatabaseProvider getRegisteredDatabase(DatabaseType databaseType, String connectionIdentifier) {
-        requireLegacyOpen();
-        return registry.getDatabase(
-                resolvePluginId(),
-                requireType(databaseType),
-                ConnectionIdentifier.of(connectionIdentifier)
-        );
+    /** Resolves the platform-derived identity for API features that need logging context. */
+    public String getCurrentPluginId() {
+        requireOpen("createOrmContext");
+        return resolvePluginId().value();
     }
 
     public DatabaseProvider requireRegisteredDatabase(DatabaseType databaseType, String connectionIdentifier) {
@@ -227,20 +190,6 @@ public class DataProviderHandler {
             return provider;
         }
         throw missingRegistration(type, identifier, "requireRegisteredDatabase");
-    }
-
-    public DatabaseProvider getRegisteredDatabaseForScope(
-            OwnerScope ownerScope,
-            DatabaseType databaseType,
-            String connectionIdentifier
-    ) {
-        requireLegacyOpen();
-        return registry.getDatabase(
-                resolvePluginId(),
-                OwnerScopeId.from(Objects.requireNonNull(ownerScope, "Owner scope cannot be null.")),
-                requireType(databaseType),
-                ConnectionIdentifier.of(connectionIdentifier)
-        );
     }
 
     public DatabaseProvider requireRegisteredDatabaseForScope(
@@ -264,43 +213,43 @@ public class DataProviderHandler {
     }
 
     public ConcurrentMap<DatabaseConnectionKey, DatabaseProvider> getActiveDatabases() {
-        requireLegacyOpen();
+        requireOpen("getActiveDatabases");
         requireInternalCaller();
         return registry.getActiveDatabases();
     }
 
     public Map<DatabaseConnectionKey, Integer> getActiveDatabaseReferenceCounts() {
-        requireLegacyOpen();
+        requireOpen("getActiveDatabaseReferenceCounts");
         requireInternalCaller();
         return registry.getActiveDatabaseReferenceCounts();
     }
 
     public Map<DatabaseConnectionKey, ConnectionHealthSnapshot> getCachedDatabaseHealth() {
-        requireLegacyOpen();
+        requireOpen("getCachedDatabaseHealth");
         requireInternalCaller();
         return registry.getCachedHealthSnapshots();
     }
 
     public CompletableFuture<Void> probeDatabaseHealthAsync() {
-        requireLegacyOpen();
+        requireOpen("probeDatabaseHealthAsync");
         requireInternalCaller();
         return registry.probeRemoteHealthAsync();
     }
 
     public Map<DatabaseType, Boolean> getConfiguredDatabaseTypeStates() {
-        requireLegacyOpen();
+        requireOpen("getConfiguredDatabaseTypeStates");
         requireInternalCaller();
         return registry.getConfiguredDatabaseTypeStates();
     }
 
     public String getConfiguredOrmSchemaMode() {
-        requireLegacyOpen();
+        requireOpen("getConfiguredOrmSchemaMode");
         requireInternalCaller();
         return registry.getOrmSchemaMode();
     }
 
     public void reloadConfiguration() {
-        requireLegacyOpen();
+        requireOpen("reloadConfiguration");
         requireInternalCaller();
         try {
             registry.reloadConfiguration();
@@ -309,7 +258,7 @@ public class DataProviderHandler {
         }
     }
 
-    private DatabaseProvider registerLegacy(
+    private DatabaseProvider register(
             PluginId pluginId,
             OwnerScopeId ownerScope,
             DatabaseType type,
@@ -328,7 +277,7 @@ public class DataProviderHandler {
             ConnectionIdentifier identifier,
             String operation
     ) {
-        DatabaseProvider provider = registerLegacy(pluginId, ownerScope, type, identifier);
+        DatabaseProvider provider = register(pluginId, ownerScope, type, identifier);
         if (provider != null) {
             return provider;
         }
@@ -382,10 +331,8 @@ public class DataProviderHandler {
         }
     }
 
-    private void requireLegacyOpen() {
-        if (registry.isClosed()) {
-            throw new IllegalStateException(CLOSED_MESSAGE);
-        }
+    private void requireOpen(String operation) {
+        requireStructuredOpen(operation);
     }
 
     private void requireStructuredOpen(String operation) {

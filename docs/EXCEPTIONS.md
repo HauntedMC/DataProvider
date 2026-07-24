@@ -2,13 +2,11 @@
 
 DataProvider exposes unchecked structured failures from `nl.hauntedmc.dataprovider.exception`.
 
-## Strict and compatibility APIs
+## Structured registration APIs
 
 Use `registerDatabaseOrThrow(...)` when startup must distinguish missing configuration, disabled backends, authentication failure, timeout, or backend unavailability. Use `requireRegisteredDatabase(...)` when absence is exceptional.
 
-The original `registerDatabase(...)` and optional helpers remain available for compatibility. They continue returning `null` or `Optional.empty()` and intentionally discard the failure category after DataProvider records registration failures internally.
-
-Legacy methods retain their previous lifecycle behavior, including `IllegalStateException` after their API or scope has closed. The new strict registration and lookup methods report closure as `ProviderClosedException`.
+Registration and lookup always use structured failures. A closed API or scope reports `ProviderClosedException`.
 
 Caller input validation remains distinct from backend failure classification. Invalid identifiers, unsupported document values, null arguments, and similar programming errors continue to use standard validation exceptions such as `IllegalArgumentException` and `NullPointerException`.
 

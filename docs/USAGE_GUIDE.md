@@ -33,7 +33,7 @@ Treat `DataProviderAPI` as runtime-scoped, not permanent.
 
 - Acquire the API during your plugin enable/start phase.
 - Do not keep API references across plugin reloads or disable/enable cycles.
-- After DataProvider shuts down, old API handles throw `IllegalStateException`; reacquire a fresh API after DataProvider is enabled again.
+- After DataProvider shuts down, API operations throw `ProviderClosedException`; reacquire a fresh API after DataProvider is enabled again.
 
 ## 1.2 Built-in admin commands
 
@@ -54,35 +54,8 @@ Permission nodes:
 Basic:
 
 ```java
-DatabaseProvider provider = api.registerDatabase(DatabaseType.MYSQL, "example");
-if (provider == null || !provider.isConnected()) {
-    // handle unavailable database
-}
-```
-
-Optional style:
-
-```java
-Optional<DatabaseProvider> provider = api.registerDatabaseOptional(DatabaseType.MYSQL, "example");
-```
-
-Typed provider style:
-
-```java
-Optional<RelationalDatabaseProvider> relational = api.registerDatabaseAs(
-        DatabaseType.MYSQL,
-        "example",
-        RelationalDatabaseProvider.class
-);
-```
-
-Typed data access style:
-
-```java
-Optional<MessagingDataAccess> redisBus = api.registerDataAccess(
-        DatabaseType.REDIS_MESSAGING,
-        "default",
-        MessagingDataAccess.class
+RelationalDatabaseProvider provider = (RelationalDatabaseProvider) api.registerDatabaseOrThrow(
+        DatabaseType.MYSQL, "example"
 );
 ```
 
@@ -96,11 +69,13 @@ Identifier guidance:
 `DatabaseProvider` is a read-only handle. Connection lifecycle stays owned by `DataProviderAPI`,
 so acquire and release connections through `registerDatabase*` / `unregisterDatabase*`.
 
-`DatabaseProvider` has helper methods to avoid raw casts:
+Cast the strict registration result to the provider interface for the requested backend:
 
 ```java
-Optional<MessagingDataAccess> bus = provider.getDataAccessOptional(MessagingDataAccess.class);
-Optional<DataSource> dataSource = provider.getDataSourceOptional();
+MessagingDatabaseProvider provider = (MessagingDatabaseProvider) api.registerDatabaseOrThrow(
+        DatabaseType.REDIS_MESSAGING, "example"
+);
+MessagingDataAccess bus = provider.getDataAccess();
 ```
 
 ## 4. Release connections
@@ -131,7 +106,6 @@ For relational providers:
 
 ```java
 ORMContext orm = api.createOrmContext(
-        "my-plugin",
         dataSource,
         loggerAdapter,
         "validate",
@@ -140,6 +114,7 @@ ORMContext orm = api.createOrmContext(
 ```
 
 Pass the `DataSource` returned by the registered relational provider. DataProvider rejects unmanaged data sources here so ORM connection acquisition stays within the same bounded resource admission policy as JDBC and `RelationalDataAccess`.
+The ORM logging identity is always derived from the calling plugin; it cannot be supplied by the consumer.
 
 `ORMContext` is part of the public API. Add only `dataprovider-api` as `compileOnly`, import
 `nl.hauntedmc.dataprovider.api.orm.ORMContext`, and create contexts with

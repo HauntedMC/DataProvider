@@ -39,16 +39,6 @@ public final class DefaultDataProviderScope implements DataProviderScope {
     }
 
     @Override
-    public DatabaseProvider registerDatabase(DatabaseType databaseType, String connectionIdentifier) {
-        synchronized (lifecycleMonitor) {
-            requireLegacyOpen();
-            return DefaultDataProviderApi.wrapProvider(
-                    handler.registerDatabaseForScope(ownerScope, databaseType, connectionIdentifier)
-            );
-        }
-    }
-
-    @Override
     public DatabaseProvider registerDatabaseOrThrow(DatabaseType databaseType, String connectionIdentifier) {
         synchronized (lifecycleMonitor) {
             requireStructuredOpen("scope.registerDatabase");
@@ -61,7 +51,7 @@ public final class DefaultDataProviderScope implements DataProviderScope {
     @Override
     public void unregisterDatabase(DatabaseType databaseType, String connectionIdentifier) {
         synchronized (lifecycleMonitor) {
-            requireLegacyOpen();
+            requireOpen("scope.unregisterDatabase");
             handler.unregisterDatabaseForScope(ownerScope, databaseType, connectionIdentifier);
         }
     }
@@ -69,18 +59,8 @@ public final class DefaultDataProviderScope implements DataProviderScope {
     @Override
     public void unregisterAllDatabases() {
         synchronized (lifecycleMonitor) {
-            requireLegacyOpen();
+            requireOpen("scope.unregisterAllDatabases");
             handler.unregisterAllDatabasesForScope(ownerScope);
-        }
-    }
-
-    @Override
-    public DatabaseProvider getRegisteredDatabase(DatabaseType databaseType, String connectionIdentifier) {
-        synchronized (lifecycleMonitor) {
-            requireLegacyOpen();
-            return DefaultDataProviderApi.wrapProvider(
-                    handler.getRegisteredDatabaseForScope(ownerScope, databaseType, connectionIdentifier)
-            );
         }
     }
 
@@ -109,12 +89,6 @@ public final class DefaultDataProviderScope implements DataProviderScope {
         }
     }
 
-    private void requireLegacyOpen() {
-        if (lifecycleState != LifecycleState.OPEN) {
-            throw new IllegalStateException(CLOSED_MESSAGE);
-        }
-    }
-
     private void requireStructuredOpen(String operation) {
         if (lifecycleState != LifecycleState.OPEN) {
             throw new ProviderClosedException(
@@ -129,5 +103,9 @@ public final class DefaultDataProviderScope implements DataProviderScope {
                     null
             );
         }
+    }
+
+    private void requireOpen(String operation) {
+        requireStructuredOpen(operation);
     }
 }

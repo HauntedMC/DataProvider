@@ -33,7 +33,6 @@ public final class DefaultDataProviderApi implements DataProviderAPI {
 
     @Override
     public ORMContext createOrmContext(
-            String pluginName,
             DataSource dataSource,
             nl.hauntedmc.dataprovider.logging.LoggerAdapter logger,
             String schemaMode,
@@ -45,17 +44,12 @@ public final class DefaultDataProviderApi implements DataProviderAPI {
             );
         }
         return new nl.hauntedmc.dataprovider.core.orm.ORMContext(
-                pluginName, dataSource, logger, schemaMode, entityClasses);
+                handler.getCurrentPluginId(), dataSource, logger, schemaMode, entityClasses);
     }
 
     /** Package-visible for API-path regression tests. */
     static boolean isManagedDataSource(DataSource dataSource) {
         return dataSource instanceof ScopedDataSource;
-    }
-
-    @Override
-    public DatabaseProvider registerDatabase(DatabaseType databaseType, String connectionIdentifier) {
-        return wrapProvider(handler.registerDatabase(databaseType, connectionIdentifier));
     }
 
     @Override
@@ -81,11 +75,6 @@ public final class DefaultDataProviderApi implements DataProviderAPI {
     @Override
     public void unregisterAllDatabasesForPlugin() {
         handler.unregisterAllDatabasesForPlugin();
-    }
-
-    @Override
-    public DatabaseProvider getRegisteredDatabase(DatabaseType databaseType, String connectionIdentifier) {
-        return wrapProvider(handler.getRegisteredDatabase(databaseType, connectionIdentifier));
     }
 
     @Override

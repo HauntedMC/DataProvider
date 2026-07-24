@@ -1,8 +1,7 @@
 import nl.hauntedmc.dataprovider.api.DataProviderAPI;
 import nl.hauntedmc.dataprovider.database.DatabaseType;
 import nl.hauntedmc.dataprovider.database.keyvalue.KeyValueDataAccess;
-
-import java.util.Optional;
+import nl.hauntedmc.dataprovider.database.keyvalue.KeyValueDatabaseProvider;
 
 /**
  * Example: Redis key-value access.
@@ -12,12 +11,10 @@ public final class RedisKeyValueExample {
     private KeyValueDataAccess keyValue;
 
     public void onEnable(DataProviderAPI api) {
-        Optional<KeyValueDataAccess> optAccess = api.registerDataAccess(
-                DatabaseType.REDIS,
-                "default",
-                KeyValueDataAccess.class
+        KeyValueDatabaseProvider provider = (KeyValueDatabaseProvider) api.registerDatabaseOrThrow(
+                DatabaseType.REDIS, "default"
         );
-        keyValue = optAccess.orElse(null);
+        keyValue = provider.getDataAccess();
     }
 
     public void cachePlayerLanguage(String playerUuid, String languageCode) {

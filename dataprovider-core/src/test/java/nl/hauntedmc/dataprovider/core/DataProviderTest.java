@@ -6,6 +6,7 @@ import nl.hauntedmc.dataprovider.database.DatabaseType;
 import nl.hauntedmc.dataprovider.core.identity.CallerContext;
 import nl.hauntedmc.dataprovider.core.identity.CallerContextResolver;
 import nl.hauntedmc.dataprovider.core.testutil.RecordingLoggerAdapter;
+import nl.hauntedmc.dataprovider.exception.ProviderClosedException;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -79,15 +80,18 @@ class DataProviderTest {
 
         firstProvider.shutdownAllDatabases();
 
-        IllegalStateException staleFailure = assertThrows(
-                IllegalStateException.class,
-                () -> staleApi.registerDatabase(DatabaseType.MYSQL, "default")
+        ProviderClosedException staleFailure = assertThrows(
+                ProviderClosedException.class,
+                () -> staleApi.registerDatabaseOrThrow(DatabaseType.MYSQL, "default")
         );
         assertTrue(staleFailure.getMessage().contains("no longer available"));
 
         DataProvider secondProvider = new DataProvider(logger, tempDir.resolve("data-second"), classLoader, resolver);
         DataProviderAPI freshApi = new DefaultDataProviderApi(secondProvider.getDataProviderHandler());
-        assertNull(freshApi.getRegisteredDatabase(DatabaseType.MYSQL, "default"));
+        assertThrows(
+                nl.hauntedmc.dataprovider.exception.DataProviderRegistrationException.class,
+                () -> freshApi.requireRegisteredDatabase(DatabaseType.MYSQL, "default")
+        );
         secondProvider.shutdownAllDatabases();
     }
 }

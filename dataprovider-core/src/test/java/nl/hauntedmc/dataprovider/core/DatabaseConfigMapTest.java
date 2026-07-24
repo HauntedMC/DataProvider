@@ -61,10 +61,10 @@ class DatabaseConfigMapTest {
     }
 
     @Test
-    void doesNotFallbackToLegacyIdentifiers() throws IOException {
+    void rejectsUnknownConnectionIdentifiers() throws IOException {
         writeMySqlConfig("""
                 default_credentials:
-                  host: legacy-host
+                  host: old-host
                 """);
 
         RecordingLoggerAdapter logger = new RecordingLoggerAdapter();

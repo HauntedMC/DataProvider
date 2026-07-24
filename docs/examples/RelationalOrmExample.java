@@ -4,7 +4,6 @@ import nl.hauntedmc.dataprovider.database.DatabaseType;
 import nl.hauntedmc.dataprovider.database.relational.RelationalDatabaseProvider;
 import nl.hauntedmc.dataprovider.logging.LoggerAdapter;
 
-import java.util.Optional;
 
 /**
  * Example: MySQL registration + ORMContext creation.
@@ -14,20 +13,12 @@ public final class RelationalOrmExample {
     private ORMContext ormContext;
 
     public void onEnable(DataProviderAPI api, LoggerAdapter logger) {
-        Optional<RelationalDatabaseProvider> relational = api.registerDatabaseAs(
-                DatabaseType.MYSQL,
-                "example",
-                RelationalDatabaseProvider.class
+        RelationalDatabaseProvider relational = (RelationalDatabaseProvider) api.registerDatabaseOrThrow(
+                DatabaseType.MYSQL, "example"
         );
 
-        if (relational.isEmpty()) {
-            logger.error("Could not initialize MySQL connection 'example'.");
-            return;
-        }
-
         ormContext = api.createOrmContext(
-                "my-plugin",
-                relational.get().getDataSource(),
+                relational.getDataSource(),
                 logger,
                 "validate",
                 PlayerEntity.class,

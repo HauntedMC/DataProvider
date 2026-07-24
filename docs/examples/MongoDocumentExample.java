@@ -1,10 +1,10 @@
 import nl.hauntedmc.dataprovider.api.DataProviderAPI;
 import nl.hauntedmc.dataprovider.database.DatabaseType;
 import nl.hauntedmc.dataprovider.database.document.DocumentDataAccess;
+import nl.hauntedmc.dataprovider.database.document.DocumentDatabaseProvider;
 import nl.hauntedmc.dataprovider.database.document.model.DocumentQuery;
 
 import java.util.Map;
-import java.util.Optional;
 
 /**
  * Example: MongoDB document operations.
@@ -14,12 +14,10 @@ public final class MongoDocumentExample {
     private DocumentDataAccess documents;
 
     public void onEnable(DataProviderAPI api) {
-        Optional<DocumentDataAccess> optDocuments = api.registerDataAccess(
-                DatabaseType.MONGODB,
-                "default",
-                DocumentDataAccess.class
+        DocumentDatabaseProvider provider = (DocumentDatabaseProvider) api.registerDatabaseOrThrow(
+                DatabaseType.MONGODB, "default"
         );
-        documents = optDocuments.orElse(null);
+        documents = provider.getDataAccess();
     }
 
     public void createProfile(String uuid, String name) {

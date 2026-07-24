@@ -16,7 +16,7 @@ Public packages stay under `nl.hauntedmc.dataprovider.api` and `nl.hauntedmc.dat
 
 ## Registration Model
 
-1. Plugin asks for a backend registration (`registerDatabase*` / `registerDataAccess`).
+1. Plugin asks for a backend registration through `registerDatabaseOrThrow`.
 2. Caller identity is resolved from runtime plugin context.
 3. Config section is resolved by backend type + identifier.
 4. Registry returns an existing live provider or creates one through `DatabaseFactory`.

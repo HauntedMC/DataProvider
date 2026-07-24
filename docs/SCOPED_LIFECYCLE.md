@@ -21,21 +21,19 @@ Scope names must be stable, non-blank, and use safe identifier characters.
 ## Register Through the Scope
 
 ```java
-Optional<MessagingDataAccess> bus = chatScope.registerDataAccess(
-        DatabaseType.REDIS_MESSAGING,
-        "hauntedmc",
-        MessagingDataAccess.class
+MessagingDatabaseProvider provider = (MessagingDatabaseProvider) chatScope.registerDatabaseOrThrow(
+        DatabaseType.REDIS_MESSAGING, "hauntedmc"
 );
+MessagingDataAccess bus = provider.getDataAccess();
 ```
 
 Look up a provider that is owned by the same scope:
 
 ```java
-Optional<MessagingDataAccess> bus = chatScope.getRegisteredDataAccess(
-        DatabaseType.REDIS_MESSAGING,
-        "hauntedmc",
-        MessagingDataAccess.class
+MessagingDatabaseProvider provider = (MessagingDatabaseProvider) chatScope.requireRegisteredDatabase(
+        DatabaseType.REDIS_MESSAGING, "hauntedmc"
 );
+MessagingDataAccess bus = provider.getDataAccess();
 ```
 
 Scoped lookups do not expose a connection that is registered only by another owner scope.
@@ -50,7 +48,7 @@ chatScope.unregisterAllDatabases();
 
 ```java
 try (DataProviderScope tempScope = api.scope("component.temp")) {
-    tempScope.registerDatabase(DatabaseType.MYSQL, "default");
+    tempScope.registerDatabaseOrThrow(DatabaseType.MYSQL, "default");
 }
 ```
 

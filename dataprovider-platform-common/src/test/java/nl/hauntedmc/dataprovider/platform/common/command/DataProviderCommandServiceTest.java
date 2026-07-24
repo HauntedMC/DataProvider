@@ -7,8 +7,10 @@ import nl.hauntedmc.dataprovider.database.DatabaseProvider;
 import nl.hauntedmc.dataprovider.database.DatabaseType;
 import nl.hauntedmc.dataprovider.core.ConnectionHealthSnapshot;
 import nl.hauntedmc.dataprovider.core.DataProviderHandler;
+import nl.hauntedmc.dataprovider.core.ProviderLifecycleState;
 import org.junit.jupiter.api.Test;
 
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -254,6 +256,16 @@ class DataProviderCommandServiceTest {
         return new ConnectionHealthSnapshot(
                 ConnectionHealthSnapshot.LocalConnectionState.CONNECTED,
                 ConnectionHealthSnapshot.RemoteHealth.HEALTHY,
+                null,
+                ProviderLifecycleState.READY,
+                ConnectionHealthSnapshot.RuntimeHealth.HEALTHY,
+                ConnectionHealthSnapshot.Circuit.CLOSED,
+                0,
+                0,
+                null,
+                null,
+                0,
+                Duration.ZERO,
                 null
         );
     }
@@ -262,6 +274,16 @@ class DataProviderCommandServiceTest {
         return new ConnectionHealthSnapshot(
                 ConnectionHealthSnapshot.LocalConnectionState.DISCONNECTED,
                 ConnectionHealthSnapshot.RemoteHealth.UNHEALTHY,
+                null,
+                ProviderLifecycleState.READY,
+                ConnectionHealthSnapshot.RuntimeHealth.UNAVAILABLE,
+                ConnectionHealthSnapshot.Circuit.OPEN,
+                0,
+                0,
+                null,
+                null,
+                0,
+                Duration.ZERO,
                 null
         );
     }

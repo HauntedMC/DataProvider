@@ -1,10 +1,9 @@
 import nl.hauntedmc.dataprovider.api.DataProviderAPI;
 import nl.hauntedmc.dataprovider.database.DatabaseType;
 import nl.hauntedmc.dataprovider.database.messaging.MessagingDataAccess;
+import nl.hauntedmc.dataprovider.database.messaging.MessagingDatabaseProvider;
 import nl.hauntedmc.dataprovider.database.messaging.api.AbstractEventMessage;
 import nl.hauntedmc.dataprovider.database.messaging.api.Subscription;
-
-import java.util.Optional;
 
 /**
  * Example: Redis messaging publish/subscribe workflow.
@@ -15,16 +14,10 @@ public final class RedisMessagingExample {
     private Subscription subscription;
 
     public void onEnable(DataProviderAPI api) {
-        Optional<MessagingDataAccess> optBus = api.registerDataAccess(
-                DatabaseType.REDIS_MESSAGING,
-                "default",
-                MessagingDataAccess.class
+        MessagingDatabaseProvider provider = (MessagingDatabaseProvider) api.registerDatabaseOrThrow(
+                DatabaseType.REDIS_MESSAGING, "default"
         );
-
-        if (optBus.isEmpty()) {
-            return;
-        }
-        bus = optBus.get();
+        bus = provider.getDataAccess();
 
         subscription = bus.subscribe("proxy.staffchat.message", StaffChatMessage.class, msg -> {
             System.out.println("[" + msg.getServer() + "] " + msg.getSender() + ": " + msg.getMessage());

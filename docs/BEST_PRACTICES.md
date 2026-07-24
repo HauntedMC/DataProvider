@@ -2,16 +2,16 @@
 
 ## API usage
 
-- Prefer `registerDatabaseOptional`, `registerDatabaseAs`, and `registerDataAccess` over raw nullable APIs.
+- Use `registerDatabaseOrThrow` and handle its structured failures at the plugin boundary.
 - Treat returned `DatabaseProvider` instances as read-only handles; lifecycle is managed through the API.
-- Prefer `getDataAccessOptional(...)` instead of manual casts.
+- Cast the strict registration result to the backend-specific provider interface, then use its typed `getDataAccess()` method.
 - Treat database registration as startup wiring, not ad-hoc runtime behavior in hot paths.
 
 ## Lifecycle
 
 - Register once during plugin/software startup.
 - Unregister on disable.
-- `registerDatabase(...)` / `unregisterAllDatabases()` use the default plugin-level owner scope.
+- `registerDatabaseOrThrow(...)` / `unregisterAllDatabases()` use the default plugin-level owner scope.
 - For full plugin/software shutdown across multiple scopes/classes, use `unregisterAllDatabasesForPlugin()`.
 
 ## Optional Scoped Ownership
