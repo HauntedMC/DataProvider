@@ -166,6 +166,7 @@ class DatabaseFactory {
         private int leases = 1;
         private boolean retired;
         private long generation;
+        private int consecutiveRecoveryFailures;
         private ResourceAdmission admission;
         private volatile java.util.function.BooleanSupplier resilienceGate = () -> true;
         private volatile java.util.function.Supplier<ConnectionHealthSnapshot> resilienceDiagnostics =
@@ -223,12 +224,17 @@ class DatabaseFactory {
 
         @Override public boolean recover() {
             boolean locallyInvalid;
+            boolean recreate;
             synchronized (this) {
                 if (retired) {
                     return false;
                 }
                 locallyInvalid = !provider.isLocallyConnected();
-                if (locallyInvalid) {
+                // Native pools recover ordinary transport interruptions themselves. A second
+                // failed recovery proves that a locally "connected" pool is no longer usable,
+                // so retire it before probing again rather than remaining stuck indefinitely.
+                recreate = locallyInvalid || consecutiveRecoveryFailures > 0;
+                if (recreate) {
                     // A locally invalid driver/pool cannot be trusted to release its retired resources
                     // when connect() is called again. Close it once before creating a replacement.
                     provider.disconnect();
@@ -241,11 +247,17 @@ class DatabaseFactory {
             // Do not hold the resource monitor during remote I/O: a CLOSED circuit still permits
             // ordinary work, and it must not queue behind a slow health validation.
             boolean healthy = provider.probeRemoteHealth();
-            if (healthy && locallyInvalid && provider.isLocallyConnected()) {
-                synchronized (this) {
-                    if (!retired) {
+            synchronized (this) {
+                if (retired) {
+                    return false;
+                }
+                if (healthy && provider.isLocallyConnected()) {
+                    if (recreate) {
                         generation++;
                     }
+                    consecutiveRecoveryFailures = 0;
+                } else {
+                    consecutiveRecoveryFailures++;
                 }
             }
             return healthy;

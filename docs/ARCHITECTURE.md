@@ -65,10 +65,11 @@ Schema mode is selected explicitly by the consuming plugin.
 
 Registrations have two independent dimensions: lifecycle (`NEW` through `CLOSED`) and runtime health
 (`HEALTHY`, `DEGRADED`, `RECOVERING`, `UNAVAILABLE`). A core-owned bounded worker/scheduler performs
-coalesced health probes and recovery attempts per registration. A transient outage does not evict a
+coalesced health probes and recovery attempts per physical backend resource. A transient outage does not evict a
 registry slot. Stable logical provider, data-access, schema-manager, and messaging-access delegates
 resolve the current scoped physical view, so a locally recreated pool/client remains reachable through
-existing consumer references. Drivers/pools are allowed to recover normally before local recreation.
+existing consumer references. Drivers/pools are allowed to recover normally before local recreation;
+a repeated failed recovery recreates a still-locally-open client or pool that has become unusable.
 
 The status command consumes cached snapshots and requests only stale refreshes; it never performs
 remote I/O on a platform thread. Snapshot diagnostics include lifecycle, health, circuit, probe time,
