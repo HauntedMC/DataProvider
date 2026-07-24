@@ -58,3 +58,4 @@ jobs:
           path: |
             **/target/surefire-reports
             **/target/failsafe-reports
+            target/ci
