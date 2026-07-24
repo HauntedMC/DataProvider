@@ -26,6 +26,11 @@ public final class BukkitCallerContextResolver implements CallerContextResolver 
         return resolveCaller(StackCallerClassLoaderResolver.resolveExternalCallerChain(ownClassLoader));
     }
 
+    @Override
+    public boolean isKnownPlugin(String pluginId) {
+        return pluginId != null && Bukkit.getPluginManager().getPlugin(pluginId) != null;
+    }
+
     CallerContext resolveCaller(List<ClassLoader> callerChain) {
         return PluginCallerChainResolver.resolveNearestMappedCaller(
                 callerChain,

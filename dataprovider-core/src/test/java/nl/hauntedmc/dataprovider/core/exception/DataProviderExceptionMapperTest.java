@@ -3,10 +3,12 @@ package nl.hauntedmc.dataprovider.core.exception;
 import nl.hauntedmc.dataprovider.core.concurrent.ContextualExecutionHandle;
 import nl.hauntedmc.dataprovider.core.concurrent.ExecutionHandle;
 import nl.hauntedmc.dataprovider.core.concurrent.ExecutionRejectedException;
+import nl.hauntedmc.dataprovider.core.ConnectionAccessDeniedException;
 import nl.hauntedmc.dataprovider.database.DatabaseType;
 import nl.hauntedmc.dataprovider.exception.BackendAuthenticationException;
 import nl.hauntedmc.dataprovider.exception.BackendUnavailableException;
 import nl.hauntedmc.dataprovider.exception.DataConflictException;
+import nl.hauntedmc.dataprovider.exception.DataProviderAccessDeniedException;
 import nl.hauntedmc.dataprovider.exception.DataProviderException;
 import nl.hauntedmc.dataprovider.exception.DataProviderOperationException;
 import nl.hauntedmc.dataprovider.exception.DataProviderTimeoutException;
@@ -151,5 +153,23 @@ class DataProviderExceptionMapperTest {
         assertEquals("42000", failure.diagnostics().get("sqlState"));
         assertFalse(failure.getMessage().contains("secret"));
         assertFalse(failure.getCause().getMessage().contains("secret"));
+    }
+
+    @Test
+    void registrationAccessDenialIsStructuredWithoutDisclosingPolicyDetails() {
+        DataProviderAccessDeniedException denied = assertInstanceOf(
+                DataProviderAccessDeniedException.class,
+                DataProviderExceptionMapper.registrationFailure(
+                        new ConnectionAccessDeniedException("owner=ServerFeatures"),
+                        DatabaseType.MYSQL,
+                        "network-data",
+                        "registerDatabase"
+                )
+        );
+
+        assertEquals(RetryAdvice.NEVER, denied.retryAdvice());
+        assertEquals(ExecutionOutcome.NOT_STARTED, denied.executionOutcome());
+        assertFalse(denied.getMessage().contains("ServerFeatures"));
+        assertFalse(denied.diagnostics().containsValue("ServerFeatures"));
     }
 }

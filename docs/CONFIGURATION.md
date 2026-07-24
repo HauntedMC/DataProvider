@@ -10,13 +10,32 @@ DataProvider writes defaults on first startup inside the plugin data folder.
 - `databases/redis.yml`
 - `databases/redis_messaging.yml`
 
-Each backend file supports named sections (`default`, `analytics`, etc.). Use the same identifier in code when calling `registerDatabase*`.
+Each backend file supports named sections (`default`, `analytics`, etc.). Use the same identifier in code when calling `registerDatabase*`. Every section must declare an explicit access policy; there is no wildcard access and `default` is not special.
+
+## Connection Access Policy
+
+Put an `access` block in every named connection. `owner_plugin` is required and must be the exact Paper plugin name or Velocity plugin id. `shared_with` is an optional, explicit allowlist. DataProvider verifies every configured name against the platform plugin manager when the connection is first requested, before copying credentials or creating a backend client.
+
+```yaml
+network-data:
+  access:
+    owner_plugin: ServerFeatures
+    shared_with:
+      - Economy
+      - Moderation
+  host: localhost
+  # remaining backend settings...
+```
+
+Only `ServerFeatures`, `Economy`, and `Moderation` can register `network-data`. The owner is the administrative steward and resource-key anchor; it has no greater database permissions than a plugin in `shared_with`. A non-empty `shared_with` is also the explicit opt-in to share one physical pool/client across those plugin leases. A connection with `shared_with: []` is private and its physical resource key includes the owner plugin. Connections with the same identifier never share merely because their names match.
+
+The generated `default` sections intentionally start with a blank owner and are unusable until configured. This prevents a new installation or upgrade from accidentally exposing default credentials. Plugin ids must be changed in the files before the relevant plugin registers the connection.
 
 ## Reloading Configuration
 
 `/dataprovider reload` loads and validates `config.yml` and every file in `databases/` as one snapshot. If any file is missing, malformed or invalid, the reload is rejected and the active configuration remains unchanged.
 
-Existing database connections retain their current client and pool settings until recovery requires a local rebuild. Shared execution lanes are runtime-owned and are created once during DataProvider startup; changes below `execution` require a DataProvider/server restart. Changes below `resilience` take effect immediately after a successful reload.
+Existing database connections retain their current client and pool settings until recovery requires a local rebuild. If a reload removes a plugin from a connection access policy or makes the policy invalid, that plugin's active lease is closed immediately. Shared execution lanes are runtime-owned and are created once during DataProvider startup; changes below `execution` require a DataProvider/server restart. Changes below `resilience` take effect immediately after a successful reload.
 
 ## Global Keys (`config.yml`)
 
@@ -35,7 +54,7 @@ Each execution lane (`relational`, `document`, `redis`, `messaging`) supports:
 - `per_plugin_queue`: maximum queued tasks for one plugin
 - `per_resource_queue`: maximum queued tasks for one named backend resource, shared by its plugin leases
 
-Scheduling is fair between plugins first and between each plugin's connections second, but is work-conserving: an idle lane is available to whichever plugin has work. A named backend resource owns one physical pool/client and is shared by its plugin leases.
+Scheduling is fair between plugins first and between each plugin's connections second, but is work-conserving: an idle lane is available to whichever plugin has work. A named backend resource owns one physical pool/client only when its access policy explicitly lists one or more shared plugins.
 
 Example:
 

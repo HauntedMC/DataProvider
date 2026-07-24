@@ -27,6 +27,7 @@ import java.util.concurrent.ConcurrentMap;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Supplier;
+import java.util.function.Predicate;
 
 class DatabaseFactory {
 
@@ -35,10 +36,11 @@ class DatabaseFactory {
     private final DatabaseConfigMap configMap;
     private final LoggerAdapter logger;
     private final DataProviderExecutionRuntime executionRuntime;
+    private final Predicate<String> knownPlugin;
     private final ConcurrentMap<ResourceKey, PhysicalResource> physicalResources = new ConcurrentHashMap<>();
 
     protected DatabaseFactory(DatabaseConfigMap configMap, LoggerAdapter logger) {
-        this(configMap, logger, null);
+        this(configMap, logger, null, pluginId -> true);
     }
 
     protected DatabaseFactory(
@@ -46,9 +48,19 @@ class DatabaseFactory {
             LoggerAdapter logger,
             DataProviderExecutionRuntime executionRuntime
     ) {
+        this(configMap, logger, executionRuntime, pluginId -> true);
+    }
+
+    protected DatabaseFactory(
+            DatabaseConfigMap configMap,
+            LoggerAdapter logger,
+            DataProviderExecutionRuntime executionRuntime,
+            Predicate<String> knownPlugin
+    ) {
         this.configMap = Objects.requireNonNull(configMap, "Config map cannot be null.");
         this.logger = Objects.requireNonNull(logger, "Logger cannot be null.");
         this.executionRuntime = executionRuntime;
+        this.knownPlugin = Objects.requireNonNull(knownPlugin, "Known-plugin predicate cannot be null.");
     }
 
     static <T> T withCreationPlugin(PluginId pluginId, Supplier<T> action) {
@@ -87,11 +99,14 @@ class DatabaseFactory {
         Objects.requireNonNull(pluginId, "Plugin id cannot be null.");
         Objects.requireNonNull(type, "Database type cannot be null.");
         Objects.requireNonNull(connectionIdentifier, "Connection identifier cannot be null.");
-        CommentedConfigurationNode connectionConfig = configMap.getConfig(type, connectionIdentifier);
-        if (connectionConfig == null) {
+        DatabaseConfigMap.AuthorizedConnection authorizedConnection = configMap.getAuthorizedConfig(
+                type, connectionIdentifier, pluginId, knownPlugin
+        );
+        if (authorizedConnection == null) {
             logger.error("Could not load configuration for " + connectionIdentifier.value() + " (" + type.name() + ")");
             throw DataProviderExceptionMapper.missingConfigurationFailure();
         }
+        CommentedConfigurationNode connectionConfig = authorizedConnection.config();
         if (executionRuntime == null) {
             return createPhysical(type, connectionConfig);
         }
@@ -103,7 +118,12 @@ class DatabaseFactory {
                 connectionIdentifier.value()
         );
         try {
-            ResourceKey key = new ResourceKey(type, connectionIdentifier);
+            ResourceKey key = ResourceKey.forConnection(
+                    pluginId,
+                    type,
+                    connectionIdentifier,
+                    authorizedConnection.accessPolicy()
+            );
             PhysicalResource physical = physicalResources.compute(key, (ignored, existing) -> {
                 if (existing != null && existing.retain()) {
                     return existing;
@@ -155,7 +175,31 @@ class DatabaseFactory {
         return configMap.currentSnapshot();
     }
 
-    private record ResourceKey(DatabaseType type, ConnectionIdentifier identifier) {
+    /** Returns false rather than exposing configuration errors while revalidating active registrations. */
+    protected boolean isConnectionAuthorized(
+            PluginId pluginId,
+            DatabaseType type,
+            ConnectionIdentifier connectionIdentifier
+    ) {
+        try {
+            return configMap.isAuthorized(type, connectionIdentifier, pluginId, knownPlugin);
+        } catch (ConnectionAccessDeniedException | InvalidConnectionAccessPolicyException denied) {
+            logger.warn("Revoking " + pluginId.value() + " access to " + type.name() + "/"
+                    + connectionIdentifier.value() + ": " + denied.getMessage());
+            return false;
+        }
+    }
+
+    private record ResourceKey(DatabaseType type, ConnectionIdentifier identifier, PluginId pluginId) {
+        private static ResourceKey forConnection(
+                PluginId caller,
+                DatabaseType type,
+                ConnectionIdentifier identifier,
+                ConnectionAccessPolicy accessPolicy
+        ) {
+            PluginId resourcePlugin = accessPolicy.isExplicitlyShared() ? accessPolicy.ownerPlugin() : caller;
+            return new ResourceKey(type, identifier, resourcePlugin);
+        }
     }
 
     /** One actual backend client/pool, reference counted by logical plugin providers. */

@@ -10,10 +10,14 @@ import nl.hauntedmc.dataprovider.database.DatabaseType;
 import org.junit.jupiter.api.Test;
 import org.spongepowered.configurate.CommentedConfigurationNode;
 
+import java.util.List;
+
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.mock;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.when;
 
 class DatabaseFactoryTest {
@@ -31,7 +35,12 @@ class DatabaseFactoryTest {
     void retainsTypedFailureAndLogsWhenConfigurationIsMissing() {
         RecordingLoggerAdapter logger = new RecordingLoggerAdapter();
         DatabaseConfigMap configMap = mock(DatabaseConfigMap.class);
-        when(configMap.getConfig(DatabaseType.MYSQL, ConnectionIdentifier.of("missing"))).thenReturn(null);
+        when(configMap.getAuthorizedConfig(
+                eq(DatabaseType.MYSQL),
+                eq(ConnectionIdentifier.of("missing")),
+                eq(PluginId.of("internal")),
+                any()
+        )).thenReturn(null);
 
         DatabaseFactory factory = new DatabaseFactory(configMap, logger);
         assertThrows(DataProviderExceptionMapper.MissingConfigurationFailure.class,
@@ -46,7 +55,12 @@ class DatabaseFactoryTest {
         CommentedConfigurationNode node = CommentedConfigurationNode.root();
 
         for (DatabaseType type : DatabaseType.values()) {
-            when(configMap.getConfig(type, ConnectionIdentifier.of("default"))).thenReturn(node);
+            when(configMap.getAuthorizedConfig(
+                    eq(type),
+                    eq(ConnectionIdentifier.of("default")),
+                    eq(PluginId.of("internal")),
+                    any()
+            )).thenReturn(authorized(node, type));
         }
 
         DatabaseFactory factory = new DatabaseFactory(configMap, logger);
@@ -56,5 +70,17 @@ class DatabaseFactoryTest {
         assertInstanceOf(RedisDatabase.class, factory.createDatabaseProvider(DatabaseType.REDIS, "default"));
         assertInstanceOf(RedisMessagingDatabase.class,
                 factory.createDatabaseProvider(DatabaseType.REDIS_MESSAGING, "default"));
+    }
+
+    private static DatabaseConfigMap.AuthorizedConnection authorized(
+            CommentedConfigurationNode node,
+            DatabaseType type
+    ) {
+        node.node("access", "owner_plugin").raw("internal");
+        node.node("access", "shared_with").raw(List.of());
+        return new DatabaseConfigMap.AuthorizedConnection(
+                node,
+                ConnectionAccessPolicy.from(node, type.name() + "/default")
+        );
     }
 }

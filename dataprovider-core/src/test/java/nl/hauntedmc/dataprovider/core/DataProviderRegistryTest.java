@@ -515,6 +515,52 @@ class DataProviderRegistryTest {
         verify(factory, org.mockito.Mockito.never()).applyConfigurationSnapshot(activeDatabaseSnapshot);
     }
 
+    @Test
+    void reloadClosesAnActiveLeaseWhenItsPluginLosesConnectionAccess() {
+        DatabaseFactory factory = mock(DatabaseFactory.class);
+        ConfigHandler configHandler = mock(ConfigHandler.class);
+        when(configHandler.isDatabaseTypeEnabled(DatabaseType.MYSQL)).thenReturn(true);
+        ConfigHandler.ConfigSnapshot mainSnapshot = new ConfigHandler.ConfigSnapshot(
+                CommentedConfigurationNode.root(),
+                Map.of(
+                        DatabaseType.MYSQL, true,
+                        DatabaseType.MONGODB, true,
+                        DatabaseType.REDIS, true,
+                        DatabaseType.REDIS_MESSAGING, true
+                ),
+                "validate"
+        );
+        DatabaseConfigMap.DatabaseConfigSnapshot databaseSnapshot = new DatabaseConfigMap.DatabaseConfigSnapshot(
+                Map.of(
+                        DatabaseType.MYSQL, CommentedConfigurationNode.root(),
+                        DatabaseType.MONGODB, CommentedConfigurationNode.root(),
+                        DatabaseType.REDIS, CommentedConfigurationNode.root(),
+                        DatabaseType.REDIS_MESSAGING, CommentedConfigurationNode.root()
+                )
+        );
+        when(configHandler.currentSnapshot()).thenReturn(mainSnapshot);
+        when(configHandler.loadSnapshot()).thenReturn(mainSnapshot);
+        when(factory.currentConfigurationSnapshot()).thenReturn(databaseSnapshot);
+        when(factory.loadConfigurationSnapshot()).thenReturn(databaseSnapshot);
+
+        RecordingProvider provider = new RecordingProvider(true);
+        when(factory.createDatabaseProvider(DatabaseType.MYSQL, ConnectionIdentifier.of("default")))
+                .thenReturn(provider);
+        when(factory.isConnectionAuthorized(
+                PluginId.of("plugin"), DatabaseType.MYSQL, ConnectionIdentifier.of("default")
+        )).thenReturn(false);
+        DataProviderRegistry registry = new DataProviderRegistry(factory, configHandler, new RecordingLoggerAdapter());
+
+        registry.registerDatabase("plugin", "feature", DatabaseType.MYSQL, "default");
+        registry.reloadConfiguration();
+
+        assertNull(registry.getDatabase("plugin", DatabaseType.MYSQL, "default"));
+        assertEquals(1, provider.disconnectCalls);
+        verify(factory).isConnectionAuthorized(
+                PluginId.of("plugin"), DatabaseType.MYSQL, ConnectionIdentifier.of("default")
+        );
+    }
+
     private static final class RecordingProvider implements ManagedDatabaseProvider {
         private boolean connected;
         private int connectCalls;

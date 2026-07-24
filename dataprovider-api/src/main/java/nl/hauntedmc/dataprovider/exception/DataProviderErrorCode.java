@@ -4,6 +4,7 @@ package nl.hauntedmc.dataprovider.exception;
 public enum DataProviderErrorCode {
     CONFIGURATION_INVALID,
     CONFIGURATION_MISSING,
+    ACCESS_DENIED,
     REGISTRATION_FAILED,
     BACKEND_DISABLED,
     BACKEND_UNAVAILABLE,

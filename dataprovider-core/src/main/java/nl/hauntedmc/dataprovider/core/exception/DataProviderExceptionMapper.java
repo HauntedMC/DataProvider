@@ -6,8 +6,11 @@ import com.mongodb.MongoTimeoutException;
 import com.mongodb.MongoWriteException;
 import nl.hauntedmc.dataprovider.core.concurrent.ExecutionHandle;
 import nl.hauntedmc.dataprovider.core.concurrent.ExecutionRejectedException;
+import nl.hauntedmc.dataprovider.core.ConnectionAccessDeniedException;
+import nl.hauntedmc.dataprovider.core.InvalidConnectionAccessPolicyException;
 import nl.hauntedmc.dataprovider.database.DatabaseType;
 import nl.hauntedmc.dataprovider.exception.BackendAuthenticationException;
+import nl.hauntedmc.dataprovider.exception.DataProviderAccessDeniedException;
 import nl.hauntedmc.dataprovider.exception.BackendUnavailableException;
 import nl.hauntedmc.dataprovider.exception.DataConflictException;
 import nl.hauntedmc.dataprovider.exception.DataProviderConfigurationException;
@@ -120,6 +123,23 @@ public final class DataProviderExceptionMapper {
                     "No configuration exists for the requested database connection.",
                     context(backend, connectionIdentifier, operationName, RetryAdvice.NEVER,
                             ExecutionOutcome.NOT_STARTED, diagnosticsFor(root)), safeCause(root));
+        }
+        if (root instanceof ConnectionAccessDeniedException) {
+            return new DataProviderAccessDeniedException(
+                    "The calling plugin is not allowed to access the requested database connection.",
+                    context(backend, connectionIdentifier, operationName, RetryAdvice.NEVER,
+                            ExecutionOutcome.NOT_STARTED, Map.of()),
+                    null
+            );
+        }
+        if (root instanceof InvalidConnectionAccessPolicyException) {
+            return new DataProviderConfigurationException(
+                    DataProviderErrorCode.CONFIGURATION_INVALID,
+                    "The requested database connection has an invalid access policy.",
+                    context(backend, connectionIdentifier, operationName, RetryAdvice.NEVER,
+                            ExecutionOutcome.NOT_STARTED, Map.of()),
+                    safeCause(root)
+            );
         }
         DataProviderException mapped = translate(
                 root, new RegistrationExecutionHandle(backend, connectionIdentifier), operationName);

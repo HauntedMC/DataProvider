@@ -27,6 +27,11 @@ public final class VelocityCallerContextResolver implements CallerContextResolve
         return resolveCaller(StackCallerClassLoaderResolver.resolveExternalCallerChain(ownClassLoader));
     }
 
+    @Override
+    public boolean isKnownPlugin(String pluginId) {
+        return pluginId != null && proxyServer.getPluginManager().getPlugin(pluginId).isPresent();
+    }
+
     CallerContext resolveCaller(List<ClassLoader> callerChain) {
         return PluginCallerChainResolver.resolveNearestMappedCaller(
                 callerChain,

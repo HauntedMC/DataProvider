@@ -8,6 +8,7 @@ import nl.hauntedmc.dataprovider.core.ManagedDatabaseProvider;
 import nl.hauntedmc.dataprovider.api.DataProviderAPI;
 import nl.hauntedmc.dataprovider.core.api.DefaultDataProviderApi;
 import nl.hauntedmc.dataprovider.core.identity.CallerContext;
+import nl.hauntedmc.dataprovider.core.identity.CallerContextResolver;
 import nl.hauntedmc.dataprovider.core.testutil.RecordingLoggerAdapter;
 import nl.hauntedmc.dataprovider.database.document.model.DocumentQuery;
 import nl.hauntedmc.dataprovider.database.document.model.DocumentUpdate;
@@ -221,6 +222,10 @@ class BackendIntegrationIT {
         Files.createDirectories(dataDirectory.resolve("databases"));
         Files.writeString(dataDirectory.resolve("databases/mysql.yml"), """
                 default:
+                  access:
+                    owner_plugin: first-plugin
+                    shared_with:
+                      - second-plugin
                   host: %s
                   port: %d
                   database: %s
@@ -251,7 +256,7 @@ class BackendIntegrationIT {
                 logger(),
                 dataDirectory,
                 getClass().getClassLoader(),
-                () -> new CallerContext(plugin.get(), getClass().getClassLoader())
+                callerResolver(plugin, "first-plugin", "second-plugin")
         );
         try {
             var handler = provider.getDataProviderHandler();
@@ -283,7 +288,7 @@ class BackendIntegrationIT {
         writeResilienceConnectionFiles();
         DataProvider provider = new DataProvider(
                 logger(), dataDirectory, getClass().getClassLoader(),
-                () -> new CallerContext("resilience-it", getClass().getClassLoader())
+                callerResolver(new AtomicReference<>("resilience-it"), "resilience-it")
         );
         try {
             var handler = provider.getDataProviderHandler();
@@ -353,6 +358,9 @@ class BackendIntegrationIT {
         Files.createDirectories(dataDirectory.resolve("databases"));
         Files.writeString(dataDirectory.resolve("databases/mysql.yml"), """
                 default:
+                  access:
+                    owner_plugin: resilience-it
+                    shared_with: []
                   host: %s
                   port: %d
                   database: %s
@@ -372,6 +380,9 @@ class BackendIntegrationIT {
                 MYSQL.getUsername(), MYSQL.getPassword()));
         Files.writeString(dataDirectory.resolve("databases/mongodb.yml"), """
                 default:
+                  access:
+                    owner_plugin: resilience-it
+                    shared_with: []
                   host: %s
                   port: %d
                   database: dataprovider
@@ -383,6 +394,9 @@ class BackendIntegrationIT {
                 """.formatted(MONGODB.getHost(), MONGODB.getMappedPort(27017)));
         Files.writeString(dataDirectory.resolve("databases/redis.yml"), """
                 default:
+                  access:
+                    owner_plugin: resilience-it
+                    shared_with: []
                   host: %s
                   port: %d
                   password: %s
@@ -458,5 +472,19 @@ class BackendIntegrationIT {
 
     private static RecordingLoggerAdapter logger() {
         return new RecordingLoggerAdapter();
+    }
+
+    private CallerContextResolver callerResolver(AtomicReference<String> caller, String... knownPlugins) {
+        return new CallerContextResolver() {
+            @Override
+            public CallerContext resolveCaller() {
+                return new CallerContext(caller.get(), getClass().getClassLoader());
+            }
+
+            @Override
+            public boolean isKnownPlugin(String pluginId) {
+                return java.util.Arrays.asList(knownPlugins).contains(pluginId);
+            }
+        };
     }
 }

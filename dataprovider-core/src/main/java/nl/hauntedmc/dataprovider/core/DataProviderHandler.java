@@ -55,7 +55,12 @@ public class DataProviderHandler {
         ownClassLoader = resourceClassLoader;
         DatabaseConfigMap configMap = new DatabaseConfigMap(dataPath, this.logger, resourceClassLoader);
         executionRuntime = new DataProviderExecutionRuntime(ExecutionRuntimeConfig.from(configHandler.getConfig()));
-        DatabaseFactory factory = new DatabaseFactory(configMap, this.logger, executionRuntime);
+        DatabaseFactory factory = new DatabaseFactory(
+                configMap,
+                this.logger,
+                executionRuntime,
+                callerContextResolver::isKnownPlugin
+        );
         registry = new DataProviderRegistry(factory, configHandler, this.logger);
     }
 

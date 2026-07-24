@@ -79,6 +79,77 @@ class DatabaseConfigMapTest {
     }
 
     @Test
+    void authorizesOnlyTheOwnerAndExplicitlySharedPlugins() throws IOException {
+        writeMySqlConfig("""
+                shared:
+                  access:
+                    owner_plugin: ServerFeatures
+                    shared_with:
+                      - Economy
+                  host: protected-host
+                """);
+        DatabaseConfigMap configMap = new DatabaseConfigMap(
+                tempDir,
+                new RecordingLoggerAdapter(),
+                getClass().getClassLoader()
+        );
+
+        DatabaseConfigMap.AuthorizedConnection owner = configMap.getAuthorizedConfig(
+                DatabaseType.MYSQL,
+                ConnectionIdentifier.of("shared"),
+                PluginId.of("ServerFeatures"),
+                plugin -> plugin.equals("ServerFeatures") || plugin.equals("Economy")
+        );
+        DatabaseConfigMap.AuthorizedConnection shared = configMap.getAuthorizedConfig(
+                DatabaseType.MYSQL,
+                ConnectionIdentifier.of("shared"),
+                PluginId.of("Economy"),
+                plugin -> plugin.equals("ServerFeatures") || plugin.equals("Economy")
+        );
+
+        assertNotNull(owner);
+        assertNotNull(shared);
+        assertTrue(owner.accessPolicy().isExplicitlyShared());
+        assertThrows(ConnectionAccessDeniedException.class, () -> configMap.getAuthorizedConfig(
+                DatabaseType.MYSQL,
+                ConnectionIdentifier.of("shared"),
+                PluginId.of("UntrustedPlugin"),
+                plugin -> plugin.equals("ServerFeatures") || plugin.equals("Economy") || plugin.equals("UntrustedPlugin")
+        ));
+    }
+
+    @Test
+    void rejectsMissingPoliciesAndUnknownConfiguredPlugins() throws IOException {
+        writeMySqlConfig("""
+                missing-policy:
+                  host: protected-host
+                unknown-plugin:
+                  access:
+                    owner_plugin: NotInstalled
+                    shared_with: []
+                  host: protected-host
+                """);
+        DatabaseConfigMap configMap = new DatabaseConfigMap(
+                tempDir,
+                new RecordingLoggerAdapter(),
+                getClass().getClassLoader()
+        );
+
+        assertThrows(InvalidConnectionAccessPolicyException.class, () -> configMap.getAuthorizedConfig(
+                DatabaseType.MYSQL,
+                ConnectionIdentifier.of("missing-policy"),
+                PluginId.of("ServerFeatures"),
+                plugin -> plugin.equals("ServerFeatures")
+        ));
+        assertThrows(InvalidConnectionAccessPolicyException.class, () -> configMap.getAuthorizedConfig(
+                DatabaseType.MYSQL,
+                ConnectionIdentifier.of("unknown-plugin"),
+                PluginId.of("ServerFeatures"),
+                plugin -> plugin.equals("ServerFeatures")
+        ));
+    }
+
+    @Test
     void returnsNullWhenNoConfigCanBeLoaded() {
         RecordingLoggerAdapter logger = new RecordingLoggerAdapter();
         ClassLoader emptyClassLoader = new ClassLoader(null) {

@@ -18,6 +18,7 @@ import java.util.EnumMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.function.Predicate;
 
 class DatabaseConfigMap {
 
@@ -158,6 +159,68 @@ class DatabaseConfigMap {
         return copyNode(section);
     }
 
+    /**
+     * Resolves a connection only after its policy confirms that the calling plugin is allowed.
+     * The configuration node is copied after authorization so callers cannot inspect another
+     * plugin's configured credentials through this path.
+     */
+    protected AuthorizedConnection getAuthorizedConfig(
+            DatabaseType type,
+            ConnectionIdentifier connectionIdentifier,
+            PluginId caller,
+            Predicate<String> knownPlugin
+    ) {
+        Objects.requireNonNull(type, "Database type cannot be null.");
+        Objects.requireNonNull(connectionIdentifier, "Connection identifier cannot be null.");
+        Objects.requireNonNull(caller, "Caller plugin cannot be null.");
+        Objects.requireNonNull(knownPlugin, "Known-plugin predicate cannot be null.");
+        ResolvedConnection resolved = resolveAuthorizedConnection(type, connectionIdentifier, caller, knownPlugin);
+        if (resolved == null) {
+            return null;
+        }
+        return new AuthorizedConnection(copyNode(resolved.section()), resolved.accessPolicy());
+    }
+
+    /** Validates policy access without exposing or copying the connection credentials. */
+    protected boolean isAuthorized(
+            DatabaseType type,
+            ConnectionIdentifier connectionIdentifier,
+            PluginId caller,
+            Predicate<String> knownPlugin
+    ) {
+        return resolveAuthorizedConnection(type, connectionIdentifier, caller, knownPlugin) != null;
+    }
+
+    private ResolvedConnection resolveAuthorizedConnection(
+            DatabaseType type,
+            ConnectionIdentifier connectionIdentifier,
+            PluginId caller,
+            Predicate<String> knownPlugin
+    ) {
+        Objects.requireNonNull(type, "Database type cannot be null.");
+        Objects.requireNonNull(connectionIdentifier, "Connection identifier cannot be null.");
+        Objects.requireNonNull(caller, "Caller plugin cannot be null.");
+        Objects.requireNonNull(knownPlugin, "Known-plugin predicate cannot be null.");
+        CommentedConfigurationNode config = configMap.get(type);
+        if (config == null) {
+            logger.warn("No configuration loaded for database type " + type.name());
+            return null;
+        }
+
+        String identifierValue = connectionIdentifier.value();
+        CommentedConfigurationNode section = config.node(identifierValue);
+        if (section.virtual()) {
+            logger.warn("No configuration section found for '" + identifierValue + "' in "
+                    + type.getConfigFileName() + ". Available sections: " + describeAvailableSections(config));
+            return null;
+        }
+        String location = type.name() + "/" + identifierValue;
+        ConnectionAccessPolicy policy = ConnectionAccessPolicy.from(section, location);
+        policy.validateConfiguredPlugins(knownPlugin, location);
+        policy.requireAccess(caller, location);
+        return new ResolvedConnection(section, policy);
+    }
+
     private static String describeAvailableSections(CommentedConfigurationNode config) {
         List<String> sections = config.childrenMap().keySet().stream()
                 .map(String::valueOf)
@@ -192,5 +255,15 @@ class DatabaseConfigMap {
 
     private static CommentedConfigurationNode copyNode(CommentedConfigurationNode node) {
         return (CommentedConfigurationNode) node.copy();
+    }
+
+    protected record AuthorizedConnection(CommentedConfigurationNode config, ConnectionAccessPolicy accessPolicy) {
+        protected AuthorizedConnection {
+            config = copyNode(Objects.requireNonNull(config, "Connection configuration cannot be null."));
+            Objects.requireNonNull(accessPolicy, "Connection access policy cannot be null.");
+        }
+    }
+
+    private record ResolvedConnection(CommentedConfigurationNode section, ConnectionAccessPolicy accessPolicy) {
     }
 }

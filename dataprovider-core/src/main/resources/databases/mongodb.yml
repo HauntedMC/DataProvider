@@ -1,4 +1,9 @@
 default:
+  # Set this to the exact Paper plugin name or Velocity plugin id allowed to use this connection.
+  # No plugin can use this connection until it has been configured.
+  access:
+    owner_plugin: ""
+    shared_with: []
   host: localhost
   port: 27017
   database: minecraft

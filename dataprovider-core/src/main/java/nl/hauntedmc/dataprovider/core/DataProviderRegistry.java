@@ -411,6 +411,7 @@ class DataProviderRegistry {
     }
 
     protected void reloadConfiguration() {
+        List<ProviderSlot> revokedSlots = new ArrayList<>();
         Lock writeLock = lifecycleLock.writeLock();
         writeLock.lock();
         try {
@@ -421,6 +422,13 @@ class DataProviderRegistry {
             DatabaseConfigMap.DatabaseConfigSnapshot databaseSnapshot = factory.loadConfigurationSnapshot();
             configHandler.applySnapshot(mainSnapshot);
             factory.applyConfigurationSnapshot(databaseSnapshot);
+            activeDatabases.forEach((key, slot) -> {
+                if (!factory.isConnectionAuthorized(key.pluginId(), key.type(), key.connectionIdentifier())
+                        && activeDatabases.remove(key, slot)) {
+                    slot.forceReleaseAll();
+                    revokedSlots.add(slot);
+                }
+            });
             ResilienceRuntime previousRuntime = resilienceRuntime;
             previousRuntime.close();
             resilienceRuntime = new ResilienceRuntime(resilienceConfig());
@@ -435,6 +443,7 @@ class DataProviderRegistry {
         } finally {
             writeLock.unlock();
         }
+        revokedSlots.forEach(slot -> slot.close("connection access policy changed"));
     }
 
     private static String describeMainConfigurationChanges(
