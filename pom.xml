@@ -53,16 +53,16 @@
 
     <properties>
         <!-- Project identity and compiler configuration. -->
-        <revision>3.0.7</revision>
+        <revision>3.0.6</revision>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
         <java.version>25</java.version>
         <maven.compiler.release>${java.version}</maven.compiler.release>
 
         <!-- Platform APIs and production dependencies. -->
-        <paper.version>26.1.2.build.72-stable</paper.version>
+        <paper.version>26.2.build.65-beta</paper.version>
         <velocity.version>4.1.0-SNAPSHOT</velocity.version>
-        <adventure.version>4.26.1</adventure.version>
+        <adventure.version>5.2.0</adventure.version>
         <configurate.version>4.2.0</configurate.version>
         <mysql.version>9.7.0</mysql.version>
         <hikari.version>7.1.0</hikari.version>
@@ -161,6 +161,27 @@
                                 <requireJavaVersion><version>[25,)</version></requireJavaVersion>
                                 <requireMavenVersion><version>[3.8.6,)</version></requireMavenVersion>
                                 <requirePluginVersions/>
+                                <bannedDependencies>
+                                    <searchTransitive>true</searchTransitive>
+                                    <excludes>
+                                        <exclude>net.kyori:adventure-api:[0,5.0.0)</exclude>
+                                        <exclude>net.kyori:adventure-key:[0,5.0.0)</exclude>
+                                        <exclude>net.kyori:adventure-nbt:[0,5.0.0)</exclude>
+                                        <exclude>net.kyori:adventure-resource-pack:[0,5.0.0)</exclude>
+                                        <exclude>net.kyori:adventure-serializer-configurate4:[0,5.0.0)</exclude>
+                                        <exclude>net.kyori:adventure-text-logger-slf4j:[0,5.0.0)</exclude>
+                                        <exclude>net.kyori:adventure-text-minimessage:[0,5.0.0)</exclude>
+                                        <exclude>net.kyori:adventure-text-serializer-ansi:[0,5.0.0)</exclude>
+                                        <exclude>net.kyori:adventure-text-serializer-commons:[0,5.0.0)</exclude>
+                                        <exclude>net.kyori:adventure-text-serializer-gson:[0,5.0.0)</exclude>
+                                        <exclude>net.kyori:adventure-text-serializer-gson-legacy-impl:[0,5.0.0)</exclude>
+                                        <exclude>net.kyori:adventure-text-serializer-json:[0,5.0.0)</exclude>
+                                        <exclude>net.kyori:adventure-text-serializer-json-legacy-impl:[0,5.0.0)</exclude>
+                                        <exclude>net.kyori:adventure-text-serializer-legacy:[0,5.0.0)</exclude>
+                                        <exclude>net.kyori:adventure-text-serializer-plain:[0,5.0.0)</exclude>
+                                    </excludes>
+                                    <message>Adventure 4.x core modules are not supported. Keep the Adventure core dependency graph on 5.x.</message>
+                                </bannedDependencies>
                             </rules>
                         </configuration>
                     </execution>
