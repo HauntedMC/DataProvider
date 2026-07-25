@@ -61,6 +61,7 @@ Schema mode is selected explicitly by the consuming plugin.
 - Use TLS transport options for production backends.
 - Never log credentials or secrets.
 - Keep plugin boundaries explicit and avoid cross-plugin identity leakage.
+
 ## Runtime Resilience
 
 Registrations have two independent dimensions: lifecycle (`NEW` through `CLOSED`) and runtime health
@@ -71,7 +72,20 @@ resolve the current scoped physical view, so a locally recreated pool/client rem
 existing consumer references. Drivers/pools are allowed to recover normally before local recreation;
 a repeated failed recovery recreates a still-locally-open client or pool that has become unusable.
 
+Redis Pub/Sub adds a durable logical subscription layer above each physical listener. The logical registry retains
+the destination, message type, handler registrations, stable identity and admission permit while listener attempts
+move through `CONNECTING`, `ACTIVE`, `RECONNECTING`, `CLOSING`, `CLOSED` and `FAILED`. A failed listener is
+replaced with bounded exponential backoff and jitter. Per-attempt generations fence stale callbacks and cleanup,
+so an old listener cannot remove or overwrite its replacement. Pool recreation reuses the same scoped messaging
+view and original `Subscription` handle. Diagnostics expose state, reconnect count, last failure and downtime.
+
 The status command consumes cached snapshots and requests only stale refreshes; it never performs
 remote I/O on a platform thread. Snapshot diagnostics include lifecycle, health, circuit, probe time,
-failure/recovery counts, backoff, and next recovery attempt. Messaging subscription resubscription and
-endpoint migration are intentionally outside this layer.
+failure/recovery counts, backoff, and next recovery attempt. Endpoint migration remains outside this layer.
+
+## Messaging Delivery Guarantee
+
+Redis Pub/Sub remains **at-most-once**. Automatic resubscription restores future delivery, but messages published
+while the listener is disconnected may be lost and are not replayed. Use Redis Streams or another durable queue
+for events that must never disappear, including votes, purchases, punishments and cross-server state changes.
+Durable processing must use event IDs, acknowledgement, retry ownership and idempotent consumers.
