@@ -130,7 +130,7 @@ class RedisMessagingDataAccessTest {
         assertThrows(CompletionException.class, subscription.completion()::join);
         assertTrue(subscription.snapshot().reconnectCount() >= 1);
         assertTrue(subscription.snapshot().lastFailure().contains("redis unavailable"));
-        assertEquals(0, execution.activeSubscriptions.get());
+        await(() -> execution.activeSubscriptions.get() == 0);
         assertEquals(1, execution.releasedSubscriptions.get());
     }
 
