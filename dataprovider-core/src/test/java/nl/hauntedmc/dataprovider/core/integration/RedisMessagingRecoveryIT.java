@@ -73,9 +73,10 @@ class RedisMessagingRecoveryIT {
             assertSubscriberCount(1L);
             assertDelivery(access, received, "initial");
 
+            // Docker pause freezes Redis without necessarily closing an established Pub/Sub socket.
+            // The same physical listener may therefore remain ACTIVE and continue after resume.
             pause(containerPaused);
             assertFalse(recovery.recover());
-            awaitState(subscription, SubscriptionState.RECONNECTING);
             resume(containerPaused);
             awaitRecovery(recovery);
             awaitState(subscription, SubscriptionState.ACTIVE);
@@ -94,26 +95,26 @@ class RedisMessagingRecoveryIT {
             assertDelivery(access, received, "after-restart");
 
             for (int interruption = 0; interruption < 3; interruption++) {
-                pause(containerPaused);
+                stop(containerStopped);
                 assertFalse(recovery.recover());
                 awaitState(subscription, SubscriptionState.RECONNECTING);
-                resume(containerPaused);
+                start(containerStopped);
                 awaitRecovery(recovery);
                 awaitState(subscription, SubscriptionState.ACTIVE);
                 assertSubscriberCount(1L);
                 assertDelivery(access, received, "repeated-" + interruption);
             }
-            assertTrue(subscription.snapshot().reconnectCount() >= 5L);
+            assertTrue(subscription.snapshot().reconnectCount() >= 4L);
             assertEquals(originalLogicalId, subscription.snapshot().logicalId());
 
             pause(containerPaused);
             assertFalse(recovery.recover());
-            awaitState(subscription, SubscriptionState.RECONNECTING);
             provider.shutdownAllDatabases();
             provider = null;
             subscription.completion().get(5, TimeUnit.SECONDS);
             assertEquals(SubscriptionState.CLOSED, subscription.state());
-            assertEquals(0L, countSubscriptionThreads());
+            awaitCondition(() -> countSubscriptionThreads() == 0L,
+                    "Redis subscription supervisor thread was not released after shutdown.");
             resume(containerPaused);
             awaitSubscriberCount(0L);
         } finally {
