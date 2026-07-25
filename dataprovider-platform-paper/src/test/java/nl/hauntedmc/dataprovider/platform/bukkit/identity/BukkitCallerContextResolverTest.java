@@ -20,6 +20,7 @@ class BukkitCallerContextResolverTest {
         BukkitCallerContextResolver resolver = new BukkitCallerContextResolver(getClass().getClassLoader());
         Plugin plugin = mock(Plugin.class);
         when(plugin.getName()).thenReturn("Example");
+        when(plugin.isEnabled()).thenReturn(true);
         resolver.register(plugin);
 
         PluginIdentity identity = resolver.issueIdentity(plugin);
@@ -33,6 +34,19 @@ class BukkitCallerContextResolverTest {
         resolver.invalidate(plugin);
         assertFalse(resolver.isIdentityActive(identity));
         assertFalse(resolver.isKnownPlugin("example"));
+    }
+
+    @Test
+    void issuesAnIdentityDuringPluginEnableBeforeTheLifecycleEventIsFired() {
+        BukkitCallerContextResolver resolver = new BukkitCallerContextResolver(getClass().getClassLoader());
+        Plugin plugin = mock(Plugin.class);
+        when(plugin.getName()).thenReturn("Example");
+        when(plugin.isEnabled()).thenReturn(true);
+
+        PluginIdentity identity = resolver.issueIdentity(plugin);
+
+        assertTrue(resolver.isIdentityActive(identity));
+        assertSame(identity, resolver.register(plugin));
     }
 
     @Test

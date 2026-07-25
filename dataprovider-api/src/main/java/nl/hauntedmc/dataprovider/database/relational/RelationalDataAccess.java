@@ -8,6 +8,10 @@ import java.util.concurrent.CompletableFuture;
 
 /**
  * DataAccess methods specific to relational (SQL) usage.
+ *
+ * <p>Query arguments are trusted SQL statement text owned by the calling application. Never
+ * concatenate untrusted values into a query; use {@code ?} placeholders and the accompanying
+ * parameter arguments instead.
  */
 public interface RelationalDataAccess extends DataAccess {
 
@@ -23,5 +27,5 @@ public interface RelationalDataAccess extends DataAccess {
 
     <T> CompletableFuture<T> executeTransactionally(TransactionCallback<T> callback);
 
-    CompletableFuture<Object> executeInsert(String sql, Object[] array);
+    CompletableFuture<Object> executeInsert(String query, Object... params);
 }

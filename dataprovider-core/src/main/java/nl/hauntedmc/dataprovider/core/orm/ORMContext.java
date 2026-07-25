@@ -17,11 +17,9 @@ import java.util.Objects;
 import java.util.Set;
 
 /**
- * ORMContext is an instantiable class that encapsulates the Hibernate SessionFactory
- * and its associated StandardServiceRegistry for a given plugin. This allows each plugin to
- * have its own isolated ORM configuration and lifecycle.
+ * Internal Hibernate-backed implementation of the public ORM context contract. It encapsulates
+ * a plugin-specific {@link SessionFactory} and {@link StandardServiceRegistry}.
  */
-/** Internal Hibernate-backed implementation of the public ORM context contract. */
 public class ORMContext implements nl.hauntedmc.dataprovider.api.orm.ORMContext {
 
     private static final String DEFAULT_SCHEMA_MODE = "validate";

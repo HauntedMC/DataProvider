@@ -75,6 +75,10 @@
             <artifactId>jspecify</artifactId>
             <version>${jspecify.version}</version>
         </dependency>
+        <dependency>
+            <groupId>org.jetbrains</groupId>
+            <artifactId>annotations</artifactId>
+        </dependency>
 
         <!-- Unit and container-backed integration tests. -->
         <dependency>

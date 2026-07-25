@@ -33,6 +33,7 @@ import java.util.function.Consumer;
 import java.util.regex.Pattern;
 
 /** Redis messaging provider backed by the shared messaging execution lane. */
+@SuppressWarnings("deprecation")
 public final class RedisMessagingDatabase implements MessagingDatabaseProvider, ManagedDatabaseProvider {
 
     private static final Pattern HOST_PATTERN = Pattern.compile("[A-Za-z0-9._:\\-\\[\\]]+");

@@ -37,7 +37,13 @@ import java.util.function.Consumer;
 import java.util.function.Supplier;
 import java.util.regex.Pattern;
 
-/** Redis Pub/Sub access with durable logical subscriptions over replaceable physical listeners. */
+/**
+ * Redis Pub/Sub access with durable logical subscriptions over replaceable physical listeners.
+ *
+ * <p>The deprecated Jedis pool type is retained deliberately because each listener owns a
+ * borrowable connection that must be interrupted independently during shutdown and recovery.
+ */
+@SuppressWarnings("deprecation")
 final class RedisMessagingDataAccess implements MessagingDataAccess {
 
     private static final Pattern DESTINATION_PATTERN = Pattern.compile("[A-Za-z0-9_.:-]{1,128}");

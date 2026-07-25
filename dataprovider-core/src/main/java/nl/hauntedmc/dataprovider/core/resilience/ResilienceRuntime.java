@@ -1,6 +1,5 @@
 package nl.hauntedmc.dataprovider.core.resilience;
 
-import nl.hauntedmc.dataprovider.core.ConnectionHealthSnapshot;
 import nl.hauntedmc.dataprovider.core.ManagedDatabaseProvider;
 import nl.hauntedmc.dataprovider.core.ProviderLifecycleState;
 import java.time.Clock;

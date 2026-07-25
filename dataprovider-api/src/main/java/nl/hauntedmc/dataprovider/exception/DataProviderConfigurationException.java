@@ -2,6 +2,8 @@ package nl.hauntedmc.dataprovider.exception;
 
 /** Invalid or missing DataProvider configuration. */
 public final class DataProviderConfigurationException extends DataProviderException {
+    private static final long serialVersionUID = 1L;
+
     public DataProviderConfigurationException(DataProviderErrorCode code, String message,
                                               DataProviderFailureContext context, Throwable cause) {
         super(code, message, context, cause);

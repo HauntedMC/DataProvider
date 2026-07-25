@@ -6,6 +6,8 @@ import java.util.concurrent.RejectedExecutionException;
 /** Rejection with a stable reason suitable for diagnostics and metrics. */
 public final class ExecutionRejectedException extends RejectedExecutionException {
 
+    private static final long serialVersionUID = 1L;
+
     private final Reason reason;
 
     public ExecutionRejectedException(Reason reason, String message) {

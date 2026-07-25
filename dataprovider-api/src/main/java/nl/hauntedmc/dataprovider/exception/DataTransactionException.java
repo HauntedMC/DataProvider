@@ -5,6 +5,8 @@ import java.util.Objects;
 /** Transaction failure retaining the phase and primary cause. */
 public final class DataTransactionException extends DataProviderException {
 
+    private static final long serialVersionUID = 1L;
+
     private final TransactionPhase phase;
 
     public DataTransactionException(String message, TransactionPhase phase,

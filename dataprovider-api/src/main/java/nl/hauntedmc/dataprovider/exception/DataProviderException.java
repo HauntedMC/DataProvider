@@ -12,6 +12,8 @@ import java.util.regex.Pattern;
 /** Base type for safe, structured failures exposed by DataProvider. */
 public abstract class DataProviderException extends RuntimeException {
 
+    private static final long serialVersionUID = 1L;
+
     private static final Pattern DIAGNOSTIC_KEY_PATTERN = Pattern.compile("[A-Za-z][A-Za-z0-9_.-]{0,63}");
     private static final Pattern DIAGNOSTIC_ID_PATTERN = Pattern.compile("[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}");
 

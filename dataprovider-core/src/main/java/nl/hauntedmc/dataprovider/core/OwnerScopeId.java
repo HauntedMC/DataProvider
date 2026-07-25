@@ -1,6 +1,7 @@
 package nl.hauntedmc.dataprovider.core;
 
 import nl.hauntedmc.dataprovider.api.OwnerScope;
+import org.jetbrains.annotations.NotNull;
 
 import java.util.Objects;
 import java.util.regex.Pattern;
@@ -34,7 +35,7 @@ record OwnerScopeId(String value) {
     }
 
     @Override
-    public String toString() {
+    public @NotNull String toString() {
         return value;
     }
 }

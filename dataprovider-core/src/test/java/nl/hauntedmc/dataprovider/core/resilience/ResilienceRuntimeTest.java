@@ -2,7 +2,6 @@ package nl.hauntedmc.dataprovider.core.resilience;
 
 import nl.hauntedmc.dataprovider.core.ManagedDatabaseProvider;
 import nl.hauntedmc.dataprovider.core.ProviderLifecycleState;
-import nl.hauntedmc.dataprovider.core.ConnectionHealthSnapshot;
 import nl.hauntedmc.dataprovider.core.testutil.DirectExecutorService;
 import nl.hauntedmc.dataprovider.database.DataAccess;
 import org.junit.jupiter.api.Test;

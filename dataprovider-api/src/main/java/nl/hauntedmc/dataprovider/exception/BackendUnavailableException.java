@@ -2,6 +2,8 @@ package nl.hauntedmc.dataprovider.exception;
 
 /** Backend is disabled, unreachable, or otherwise unavailable. */
 public final class BackendUnavailableException extends DataProviderException {
+    private static final long serialVersionUID = 1L;
+
     public BackendUnavailableException(DataProviderErrorCode code, String message,
                                        DataProviderFailureContext context, Throwable cause) {
         super(code, message, context, cause);

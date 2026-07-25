@@ -9,6 +9,7 @@ import nl.hauntedmc.dataprovider.core.identity.CallerContext;
 import nl.hauntedmc.dataprovider.core.identity.CallerContextResolver;
 import nl.hauntedmc.dataprovider.core.identity.StackCallerClassLoaderResolver;
 import nl.hauntedmc.dataprovider.core.identity.PluginIdentity;
+import nl.hauntedmc.dataprovider.core.resilience.ConnectionHealthSnapshot;
 import nl.hauntedmc.dataprovider.database.DatabaseConnectionKey;
 import nl.hauntedmc.dataprovider.database.DatabaseProvider;
 import nl.hauntedmc.dataprovider.database.DatabaseType;

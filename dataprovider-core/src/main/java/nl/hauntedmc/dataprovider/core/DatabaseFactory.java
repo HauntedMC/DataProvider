@@ -10,6 +10,7 @@ import nl.hauntedmc.dataprovider.core.database.keyvalue.impl.redis.RedisDatabase
 import nl.hauntedmc.dataprovider.core.database.messaging.impl.redis.RedisMessagingDatabase;
 import nl.hauntedmc.dataprovider.core.database.relational.impl.mysql.MySQLDatabase;
 import nl.hauntedmc.dataprovider.core.exception.DataProviderExceptionMapper;
+import nl.hauntedmc.dataprovider.core.resilience.ConnectionHealthSnapshot;
 import nl.hauntedmc.dataprovider.core.resilience.ResilienceGateAware;
 import nl.hauntedmc.dataprovider.core.resilience.ResilienceTargetAware;
 import nl.hauntedmc.dataprovider.database.DatabaseType;

@@ -1,6 +1,7 @@
 package nl.hauntedmc.dataprovider.core;
 
 import nl.hauntedmc.dataprovider.core.config.ConfigHandler;
+import nl.hauntedmc.dataprovider.core.resilience.ConnectionHealthSnapshot;
 import nl.hauntedmc.dataprovider.database.DataAccess;
 import nl.hauntedmc.dataprovider.database.DatabaseConnectionKey;
 import nl.hauntedmc.dataprovider.database.DatabaseProvider;

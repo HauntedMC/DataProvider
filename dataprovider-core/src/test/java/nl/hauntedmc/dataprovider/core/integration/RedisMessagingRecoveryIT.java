@@ -33,6 +33,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 @Testcontainers(disabledWithoutDocker = true)
+@SuppressWarnings("deprecation")
 class RedisMessagingRecoveryIT {
 
     private static final String REDIS_PASSWORD = "messaging-recovery-secret";

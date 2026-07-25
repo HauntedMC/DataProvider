@@ -381,12 +381,16 @@ public final class DataProviderExceptionMapper {
     }
 
     public static final class MissingConfigurationFailure extends RuntimeException {
+        private static final long serialVersionUID = 1L;
+
         private MissingConfigurationFailure() {
             super("Missing database configuration", null, false, false);
         }
     }
 
     private static final class SafeBackendCause extends RuntimeException {
+        private static final long serialVersionUID = 1L;
+
         private SafeBackendCause(String causeType) {
             super("Backend failure type: " + causeType, null, false, false);
         }

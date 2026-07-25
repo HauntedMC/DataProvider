@@ -70,6 +70,8 @@ public final class StructuredFailures {
     }
 
     private static final class RedactedCause extends RuntimeException {
+        private static final long serialVersionUID = 1L;
+
         private RedactedCause(String type) {
             super("Backend failure type: " + type, null, false, false);
         }

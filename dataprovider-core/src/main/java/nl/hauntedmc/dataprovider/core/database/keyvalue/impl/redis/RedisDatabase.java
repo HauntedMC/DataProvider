@@ -19,6 +19,7 @@ import java.util.Objects;
 import java.util.regex.Pattern;
 
 /** Redis key-value provider backed by the shared Redis execution lane. */
+@SuppressWarnings("deprecation")
 public class RedisDatabase implements KeyValueDatabaseProvider, ManagedDatabaseProvider {
 
     private static final Pattern HOST_PATTERN = Pattern.compile("[A-Za-z0-9._:\\-\\[\\]]+");

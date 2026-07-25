@@ -230,6 +230,10 @@ start_paper() {
     write_dataprovider_configuration "$directory/plugins/DataProvider" "DataProviderAcceptance" paper \
         "$MYSQL_PORT" "$MONGODB_PORT" "$REDIS_PORT"
     printf 'eula=true\n' >"$directory/eula.txt"
+    # The acceptance consumer does not need to accept player connections. Let the
+    # operating system allocate an isolated loopback port so local Minecraft
+    # servers cannot make the acceptance run fail before plugins are enabled.
+    printf 'server-ip=127.0.0.1\nserver-port=0\n' >"$directory/server.properties"
     mkfifo "$directory/console.in"
     (
         cd "$directory"

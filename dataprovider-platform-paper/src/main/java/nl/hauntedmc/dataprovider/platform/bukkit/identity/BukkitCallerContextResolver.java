@@ -40,9 +40,11 @@ public final class BukkitCallerContextResolver implements CallerContextResolver 
         }
     }
 
-    public void register(Plugin plugin) {
+    public PluginIdentity register(Plugin plugin) {
         Objects.requireNonNull(plugin, "Plugin cannot be null.");
-        identities.register(plugin.getName(), plugin.getClass().getClassLoader());
+        ClassLoader classLoader = plugin.getClass().getClassLoader();
+        PluginIdentity existing = identities.find(classLoader);
+        return existing != null ? existing : identities.register(plugin.getName(), classLoader);
     }
 
     public void invalidate(Plugin plugin) {
@@ -64,7 +66,12 @@ public final class BukkitCallerContextResolver implements CallerContextResolver 
         if (!(platformPlugin instanceof Plugin plugin)) {
             throw new SecurityException("DataProvider requires a Bukkit Plugin instance for API binding.");
         }
-        PluginIdentity identity = identities.find(plugin.getClass().getClassLoader());
+        if (!plugin.isEnabled()) {
+            throw new SecurityException("DataProvider requires an enabled Bukkit Plugin instance for API binding.");
+        }
+        // Bukkit fires PluginEnableEvent after JavaPlugin.onEnable. Register here as
+        // well so a plugin can bind the API from its own onEnable callback.
+        PluginIdentity identity = register(plugin);
         if (identity == null || !identity.pluginId().equals(plugin.getName().trim().toLowerCase(java.util.Locale.ROOT))) {
             throw new SecurityException("Bukkit plugin is not active in DataProvider's identity registry.");
         }

@@ -8,6 +8,7 @@ import redis.clients.jedis.Pipeline;
 import redis.clients.jedis.Response;
 import redis.clients.jedis.Transaction;
 import redis.clients.jedis.params.ScanParams;
+import redis.clients.jedis.params.SetParams;
 import redis.clients.jedis.resps.ScanResult;
 
 import java.util.ArrayList;
@@ -20,7 +21,13 @@ import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.Executor;
 
-/** Redis data access routed through the shared Redis lane. */
+/**
+ * Redis data access routed through the shared Redis lane.
+ *
+ * <p>The deprecated Jedis pool type is retained deliberately until the Redis client migration
+ * can preserve this class's borrowed-connection semantics.
+ */
+@SuppressWarnings("deprecation")
 final class RedisDataAccess implements KeyValueDataAccess {
 
     private final JedisPool jedisPool;
@@ -116,7 +123,7 @@ final class RedisDataAccess implements KeyValueDataAccess {
         }
         return AsyncTaskSupport.runAsync(executor, "redis.setKeyWithExpiry", () -> {
             try (Jedis jedis = jedisPool.getResource()) {
-                jedis.setex(validatedKey, ttlSeconds, value);
+                jedis.set(validatedKey, value, new SetParams().ex(ttlSeconds));
             }
         });
     }

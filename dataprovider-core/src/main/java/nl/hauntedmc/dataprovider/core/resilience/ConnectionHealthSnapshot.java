@@ -1,5 +1,6 @@
-package nl.hauntedmc.dataprovider.core;
+package nl.hauntedmc.dataprovider.core.resilience;
 
+import nl.hauntedmc.dataprovider.core.ProviderLifecycleState;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.Objects;

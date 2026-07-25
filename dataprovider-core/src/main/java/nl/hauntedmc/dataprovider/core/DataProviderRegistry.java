@@ -1,6 +1,7 @@
 package nl.hauntedmc.dataprovider.core;
 
 import nl.hauntedmc.dataprovider.core.config.ConfigHandler;
+import nl.hauntedmc.dataprovider.core.resilience.ConnectionHealthSnapshot;
 import nl.hauntedmc.dataprovider.core.resilience.ResilienceRuntime;
 import nl.hauntedmc.dataprovider.core.resilience.ResilienceRuntimeConfig;
 import nl.hauntedmc.dataprovider.core.resilience.ResilienceTargetAware;
@@ -184,7 +185,6 @@ class DataProviderRegistry {
     }
 
     private DatabaseProvider lookupProvider(RegistrationKey key, OwnerScopeId ownerScope) {
-        DatabaseProvider result = null;
         Lock readLock = lifecycleLock.readLock();
         readLock.lock();
         try {
@@ -193,11 +193,10 @@ class DataProviderRegistry {
             if (slot == null || ownerScope != null && !slot.hasReference(ownerScope)) {
                 return null;
             }
-            if (slot.state() == ProviderLifecycleState.READY) result = slot.provider();
+            return slot.state() == ProviderLifecycleState.READY ? slot.provider() : null;
         } finally {
             readLock.unlock();
         }
-        return result;
     }
 
     protected void unregisterDatabase(

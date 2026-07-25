@@ -5,8 +5,8 @@ import net.kyori.adventure.text.format.NamedTextColor;
 import nl.hauntedmc.dataprovider.database.DatabaseConnectionKey;
 import nl.hauntedmc.dataprovider.database.DatabaseProvider;
 import nl.hauntedmc.dataprovider.database.DatabaseType;
-import nl.hauntedmc.dataprovider.core.ConnectionHealthSnapshot;
 import nl.hauntedmc.dataprovider.core.DataProviderHandler;
+import nl.hauntedmc.dataprovider.core.resilience.ConnectionHealthSnapshot;
 
 import java.util.ArrayList;
 import java.util.Arrays;

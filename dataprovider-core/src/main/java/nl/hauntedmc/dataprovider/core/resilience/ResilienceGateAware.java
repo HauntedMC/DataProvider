@@ -1,6 +1,5 @@
 package nl.hauntedmc.dataprovider.core.resilience;
 
-import nl.hauntedmc.dataprovider.core.ConnectionHealthSnapshot;
 import java.util.function.BooleanSupplier;
 import java.util.function.Supplier;
 

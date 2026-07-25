@@ -25,7 +25,14 @@ import java.util.Objects;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.Executor;
 
-/** MySQL implementation of RelationalDataAccess. */
+/**
+ * MySQL implementation of RelationalDataAccess.
+ *
+ * <p>The relational API explicitly accepts trusted statement text and binds all dynamic values
+ * through {@link PreparedStatement} parameters. SQL taint analysis cannot follow that API
+ * contract across module boundaries.
+ */
+@SuppressWarnings("SqlSourceToSinkFlow")
 public class MySQLDataAccess implements RelationalDataAccess {
 
     private static final String TRANSACTION_OPERATION = "mysql.executeTransactionally";

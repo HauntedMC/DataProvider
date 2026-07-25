@@ -5,9 +5,9 @@ import net.kyori.adventure.text.serializer.plain.PlainTextComponentSerializer;
 import nl.hauntedmc.dataprovider.database.DatabaseConnectionKey;
 import nl.hauntedmc.dataprovider.database.DatabaseProvider;
 import nl.hauntedmc.dataprovider.database.DatabaseType;
-import nl.hauntedmc.dataprovider.core.ConnectionHealthSnapshot;
 import nl.hauntedmc.dataprovider.core.DataProviderHandler;
 import nl.hauntedmc.dataprovider.core.ProviderLifecycleState;
+import nl.hauntedmc.dataprovider.core.resilience.ConnectionHealthSnapshot;
 import org.junit.jupiter.api.Test;
 
 import java.time.Duration;
