@@ -8,6 +8,7 @@ import nl.hauntedmc.dataprovider.core.exception.DataProviderExceptionMapper;
 import nl.hauntedmc.dataprovider.core.identity.CallerContext;
 import nl.hauntedmc.dataprovider.core.identity.CallerContextResolver;
 import nl.hauntedmc.dataprovider.core.identity.StackCallerClassLoaderResolver;
+import nl.hauntedmc.dataprovider.core.identity.PluginIdentity;
 import nl.hauntedmc.dataprovider.database.DatabaseConnectionKey;
 import nl.hauntedmc.dataprovider.database.DatabaseProvider;
 import nl.hauntedmc.dataprovider.database.DatabaseType;
@@ -186,6 +187,114 @@ public class DataProviderHandler {
                     + "; it belongs to " + expectedPluginId + ".");
             throw new SecurityException("This DataProvider handle belongs to a different plugin.");
         }
+    }
+
+    /** Binds a facade at the platform API boundary. No stack inspection occurs here. */
+    public PluginIdentity issuePluginIdentity(Object platformPlugin) {
+        requireOpen("bindPlugin");
+        return callerContextResolver.issueIdentity(Objects.requireNonNull(platformPlugin, "Platform plugin cannot be null."));
+    }
+
+    /** Verifies a previously issued token without invoking a platform API. */
+    public void requireIdentity(PluginIdentity identity) {
+        Objects.requireNonNull(identity, "Plugin identity cannot be null.");
+        if (!callerContextResolver.isIdentityActive(identity)) {
+            logger.error("Rejected DataProvider handle use for an inactive plugin identity.");
+            throw new SecurityException("This DataProvider handle belongs to a disabled or replaced plugin.");
+        }
+    }
+
+    public String getPluginId(PluginIdentity identity) {
+        requireOpen("createOrmContext");
+        requireIdentity(identity);
+        return identity.pluginId();
+    }
+
+    public DatabaseProvider registerDatabaseOrThrow(
+            PluginIdentity identity, DatabaseType databaseType, String connectionIdentifier
+    ) {
+        requireStructuredOpen("registerDatabase");
+        requireIdentity(identity);
+        PluginId pluginId = PluginId.of(identity.pluginId());
+        return registerStrict(pluginId, OwnerScopeId.of(pluginId.value()), requireType(databaseType),
+                ConnectionIdentifier.of(connectionIdentifier), "registerDatabase");
+    }
+
+    public DatabaseProvider registerDatabaseForScopeOrThrow(
+            PluginIdentity identity, OwnerScope ownerScope, DatabaseType databaseType, String connectionIdentifier
+    ) {
+        requireStructuredOpen("scope.registerDatabase");
+        requireIdentity(identity);
+        return registerStrict(PluginId.of(identity.pluginId()),
+                OwnerScopeId.from(Objects.requireNonNull(ownerScope, "Owner scope cannot be null.")),
+                requireType(databaseType), ConnectionIdentifier.of(connectionIdentifier), "scope.registerDatabase");
+    }
+
+    public void unregisterDatabase(PluginIdentity identity, DatabaseType databaseType, String connectionIdentifier) {
+        requireOpen("unregisterDatabase");
+        requireIdentity(identity);
+        PluginId pluginId = PluginId.of(identity.pluginId());
+        registry.unregisterDatabase(pluginId, OwnerScopeId.of(pluginId.value()), requireType(databaseType),
+                ConnectionIdentifier.of(connectionIdentifier));
+    }
+
+    public void unregisterDatabaseForScope(
+            PluginIdentity identity, OwnerScope ownerScope, DatabaseType databaseType, String connectionIdentifier
+    ) {
+        requireOpen("scope.unregisterDatabase");
+        requireIdentity(identity);
+        registry.unregisterDatabase(PluginId.of(identity.pluginId()),
+                OwnerScopeId.from(Objects.requireNonNull(ownerScope, "Owner scope cannot be null.")),
+                requireType(databaseType), ConnectionIdentifier.of(connectionIdentifier));
+    }
+
+    public void unregisterAllDatabases(PluginIdentity identity) {
+        requireOpen("unregisterAllDatabases");
+        requireIdentity(identity);
+        PluginId pluginId = PluginId.of(identity.pluginId());
+        registry.unregisterAllDatabases(pluginId, OwnerScopeId.of(pluginId.value()));
+    }
+
+    public void unregisterAllDatabasesForScope(PluginIdentity identity, OwnerScope ownerScope) {
+        requireOpen("scope.unregisterAllDatabases");
+        requireIdentity(identity);
+        registry.unregisterAllDatabases(PluginId.of(identity.pluginId()),
+                OwnerScopeId.from(Objects.requireNonNull(ownerScope, "Owner scope cannot be null.")));
+    }
+
+    public void unregisterAllDatabasesForPlugin(PluginIdentity identity) {
+        requireOpen("unregisterAllDatabasesForPlugin");
+        requireIdentity(identity);
+        registry.unregisterAllDatabasesForPlugin(PluginId.of(identity.pluginId()));
+    }
+
+    public DatabaseProvider requireRegisteredDatabase(
+            PluginIdentity identity, DatabaseType databaseType, String connectionIdentifier
+    ) {
+        requireStructuredOpen("requireRegisteredDatabase");
+        requireIdentity(identity);
+        DatabaseType type = requireType(databaseType);
+        ConnectionIdentifier identifier = ConnectionIdentifier.of(connectionIdentifier);
+        DatabaseProvider provider = registry.getDatabase(PluginId.of(identity.pluginId()), type, identifier);
+        if (provider != null) {
+            return provider;
+        }
+        throw missingRegistration(type, identifier.value(), "requireRegisteredDatabase");
+    }
+
+    public DatabaseProvider requireRegisteredDatabaseForScope(
+            PluginIdentity identity, OwnerScope ownerScope, DatabaseType databaseType, String connectionIdentifier
+    ) {
+        requireStructuredOpen("scope.requireRegisteredDatabase");
+        requireIdentity(identity);
+        DatabaseType type = requireType(databaseType);
+        ConnectionIdentifier identifier = ConnectionIdentifier.of(connectionIdentifier);
+        DatabaseProvider provider = registry.getDatabase(PluginId.of(identity.pluginId()),
+                OwnerScopeId.from(Objects.requireNonNull(ownerScope, "Owner scope cannot be null.")), type, identifier);
+        if (provider != null) {
+            return provider;
+        }
+        throw missingRegistration(type, identifier.value(), "scope.requireRegisteredDatabase");
     }
 
     public DatabaseProvider requireRegisteredDatabase(DatabaseType databaseType, String connectionIdentifier) {

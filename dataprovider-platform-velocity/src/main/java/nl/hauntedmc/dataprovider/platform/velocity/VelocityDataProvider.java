@@ -41,6 +41,7 @@ public final class VelocityDataProvider implements DataProviderApiSupplier {
     private final Path dataDirectory;
     private final PlatformDataProviderRuntime runtime = new PlatformDataProviderRuntime();
     private volatile DataProviderAPI dataProviderApi;
+    private VelocityCallerContextResolver identityResolver;
 
     @Inject
     public VelocityDataProvider(ProxyServer proxyServer, Logger logger, @DataDirectory Path dataDirectory) {
@@ -52,12 +53,14 @@ public final class VelocityDataProvider implements DataProviderApiSupplier {
     @Subscribe(priority = INITIALIZE_EVENT_PRIORITY)
     public void onProxyInitialize(ProxyInitializeEvent event) {
         Slf4jLoggerAdapter loggerAdapter = new Slf4jLoggerAdapter(logger);
+        identityResolver = new VelocityCallerContextResolver(proxyServer, getClass().getClassLoader());
+        identityResolver.synchronizePlugins();
         runtime.start(
                 () -> new DataProvider(
                         loggerAdapter,
                         dataDirectory,
                         getClass().getClassLoader(),
-                        new VelocityCallerContextResolver(proxyServer, getClass().getClassLoader())
+                        identityResolver
                 ),
                 this::initializeBindings,
                 loggerAdapter
@@ -70,6 +73,9 @@ public final class VelocityDataProvider implements DataProviderApiSupplier {
     @Subscribe(priority = SHUTDOWN_EVENT_PRIORITY)
     public void onProxyShutdown(ProxyShutdownEvent event) {
         dataProviderApi = null;
+        if (identityResolver != null) {
+            identityResolver.invalidateAll();
+        }
         runtime.stop(new Slf4jLoggerAdapter(logger));
         logger.info("DataProvider disabled.");
     }

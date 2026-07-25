@@ -5,6 +5,8 @@ import nl.hauntedmc.dataprovider.core.api.DefaultDataProviderApi;
 import nl.hauntedmc.dataprovider.database.DatabaseType;
 import nl.hauntedmc.dataprovider.core.identity.CallerContext;
 import nl.hauntedmc.dataprovider.core.identity.CallerContextResolver;
+import nl.hauntedmc.dataprovider.core.identity.PluginIdentity;
+import nl.hauntedmc.dataprovider.core.identity.PluginIdentityRegistry;
 import nl.hauntedmc.dataprovider.core.testutil.RecordingLoggerAdapter;
 import nl.hauntedmc.dataprovider.exception.ProviderClosedException;
 import org.junit.jupiter.api.Test;
@@ -33,7 +35,7 @@ class DataProviderTest {
         RecordingLoggerAdapter logger = new RecordingLoggerAdapter();
         Path dataDir = tempDir.resolve("data");
         ClassLoader classLoader = getClass().getClassLoader();
-        CallerContextResolver resolver = () -> new CallerContext("plugin", classLoader);
+        CallerContextResolver resolver = resolver(classLoader);
 
         assertThrows(NullPointerException.class, () -> new DataProvider(null, dataDir, classLoader, resolver));
         assertThrows(NullPointerException.class, () -> new DataProvider(logger, null, classLoader, resolver));
@@ -51,7 +53,7 @@ class DataProviderTest {
                 getClass().getClassLoader()
         )) {
             RecordingLoggerAdapter logger = new RecordingLoggerAdapter();
-            CallerContextResolver resolver = () -> new CallerContext("plugin", classLoader);
+            CallerContextResolver resolver = resolver(classLoader);
             DataProvider provider = new DataProvider(logger, tempDir.resolve("data"), classLoader, resolver);
 
             assertEquals(logger, provider.getLogger());
@@ -73,10 +75,10 @@ class DataProviderTest {
     void staleApiReferenceFailsAfterShutdownAndNewProviderStartsClean() {
         RecordingLoggerAdapter logger = new RecordingLoggerAdapter();
         ClassLoader classLoader = getClass().getClassLoader();
-        CallerContextResolver resolver = () -> new CallerContext("plugin", classLoader);
+        CallerContextResolver resolver = resolver(classLoader);
 
         DataProvider firstProvider = new DataProvider(logger, tempDir.resolve("data-first"), classLoader, resolver);
-        DataProviderAPI staleApi = new DefaultDataProviderApi(firstProvider.getDataProviderHandler());
+        DataProviderAPI staleApi = new DefaultDataProviderApi(firstProvider.getDataProviderHandler()).forPlugin(this);
 
         firstProvider.shutdownAllDatabases();
 
@@ -87,11 +89,22 @@ class DataProviderTest {
         assertTrue(staleFailure.getMessage().contains("no longer available"));
 
         DataProvider secondProvider = new DataProvider(logger, tempDir.resolve("data-second"), classLoader, resolver);
-        DataProviderAPI freshApi = new DefaultDataProviderApi(secondProvider.getDataProviderHandler());
+        DataProviderAPI freshApi = new DefaultDataProviderApi(secondProvider.getDataProviderHandler()).forPlugin(this);
         assertThrows(
                 nl.hauntedmc.dataprovider.exception.DataProviderRegistrationException.class,
                 () -> freshApi.requireRegisteredDatabase(DatabaseType.MYSQL, "default")
         );
         secondProvider.shutdownAllDatabases();
+    }
+
+    private static CallerContextResolver resolver(ClassLoader classLoader) {
+        PluginIdentityRegistry identities = new PluginIdentityRegistry();
+        PluginIdentity identity = identities.register("plugin", classLoader);
+        return new CallerContextResolver() {
+            @Override public CallerContext resolveCaller() { return new CallerContext("plugin", classLoader); }
+            @Override public PluginIdentity issueIdentity(Object plugin) { return identity; }
+            @Override public boolean isIdentityActive(PluginIdentity candidate) { return identities.isActive(candidate); }
+            @Override public boolean isKnownPlugin(String pluginId) { return identities.isKnownPlugin(pluginId); }
+        };
     }
 }

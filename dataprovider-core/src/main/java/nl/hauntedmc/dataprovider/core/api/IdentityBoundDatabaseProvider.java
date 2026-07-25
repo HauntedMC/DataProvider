@@ -1,6 +1,7 @@
 package nl.hauntedmc.dataprovider.core.api;
 
 import nl.hauntedmc.dataprovider.core.DataProviderHandler;
+import nl.hauntedmc.dataprovider.core.identity.PluginIdentity;
 import nl.hauntedmc.dataprovider.core.concurrent.ScopedDataSource;
 import nl.hauntedmc.dataprovider.database.DatabaseProvider;
 import nl.hauntedmc.dataprovider.database.DataAccess;
@@ -32,11 +33,11 @@ final class IdentityBoundDatabaseProvider {
     private IdentityBoundDatabaseProvider() {
     }
 
-    static DatabaseProvider wrap(DataProviderHandler handler, String pluginId, DatabaseProvider provider) {
+    static DatabaseProvider wrap(DataProviderHandler handler, PluginIdentity identity, DatabaseProvider provider) {
         if (provider == null) {
             return null;
         }
-        return (DatabaseProvider) proxy(provider, handler, pluginId, providerInterfaces(provider));
+        return (DatabaseProvider) proxy(provider, handler, identity, providerInterfaces(provider));
     }
 
     private static Class<?>[] providerInterfaces(DatabaseProvider provider) {
@@ -55,25 +56,24 @@ final class IdentityBoundDatabaseProvider {
         return new Class<?>[] {DatabaseProvider.class};
     }
 
-    private static Object proxy(Object delegate, DataProviderHandler handler, String pluginId, Class<?>[] interfaces) {
+    private static Object proxy(Object delegate, DataProviderHandler handler, PluginIdentity identity, Class<?>[] interfaces) {
         Objects.requireNonNull(delegate, "Delegate cannot be null.");
         Objects.requireNonNull(handler, "Handler cannot be null.");
-        Objects.requireNonNull(pluginId, "Plugin id cannot be null.");
         return Proxy.newProxyInstance(
                 IdentityBoundDatabaseProvider.class.getClassLoader(), interfaces,
-                new GuardedInvocation(delegate, handler, pluginId)
+                new GuardedInvocation(delegate, handler, identity)
         );
     }
 
     private static final class GuardedInvocation implements InvocationHandler {
         private final Object delegate;
         private final DataProviderHandler handler;
-        private final String pluginId;
+        private final PluginIdentity identity;
 
-        private GuardedInvocation(Object delegate, DataProviderHandler handler, String pluginId) {
+        private GuardedInvocation(Object delegate, DataProviderHandler handler, PluginIdentity identity) {
             this.delegate = delegate;
             this.handler = handler;
-            this.pluginId = pluginId;
+            this.identity = identity;
         }
 
         @Override
@@ -81,7 +81,7 @@ final class IdentityBoundDatabaseProvider {
             if (method.getDeclaringClass() == Object.class) {
                 return method.invoke(delegate, args);
             }
-            handler.requireCallerIdentity(pluginId);
+            check(handler, identity);
             if (method.getName().equals("unwrap") && args != null && args.length == 1) {
                 Class<?> type = (Class<?>) args[0];
                 if (type.isInstance(proxy)) {
@@ -94,27 +94,27 @@ final class IdentityBoundDatabaseProvider {
             }
             try {
                 Object result = method.invoke(delegate, args);
-                return bindResult(method.getReturnType(), result, handler, pluginId);
+                return bindResult(method.getReturnType(), result, handler, identity);
             } catch (InvocationTargetException exception) {
                 throw exception.getCause();
             }
         }
     }
 
-    private static Object bindResult(Class<?> returnType, Object result, DataProviderHandler handler, String pluginId) {
+    private static Object bindResult(Class<?> returnType, Object result, DataProviderHandler handler, PluginIdentity identity) {
         if (result == null) {
             return null;
         }
         if (result instanceof DataSource dataSource) {
-            return new GuardedDataSource(dataSource, handler, pluginId);
+            return new GuardedDataSource(dataSource, handler, identity);
         }
         if (result instanceof Subscription subscription) {
-            return proxy(subscription, handler, pluginId, new Class<?>[] {Subscription.class});
+            return proxy(subscription, handler, identity, new Class<?>[] {Subscription.class});
         }
         if (returnType.isInterface() && (DataAccess.class.isAssignableFrom(returnType)
                 || SchemaManager.class.isAssignableFrom(returnType)
                 || returnType.getPackageName().startsWith("java.sql"))) {
-            return proxy(result, handler, pluginId, new Class<?>[] {returnType});
+            return proxy(result, handler, identity, new Class<?>[] {returnType});
         }
         return result;
     }
@@ -122,22 +122,22 @@ final class IdentityBoundDatabaseProvider {
     private static final class GuardedDataSource implements ScopedDataSource {
         private final DataSource delegate;
         private final DataProviderHandler handler;
-        private final String pluginId;
+        private final PluginIdentity identity;
 
-        private GuardedDataSource(DataSource delegate, DataProviderHandler handler, String pluginId) {
+        private GuardedDataSource(DataSource delegate, DataProviderHandler handler, PluginIdentity identity) {
             this.delegate = delegate;
             this.handler = handler;
-            this.pluginId = pluginId;
+            this.identity = identity;
         }
 
-        private void check() { handler.requireCallerIdentity(pluginId); }
+        private void check() { IdentityBoundDatabaseProvider.check(handler, identity); }
         @Override public Connection getConnection() throws SQLException {
             check();
-            return (Connection) bindResult(Connection.class, delegate.getConnection(), handler, pluginId);
+            return (Connection) bindResult(Connection.class, delegate.getConnection(), handler, identity);
         }
         @Override public Connection getConnection(String user, String password) throws SQLException {
             check();
-            return (Connection) bindResult(Connection.class, delegate.getConnection(user, password), handler, pluginId);
+            return (Connection) bindResult(Connection.class, delegate.getConnection(user, password), handler, identity);
         }
         @Override public PrintWriter getLogWriter() throws SQLException { check(); return delegate.getLogWriter(); }
         @Override public void setLogWriter(PrintWriter writer) throws SQLException { check(); delegate.setLogWriter(writer); }
@@ -152,5 +152,9 @@ final class IdentityBoundDatabaseProvider {
             throw new SQLException("The underlying DataSource is not exposed by a bound provider.");
         }
         @Override public boolean isWrapperFor(Class<?> type) throws SQLException { check(); return type.isInstance(this); }
+    }
+
+    private static void check(DataProviderHandler handler, PluginIdentity identity) {
+        handler.requireIdentity(Objects.requireNonNull(identity, "Bound provider identity cannot be null."));
     }
 }

@@ -2,12 +2,11 @@ package nl.hauntedmc.dataprovider.platform.bukkit.identity;
 
 import nl.hauntedmc.dataprovider.core.identity.CallerContext;
 import nl.hauntedmc.dataprovider.core.identity.CallerContextResolver;
-import nl.hauntedmc.dataprovider.core.identity.PluginCallerChainResolver;
-import nl.hauntedmc.dataprovider.core.identity.StackCallerClassLoaderResolver;
+import nl.hauntedmc.dataprovider.core.identity.PluginIdentity;
+import nl.hauntedmc.dataprovider.core.identity.PluginIdentityRegistry;
 import org.bukkit.Bukkit;
 import org.bukkit.plugin.Plugin;
 
-import java.util.List;
 import java.util.Objects;
 
 /**
@@ -16,6 +15,7 @@ import java.util.Objects;
 public final class BukkitCallerContextResolver implements CallerContextResolver {
 
     private final ClassLoader ownClassLoader;
+    private final PluginIdentityRegistry identities = new PluginIdentityRegistry();
 
     public BukkitCallerContextResolver(ClassLoader ownClassLoader) {
         this.ownClassLoader = Objects.requireNonNull(ownClassLoader, "Own class loader cannot be null.");
@@ -23,33 +23,56 @@ public final class BukkitCallerContextResolver implements CallerContextResolver 
 
     @Override
     public CallerContext resolveCaller() {
-        return resolveCaller(StackCallerClassLoaderResolver.resolveExternalCallerChain(ownClassLoader));
+        throw new SecurityException("Use DataProviderAPI.forPlugin(plugin) to obtain a bound API facade.");
     }
 
     @Override
     public boolean isKnownPlugin(String pluginId) {
-        return pluginId != null && Bukkit.getPluginManager().getPlugin(pluginId) != null;
+        return identities.isKnownPlugin(pluginId);
     }
 
-    CallerContext resolveCaller(List<ClassLoader> callerChain) {
-        return PluginCallerChainResolver.resolveNearestMappedCaller(
-                callerChain,
-                this::resolvePluginName,
-                "Caller class loader is not mapped to a Bukkit plugin."
-        );
-    }
-
-    private String resolvePluginName(ClassLoader callerLoader) {
-        Plugin plugin = findPluginByClassLoader(callerLoader);
-        return plugin == null ? null : plugin.getName();
-    }
-
-    private static Plugin findPluginByClassLoader(ClassLoader callerLoader) {
+    /** Called from Paper's lifecycle thread before APIs are handed to plugins. */
+    public void synchronizePlugins() {
         for (Plugin plugin : Bukkit.getPluginManager().getPlugins()) {
-            if (plugin.getClass().getClassLoader() == callerLoader) {
-                return plugin;
+            if (plugin.isEnabled()) {
+                register(plugin);
             }
         }
-        return null;
+    }
+
+    public void register(Plugin plugin) {
+        Objects.requireNonNull(plugin, "Plugin cannot be null.");
+        identities.register(plugin.getName(), plugin.getClass().getClassLoader());
+    }
+
+    public void invalidate(Plugin plugin) {
+        if (plugin != null) {
+            identities.invalidate(plugin.getClass().getClassLoader());
+        }
+    }
+
+    public PluginIdentity find(Plugin plugin) {
+        return plugin == null ? null : identities.find(plugin.getClass().getClassLoader());
+    }
+
+    public void invalidateAll() {
+        identities.invalidateAll();
+    }
+
+    @Override
+    public PluginIdentity issueIdentity(Object platformPlugin) {
+        if (!(platformPlugin instanceof Plugin plugin)) {
+            throw new SecurityException("DataProvider requires a Bukkit Plugin instance for API binding.");
+        }
+        PluginIdentity identity = identities.find(plugin.getClass().getClassLoader());
+        if (identity == null || !identity.pluginId().equals(plugin.getName().trim().toLowerCase(java.util.Locale.ROOT))) {
+            throw new SecurityException("Bukkit plugin is not active in DataProvider's identity registry.");
+        }
+        return identity;
+    }
+
+    @Override
+    public boolean isIdentityActive(PluginIdentity identity) {
+        return identities.isActive(identity);
     }
 }

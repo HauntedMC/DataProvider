@@ -3,6 +3,7 @@ package nl.hauntedmc.dataprovider.core.api;
 import nl.hauntedmc.dataprovider.api.DataProviderScope;
 import nl.hauntedmc.dataprovider.api.OwnerScope;
 import nl.hauntedmc.dataprovider.core.DataProviderHandler;
+import nl.hauntedmc.dataprovider.core.identity.PluginIdentity;
 import nl.hauntedmc.dataprovider.database.DatabaseProvider;
 import nl.hauntedmc.dataprovider.database.DatabaseType;
 import nl.hauntedmc.dataprovider.exception.DataProviderFailureContext;
@@ -20,14 +21,14 @@ public final class DefaultDataProviderScope implements DataProviderScope {
 
     private final DataProviderHandler handler;
     private final OwnerScope ownerScope;
-    private final String pluginId;
+    private final PluginIdentity identity;
     private final Object lifecycleMonitor = new Object();
     private volatile LifecycleState lifecycleState = LifecycleState.OPEN;
 
-    DefaultDataProviderScope(DataProviderHandler handler, OwnerScope ownerScope, String pluginId) {
+    DefaultDataProviderScope(DataProviderHandler handler, OwnerScope ownerScope, PluginIdentity identity) {
         this.handler = Objects.requireNonNull(handler, "DataProviderHandler cannot be null.");
         this.ownerScope = Objects.requireNonNull(ownerScope, "Owner scope cannot be null.");
-        this.pluginId = Objects.requireNonNull(pluginId, "Plugin id cannot be null.");
+        this.identity = Objects.requireNonNull(identity, "Plugin identity cannot be null.");
     }
 
     @Override
@@ -46,8 +47,8 @@ public final class DefaultDataProviderScope implements DataProviderScope {
     public DatabaseProvider registerDatabaseOrThrow(DatabaseType databaseType, String connectionIdentifier) {
         synchronized (lifecycleMonitor) {
             requireStructuredOpen("scope.registerDatabase");
-            return DefaultDataProviderApi.wrapProvider(handler, pluginId,
-                    handler.registerDatabaseForScopeOrThrow(ownerScope, databaseType, connectionIdentifier)
+            return DefaultDataProviderApi.wrapProvider(handler, identity,
+                    handler.registerDatabaseForScopeOrThrow(identity, ownerScope, databaseType, connectionIdentifier)
             );
         }
     }
@@ -56,7 +57,7 @@ public final class DefaultDataProviderScope implements DataProviderScope {
     public void unregisterDatabase(DatabaseType databaseType, String connectionIdentifier) {
         synchronized (lifecycleMonitor) {
             requireOpen("scope.unregisterDatabase");
-            handler.unregisterDatabaseForScope(ownerScope, databaseType, connectionIdentifier);
+            handler.unregisterDatabaseForScope(identity, ownerScope, databaseType, connectionIdentifier);
         }
     }
 
@@ -64,7 +65,7 @@ public final class DefaultDataProviderScope implements DataProviderScope {
     public void unregisterAllDatabases() {
         synchronized (lifecycleMonitor) {
             requireOpen("scope.unregisterAllDatabases");
-            handler.unregisterAllDatabasesForScope(ownerScope);
+            handler.unregisterAllDatabasesForScope(identity, ownerScope);
         }
     }
 
@@ -72,8 +73,8 @@ public final class DefaultDataProviderScope implements DataProviderScope {
     public DatabaseProvider requireRegisteredDatabase(DatabaseType databaseType, String connectionIdentifier) {
         synchronized (lifecycleMonitor) {
             requireStructuredOpen("scope.requireRegisteredDatabase");
-            return DefaultDataProviderApi.wrapProvider(handler, pluginId,
-                    handler.requireRegisteredDatabaseForScope(ownerScope, databaseType, connectionIdentifier)
+            return DefaultDataProviderApi.wrapProvider(handler, identity,
+                    handler.requireRegisteredDatabaseForScope(identity, ownerScope, databaseType, connectionIdentifier)
             );
         }
     }
@@ -87,7 +88,7 @@ public final class DefaultDataProviderScope implements DataProviderScope {
             }
             lifecycleState = LifecycleState.CLOSING;
             try {
-                handler.unregisterAllDatabasesForScope(ownerScope);
+                handler.unregisterAllDatabasesForScope(identity, ownerScope);
             } finally {
                 lifecycleState = LifecycleState.CLOSED;
             }
@@ -116,6 +117,6 @@ public final class DefaultDataProviderScope implements DataProviderScope {
     }
 
     private void requireOwner() {
-        handler.requireCallerIdentity(pluginId);
+        handler.requireIdentity(identity);
     }
 }

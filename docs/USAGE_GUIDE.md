@@ -11,7 +11,8 @@ DataProviderAPI api = proxyServer.getPluginManager()
                 .filter(DataProviderApiSupplier.class::isInstance)
                 .map(DataProviderApiSupplier.class::cast)
                 .map(DataProviderApiSupplier::dataProviderApi))
-        .orElseThrow(() -> new IllegalStateException("DataProvider is unavailable."));
+        .orElseThrow(() -> new IllegalStateException("DataProvider is unavailable."))
+        .forPlugin(this);
 ```
 
 Bukkit/Paper:
@@ -22,10 +23,12 @@ RegisteredServiceProvider<DataProviderAPI> registration =
 if (registration == null) {
     throw new IllegalStateException("DataProvider is unavailable.");
 }
-DataProviderAPI api = registration.getProvider();
+DataProviderAPI api = registration.getProvider().forPlugin(this);
 ```
 
-Caller identity is resolved automatically from the plugin runtime context.
+Bind once from your plugin's enable/initialization callback, then retain that bound facade for
+asynchronous work, futures, callbacks, and shared-library calls. DataProvider does not inspect
+those call stacks or query the platform plugin manager during database operations.
 
 ## 1.1 API lifecycle across reloads
 

@@ -46,7 +46,7 @@ class PlatformDataProviderRuntimeTest {
     }
 
     @Test
-    void getDataProviderApiReturnsFacadeForActiveProvider() {
+    void getDataProviderApiReturnsUnboundGatewayForActiveProvider() {
         PlatformDataProviderRuntime runtime = new PlatformDataProviderRuntime();
         LoggerAdapter logger = mock(LoggerAdapter.class);
         DataProvider provider = mock(DataProvider.class);
@@ -58,8 +58,7 @@ class PlatformDataProviderRuntimeTest {
         try {
             DataProviderAPI api = runtime.getDataProviderAPI();
             assertNotNull(api);
-            api.unregisterAllDatabases();
-            verify(handler).unregisterAllDatabases();
+            assertThrows(IllegalStateException.class, api::unregisterAllDatabases);
         } finally {
             runtime.stop(logger);
         }

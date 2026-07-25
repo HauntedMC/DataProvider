@@ -17,7 +17,7 @@ Public packages stay under `nl.hauntedmc.dataprovider.api` and `nl.hauntedmc.dat
 ## Registration Model
 
 1. Plugin asks for a backend registration through `registerDatabaseOrThrow`.
-2. Caller identity is resolved from runtime plugin context.
+2. The platform-issued identity captured by the bound API facade supplies plugin ownership.
 3. Config section is resolved by backend type + identifier.
 4. Registry returns an existing live provider or creates one through `DatabaseFactory`.
 5. Registration is reference-counted and reused for identical keys in the same plugin context.
@@ -31,7 +31,7 @@ Public packages stay under `nl.hauntedmc.dataprovider.api` and `nl.hauntedmc.dat
 
 ## Lifecycle Safety
 
-- Per-caller ownership checks gate unregister operations.
+- Captured, revocable plugin identities gate all handle operations; no operational call walks a stack.
 - Reference ownership is tracked by owner scope.
 - Default API methods use plugin-level owner scope for predictable lifecycle behavior.
 - If one plugin/software process multiplexes multiple components through one wrapper class, use optional scoped lifecycle facades (`DataProviderAPI.scope(...)`) to preserve component isolation.
@@ -47,7 +47,8 @@ Public packages stay under `nl.hauntedmc.dataprovider.api` and `nl.hauntedmc.dat
 - Platform command adapters delegate to a shared `DataProviderCommandService` so Bukkit and Velocity command behavior stays identical.
 - Command service exposes diagnostics-focused admin commands (`status`, `config`, `reload`) with permission-gated filtering. Status reads cached remote health and triggers refresh probes asynchronously, so platform server threads never perform remote health checks.
 - API discovery is platform-native: Bukkit registers `DataProviderAPI` in `ServicesManager`; Velocity exposes `DataProviderApiSupplier` on plugin instance.
-- Platform-specific wrappers only map host APIs to shared internals (logger, command registration, event/plugin lifecycle hooks).
+- Platform-specific wrappers maintain classloader-to-identity maps from lifecycle events and invalidate
+  identities (and their handles) before a plugin disables or reloads.
 
 ## ORM Integration
 

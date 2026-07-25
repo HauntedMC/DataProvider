@@ -32,12 +32,12 @@ public final class PaperAcceptanceConsumer extends JavaPlugin {
 
     @Override
     public void onEnable() {
+        DataProviderAPI boundApi = resolveApi();
         Bukkit.getScheduler().runTaskAsynchronously(this, () -> {
             Set<String> databaseThreadsBefore = databaseThreadNames();
-            DataProviderAPI api = null;
+            DataProviderAPI api = boundApi;
             boolean passed = false;
             try {
-                api = resolveApi();
                 KeyValueDatabaseProvider redis = runAcceptance(api);
                 CompletableFuture<Boolean> reload = new CompletableFuture<>();
                 Bukkit.getScheduler().runTask(this, () -> reload.complete(Bukkit.dispatchCommand(
@@ -72,7 +72,7 @@ public final class PaperAcceptanceConsumer extends JavaPlugin {
         if (registration == null) {
             throw new IllegalStateException("DataProviderAPI is not registered by the bundled plugin.");
         }
-        return registration.getProvider();
+        return registration.getProvider().forPlugin(this);
     }
 
     private static KeyValueDatabaseProvider runAcceptance(DataProviderAPI api) throws Exception {

@@ -52,12 +52,12 @@ public final class VelocityAcceptanceConsumer {
 
     @Subscribe
     public void onProxyInitialize(ProxyInitializeEvent event) {
+        DataProviderAPI boundApi = resolveApi();
         proxy.getScheduler().buildTask(this, () -> {
             Set<String> databaseThreadsBefore = databaseThreadNames();
-            DataProviderAPI api = null;
+            DataProviderAPI api = boundApi;
             boolean passed = false;
             try {
-                api = resolveApi();
                 KeyValueDatabaseProvider redis = runAcceptance(api);
                 require(await(proxy.getCommandManager().executeAsync(
                         proxy.getConsoleCommandSource(), "dataprovider reload"
@@ -91,7 +91,7 @@ public final class VelocityAcceptanceConsumer {
         if (!(plugin instanceof DataProviderApiSupplier supplier)) {
             throw new IllegalStateException("DataProvider plugin does not expose DataProviderApiSupplier.");
         }
-        return supplier.dataProviderApi();
+        return supplier.dataProviderApi().forPlugin(this);
     }
 
     private static KeyValueDatabaseProvider runAcceptance(DataProviderAPI api) throws Exception {

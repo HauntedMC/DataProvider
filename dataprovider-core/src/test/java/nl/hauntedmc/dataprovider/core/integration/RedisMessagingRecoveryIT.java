@@ -5,6 +5,8 @@ import nl.hauntedmc.dataprovider.core.DataProvider;
 import nl.hauntedmc.dataprovider.core.api.DefaultDataProviderApi;
 import nl.hauntedmc.dataprovider.core.identity.CallerContext;
 import nl.hauntedmc.dataprovider.core.identity.CallerContextResolver;
+import nl.hauntedmc.dataprovider.core.identity.PluginIdentity;
+import nl.hauntedmc.dataprovider.core.identity.PluginIdentityRegistry;
 import nl.hauntedmc.dataprovider.core.testutil.RecordingLoggerAdapter;
 import nl.hauntedmc.dataprovider.database.DatabaseType;
 import nl.hauntedmc.dataprovider.database.messaging.MessagingDatabaseProvider;
@@ -59,7 +61,7 @@ class RedisMessagingRecoveryIT {
         AtomicBoolean containerPaused = new AtomicBoolean(false);
         AtomicBoolean redisStopped = new AtomicBoolean(false);
         try {
-            DataProviderAPI api = new DefaultDataProviderApi(provider.getDataProviderHandler());
+            DataProviderAPI api = new DefaultDataProviderApi(provider.getDataProviderHandler()).forPlugin(this);
             MessagingDatabaseProvider messaging = (MessagingDatabaseProvider)
                     api.registerDatabaseOrThrow(DatabaseType.REDIS_MESSAGING, "default");
             var access = messaging.getDataAccess();
@@ -241,6 +243,7 @@ class RedisMessagingRecoveryIT {
     }
 
     private CallerContextResolver callerResolver() {
+        PluginIdentityRegistry identities = new PluginIdentityRegistry();
         return new CallerContextResolver() {
             @Override
             public CallerContext resolveCaller() {
@@ -250,6 +253,16 @@ class RedisMessagingRecoveryIT {
             @Override
             public boolean isKnownPlugin(String pluginId) {
                 return "messaging-recovery-it".equals(pluginId);
+            }
+
+            @Override
+            public PluginIdentity issueIdentity(Object plugin) {
+                return identities.register("messaging-recovery-it", getClass().getClassLoader());
+            }
+
+            @Override
+            public boolean isIdentityActive(PluginIdentity identity) {
+                return identities.isActive(identity);
             }
         };
     }

@@ -4,40 +4,50 @@ import com.velocitypowered.api.plugin.PluginContainer;
 import com.velocitypowered.api.plugin.PluginDescription;
 import com.velocitypowered.api.plugin.PluginManager;
 import com.velocitypowered.api.proxy.ProxyServer;
-import nl.hauntedmc.dataprovider.core.identity.CallerContext;
+import nl.hauntedmc.dataprovider.core.identity.PluginIdentity;
 import org.junit.jupiter.api.Test;
 
 import java.lang.reflect.Proxy;
 import java.util.List;
 import java.util.Optional;
+import java.util.concurrent.CompletableFuture;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertSame;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.doReturn;
+import static org.mockito.Mockito.clearInvocations;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 class VelocityCallerContextResolverTest {
 
     @Test
-    void resolvesNearestPluginFromCallerChain() {
+    void issuesAndValidatesCapturedIdentityWithoutFurtherPluginManagerAccess() {
         ClassLoader nearestLoader = new ClassLoader() {
         };
         ClassLoader outerLoader = new ClassLoader() {
         };
 
-        VelocityCallerContextResolver resolver = new VelocityCallerContextResolver(
-                createProxyServer(
+        ProxyServer proxy = createProxyServer(
                         createPluginContainer("proxyfeatures", createPluginInstance(nearestLoader)),
                         createPluginContainer("wrapperplugin", createPluginInstance(outerLoader))
-                ),
-                getClass().getClassLoader()
-        );
+                );
+        VelocityCallerContextResolver resolver = new VelocityCallerContextResolver(proxy, getClass().getClassLoader());
+        resolver.synchronizePlugins();
+        clearInvocations(proxy);
 
-        CallerContext callerContext = resolver.resolveCaller(List.of(nearestLoader, outerLoader));
+        Object plugin = createPluginInstance(nearestLoader);
+        // The registry maps class loaders; the bound instance can be a framework proxy.
+        PluginIdentity identity = resolver.issueIdentity(plugin);
+        CompletableFuture.runAsync(() -> assertTrue(resolver.isIdentityActive(identity))).join();
 
-        assertEquals("proxyfeatures", callerContext.pluginId());
-        assertSame(nearestLoader, callerContext.classLoader());
+        assertSame(nearestLoader, identity.classLoader());
+        assertTrue(resolver.isIdentityActive(identity));
+        verifyNoInteractions(proxy);
+        resolver.invalidateAll();
+        assertFalse(resolver.isIdentityActive(identity));
     }
 
     private static ProxyServer createProxyServer(PluginContainer... pluginContainers) {

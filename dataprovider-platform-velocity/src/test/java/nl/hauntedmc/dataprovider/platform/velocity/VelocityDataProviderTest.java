@@ -105,7 +105,6 @@ class VelocityDataProviderTest {
 
         DataProviderAPI api = velocityDataProvider.dataProviderApi();
         assertNotNull(api);
-        api.unregisterAllDatabases();
-        verify(handler).unregisterAllDatabases();
+        assertThrows(IllegalStateException.class, api::unregisterAllDatabases);
     }
 }

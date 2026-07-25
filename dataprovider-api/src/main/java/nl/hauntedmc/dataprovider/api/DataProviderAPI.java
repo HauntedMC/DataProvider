@@ -10,6 +10,14 @@ import javax.sql.DataSource;
 /** Public, platform-neutral facade for plugin-scoped database registrations. */
 public interface DataProviderAPI {
 
+    /**
+     * Binds this platform API gateway to the caller's platform plugin instance. Call this once
+     * during plugin initialization and retain the returned facade for asynchronous work.
+     */
+    default DataProviderAPI forPlugin(Object platformPlugin) {
+        throw new UnsupportedOperationException("This DataProvider API does not support plugin binding.");
+    }
+
     ORMContext createOrmContext(
             DataSource dataSource,
             LoggerAdapter logger,

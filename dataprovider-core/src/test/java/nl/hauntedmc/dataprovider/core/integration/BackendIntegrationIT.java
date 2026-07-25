@@ -9,6 +9,8 @@ import nl.hauntedmc.dataprovider.api.DataProviderAPI;
 import nl.hauntedmc.dataprovider.core.api.DefaultDataProviderApi;
 import nl.hauntedmc.dataprovider.core.identity.CallerContext;
 import nl.hauntedmc.dataprovider.core.identity.CallerContextResolver;
+import nl.hauntedmc.dataprovider.core.identity.PluginIdentity;
+import nl.hauntedmc.dataprovider.core.identity.PluginIdentityRegistry;
 import nl.hauntedmc.dataprovider.core.testutil.RecordingLoggerAdapter;
 import nl.hauntedmc.dataprovider.database.document.model.DocumentQuery;
 import nl.hauntedmc.dataprovider.database.document.model.DocumentUpdate;
@@ -292,7 +294,7 @@ class BackendIntegrationIT {
         );
         try {
             var handler = provider.getDataProviderHandler();
-            DataProviderAPI api = new DefaultDataProviderApi(handler);
+            DataProviderAPI api = new DefaultDataProviderApi(handler).forPlugin(this);
             RelationalDatabaseProvider mysql = (RelationalDatabaseProvider)
                     api.registerDatabaseOrThrow(DatabaseType.MYSQL, "default");
             DocumentDatabaseProvider mongo = (DocumentDatabaseProvider)
@@ -486,6 +488,7 @@ class BackendIntegrationIT {
     }
 
     private CallerContextResolver callerResolver(AtomicReference<String> caller, String... knownPlugins) {
+        PluginIdentityRegistry identities = new PluginIdentityRegistry();
         return new CallerContextResolver() {
             @Override
             public CallerContext resolveCaller() {
@@ -495,6 +498,16 @@ class BackendIntegrationIT {
             @Override
             public boolean isKnownPlugin(String pluginId) {
                 return java.util.Arrays.asList(knownPlugins).contains(pluginId);
+            }
+
+            @Override
+            public PluginIdentity issueIdentity(Object plugin) {
+                return identities.register(caller.get(), getClass().getClassLoader());
+            }
+
+            @Override
+            public boolean isIdentityActive(PluginIdentity identity) {
+                return identities.isActive(identity);
             }
         };
     }

@@ -44,7 +44,8 @@ DataProviderAPI api = proxyServer.getPluginManager()
                 .filter(DataProviderApiSupplier.class::isInstance)
                 .map(DataProviderApiSupplier.class::cast)
                 .map(DataProviderApiSupplier::dataProviderApi))
-        .orElseThrow(() -> new IllegalStateException("DataProvider is unavailable."));
+        .orElseThrow(() -> new IllegalStateException("DataProvider is unavailable."))
+        .forPlugin(this); // bind once during this plugin's initialization
 ```
 
 Bukkit/Paper:
@@ -55,7 +56,7 @@ RegisteredServiceProvider<DataProviderAPI> registration =
 if (registration == null) {
     return;
 }
-DataProviderAPI api = registration.getProvider();
+DataProviderAPI api = registration.getProvider().forPlugin(this); // bind once during onEnable
 ```
 
 ```java

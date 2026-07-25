@@ -1,7 +1,7 @@
 package nl.hauntedmc.dataprovider.core.identity;
 
 /**
- * Resolves the active caller identity from the platform runtime.
+ * Platform identity registry SPI.
  *
  * <p>This is a platform integration SPI used for cooperative-plugin access checks. It does not
  * create a security boundary against code installed in the same JVM.</p>
@@ -9,12 +9,26 @@ package nl.hauntedmc.dataprovider.core.identity;
 public interface CallerContextResolver {
 
     /**
-     * Resolve caller identity for the current API invocation.
+     * Legacy caller-resolution hook retained for internal compatibility. Production platform
+     * integrations must issue identities at {@code DataProviderAPI.forPlugin(...)} instead.
      *
      * @return resolved caller context
      * @throws SecurityException when the caller cannot be mapped to a platform plugin identity
      */
     CallerContext resolveCaller();
+
+    /**
+     * Issues the identity for an explicitly supplied platform plugin object. This is called at
+     * the API binding boundary, never while a database handle is being used.
+     */
+    default PluginIdentity issueIdentity(Object platformPlugin) {
+        throw new SecurityException("This platform integration does not support explicit API binding.");
+    }
+
+    /** Checks a captured identity without consulting platform APIs. */
+    default boolean isIdentityActive(PluginIdentity identity) {
+        return false;
+    }
 
     /**
      * Determines whether a plugin identifier in a connection access policy is known to the platform.
