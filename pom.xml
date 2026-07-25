@@ -61,7 +61,10 @@
 
         <!-- Platform APIs and production dependencies. -->
         <paper.version>26.2.build.65-beta</paper.version>
+        <paper.runtime.version>26.2</paper.runtime.version>
+        <paper.runtime.build>65</paper.runtime.build>
         <velocity.version>4.1.0-SNAPSHOT</velocity.version>
+        <velocity.runtime.build>9</velocity.runtime.build>
         <adventure.version>5.2.0</adventure.version>
         <configurate.version>4.2.0</configurate.version>
         <mysql.version>9.7.0</mysql.version>
@@ -323,4 +326,14 @@
             </plugins>
         </pluginManagement>
     </build>
+
+    <profiles>
+        <!-- Release-only consumers compile against the public API and are exercised inside real platform processes. -->
+        <profile>
+            <id>platform-acceptance</id>
+            <modules>
+                <module>dataprovider-platform-acceptance</module>
+            </modules>
+        </profile>
+    </profiles>
 </project>

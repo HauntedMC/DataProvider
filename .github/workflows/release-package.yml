@@ -38,7 +38,10 @@ jobs:
       - name: Run the production release gate
         # Do not start publication until the entire reactor on this exact checkout has passed
         # unit tests, Checkstyle, JaCoCo, dependency convergence, duplicate-class analysis and backend ITs.
-        run: mvn -U -B -ntp -Pintegration-tests verify
+        run: mvn -U -B -ntp -Pintegration-tests,platform-acceptance verify
+
+      - name: Boot the bundled artifacts in Paper and Velocity
+        run: ./dataprovider-platform-acceptance/run-platform-acceptance.sh
 
       - name: Publish verified Maven artifacts
         run: mvn -U -B -ntp -DskipTests deploy

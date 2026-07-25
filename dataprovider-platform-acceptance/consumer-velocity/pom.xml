@@ -1,0 +1,50 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>nl.hauntedmc.dataprovider</groupId>
+        <artifactId>dataprovider-platform-acceptance</artifactId>
+        <version>${revision}</version>
+    </parent>
+
+    <artifactId>dataprovider-acceptance-consumer-velocity</artifactId>
+    <name>DataProvider Acceptance Consumer (Velocity)</name>
+
+    <dependencies>
+        <!-- This fixture deliberately has no dependency on DataProvider Core or either platform implementation. -->
+        <dependency>
+            <groupId>${project.groupId}</groupId>
+            <artifactId>dataprovider-api</artifactId>
+            <version>${project.version}</version>
+            <scope>provided</scope>
+        </dependency>
+        <dependency>
+            <groupId>com.velocitypowered</groupId>
+            <artifactId>velocity-api</artifactId>
+            <version>${velocity.version}</version>
+            <scope>provided</scope>
+        </dependency>
+    </dependencies>
+
+    <build>
+        <plugins>
+            <plugin>
+                <artifactId>maven-compiler-plugin</artifactId>
+                <configuration>
+                    <proc>full</proc>
+                    <annotationProcessors>
+                        <annotationProcessor>com.velocitypowered.api.plugin.ap.PluginAnnotationProcessor</annotationProcessor>
+                    </annotationProcessors>
+                    <annotationProcessorPaths>
+                        <path>
+                            <groupId>com.velocitypowered</groupId>
+                            <artifactId>velocity-api</artifactId>
+                            <version>${velocity.version}</version>
+                        </path>
+                    </annotationProcessorPaths>
+                </configuration>
+            </plugin>
+        </plugins>
+    </build>
+</project>

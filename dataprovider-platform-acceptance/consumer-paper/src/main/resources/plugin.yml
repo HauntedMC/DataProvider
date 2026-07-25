@@ -1,0 +1,5 @@
+name: DataProviderAcceptance
+main: nl.hauntedmc.dataprovider.acceptance.paper.PaperAcceptanceConsumer
+version: ${project.version}
+api-version: '1.21'
+depend: [DataProvider]
