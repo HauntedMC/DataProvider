@@ -28,19 +28,23 @@ import static org.mockito.Mockito.when;
 class RedisMessagingDataAccessTest {
 
     @Test
-    void reconnectsOneLogicalSubscriptionWithoutDuplicatingTheListener() throws Exception {
-        JedisPool pool = mock(JedisPool.class);
+    void reconnectsAcrossPhysicalPoolReplacementWithoutDuplicatingTheListener() throws Exception {
+        JedisPool firstPool = mock(JedisPool.class);
+        JedisPool replacementPool = mock(JedisPool.class);
         Jedis first = mock(Jedis.class);
         Jedis second = mock(Jedis.class);
+        AtomicReference<JedisPool> currentPool = new AtomicReference<>(firstPool);
         AtomicReference<JedisPubSub> recoveredListener = new AtomicReference<>();
         CountDownLatch recovered = new CountDownLatch(1);
         CountDownLatch releaseRecoveredListener = new CountDownLatch(1);
         AtomicInteger maximumActiveListeners = new AtomicInteger();
-        when(pool.getResource()).thenReturn(first, second);
+        when(firstPool.getResource()).thenReturn(first);
+        when(replacementPool.getResource()).thenReturn(second);
         doAnswer(invocation -> {
             JedisPubSub listener = invocation.getArgument(0);
             listener.onSubscribe("recover-test", 1);
-            throw new IllegalStateException("simulated listener loss");
+            currentPool.set(replacementPool);
+            throw new IllegalStateException("simulated listener loss during pool replacement");
         }).when(first).subscribe(any(JedisPubSub.class), any(String[].class));
         doAnswer(invocation -> {
             JedisPubSub listener = invocation.getArgument(0);
@@ -55,7 +59,7 @@ class RedisMessagingDataAccessTest {
         RecordingLoggerAdapter logger = new RecordingLoggerAdapter();
         MessageRegistry registry = new MessageRegistry(logger);
         RedisMessagingDataAccess access = new RedisMessagingDataAccess(
-                () -> pool,
+                currentPool::get,
                 execution,
                 logger,
                 registry,
