@@ -87,6 +87,12 @@ failure/recovery counts, backoff, and next recovery attempt. Endpoint migration 
 ## Messaging Delivery Guarantee
 
 Redis Pub/Sub remains **at-most-once**. Automatic resubscription restores future delivery, but messages published
-while the listener is disconnected may be lost and are not replayed. Use Redis Streams or another durable queue
-for events that must never disappear, including votes, purchases, punishments and cross-server state changes.
-Durable processing must use event IDs, acknowledgement, retry ownership and idempotent consumers.
+while the listener is disconnected may be lost and are not replayed. `MessagingDatabaseProvider.getDurableDataAccess()`
+uses Redis Streams for events that must never disappear, including votes, purchases, punishments and cross-server state
+changes. It has producer event-ID deduplication, named consumer groups, explicit acknowledgement, pending-entry reclaim,
+bounded retries and per-group dead-letter streams. Durable delivery is at-least-once; consumers obtain a processing key
+and must commit it under a unique constraint with the business effect before acknowledgement, which provides exactly-once
+business effects across redelivery.
+
+Redis must itself be configured durably in production (for example AOF with an appropriate fsync policy or RDB plus
+durable storage). Streams cannot preserve an event across a Redis data-loss configuration or an ephemeral Redis volume.

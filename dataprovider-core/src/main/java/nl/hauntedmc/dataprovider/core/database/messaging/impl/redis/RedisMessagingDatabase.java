@@ -11,6 +11,7 @@ import nl.hauntedmc.dataprovider.database.messaging.api.MessageRegistry;
 import nl.hauntedmc.dataprovider.database.messaging.api.Subscription;
 import nl.hauntedmc.dataprovider.database.messaging.api.SubscriptionSnapshot;
 import nl.hauntedmc.dataprovider.database.messaging.api.SubscriptionState;
+import nl.hauntedmc.dataprovider.database.messaging.durable.DurableMessagingDataAccess;
 import nl.hauntedmc.dataprovider.logging.LoggerAdapter;
 import org.spongepowered.configurate.CommentedConfigurationNode;
 import redis.clients.jedis.DefaultJedisClientConfig;
@@ -44,9 +45,11 @@ public final class RedisMessagingDatabase implements MessagingDatabaseProvider, 
     private final ExecutionHandle execution;
     private final RateLimitedLogger outageLogger = new RateLimitedLogger(Duration.ofSeconds(30));
     private final ConcurrentMap<Object, MessagingDataAccess> scopedAccess = new ConcurrentHashMap<>();
+    private final ConcurrentMap<Object, DurableMessagingDataAccess> scopedDurableAccess = new ConcurrentHashMap<>();
     private final AtomicLong accessSequence = new AtomicLong();
     private volatile JedisPool pool;
     private volatile MessagingDataAccess bus;
+    private volatile DurableMessagingDataAccess durableBus;
     private volatile boolean connected;
     private volatile Throwable lifecycleFailure;
     private volatile int maxSubscriptions;
@@ -58,6 +61,14 @@ public final class RedisMessagingDatabase implements MessagingDatabaseProvider, 
     private volatile long reconnectMaxBackoffMs;
     private volatile double reconnectJitter;
     private volatile int reconnectMaxAttempts;
+    private volatile int durableBatchSize;
+    private volatile int durableReadBlockMs;
+    private volatile long durableReclaimIdleMs;
+    private volatile int durableMaxAttempts;
+    private volatile long durableRetentionMs;
+    private volatile long durableRetentionMaxEntries;
+    private volatile long durableDeduplicationTtlSeconds;
+    private volatile long durableDeadLetterMaxEntries;
 
     public RedisMessagingDatabase(CommentedConfigurationNode config, LoggerAdapter logger) {
         this(config, logger, ExecutionHandle.direct());
@@ -118,6 +129,24 @@ public final class RedisMessagingDatabase implements MessagingDatabaseProvider, 
         int reconnectMaxAttempts = requireInRange(
                 config.node("reconnect", "max_attempts").getInt(0),
                 0, 1_000_000, "reconnect.max_attempts");
+        int durableBatchSize = requireInRange(config.node("durable", "batch_size").getInt(32),
+                1, 10_000, "durable.batch_size");
+        int durableReadBlockMs = requireInRange(config.node("durable", "read_block_ms").getInt(500),
+                50, 30_000, "durable.read_block_ms");
+        long durableReclaimIdleMs = requireInRange(config.node("durable", "reclaim_idle_ms").getLong(30_000L),
+                1_000L, 3_600_000L, "durable.reclaim_idle_ms");
+        int durableMaxAttempts = requireInRange(config.node("durable", "max_attempts").getInt(8),
+                1, 1_000_000, "durable.max_attempts");
+        long durableRetentionMs = requireInRange(config.node("durable", "retention_ms").getLong(604_800_000L),
+                60_000L, 31_536_000_000L, "durable.retention_ms");
+        long durableRetentionMaxEntries = requireInRange(config.node("durable", "retention_max_entries").getLong(1_000_000L),
+                1L, Integer.MAX_VALUE, "durable.retention_max_entries");
+        long durableDeduplicationTtlSeconds = requireInRange(
+                config.node("durable", "deduplication_ttl_seconds").getLong(604_800L),
+                60L, 31_536_000L, "durable.deduplication_ttl_seconds");
+        long durableDeadLetterMaxEntries = requireInRange(
+                config.node("durable", "dead_letter_max_entries").getLong(100_000L),
+                1L, Integer.MAX_VALUE, "durable.dead_letter_max_entries");
         boolean tlsEnabled = config.node("tls", "enabled").getBoolean(false);
         boolean verifyHostname = config.node("tls", "verify_hostname").getBoolean(true);
         boolean trustAllCertificates = config.node("tls", "trust_all_certificates").getBoolean(false);
@@ -180,7 +209,16 @@ public final class RedisMessagingDatabase implements MessagingDatabaseProvider, 
             this.reconnectMaxBackoffMs = reconnectMaxBackoffMs;
             this.reconnectJitter = reconnectJitter;
             this.reconnectMaxAttempts = reconnectMaxAttempts;
+            this.durableBatchSize = durableBatchSize;
+            this.durableReadBlockMs = durableReadBlockMs;
+            this.durableReclaimIdleMs = durableReclaimIdleMs;
+            this.durableMaxAttempts = durableMaxAttempts;
+            this.durableRetentionMs = durableRetentionMs;
+            this.durableRetentionMaxEntries = durableRetentionMaxEntries;
+            this.durableDeduplicationTtlSeconds = durableDeduplicationTtlSeconds;
+            this.durableDeadLetterMaxEntries = durableDeadLetterMaxEntries;
             bus = newAccess(execution, messageRegistry);
+            durableBus = newDurableAccess(execution, messageRegistry);
             connected = true;
             lifecycleFailure = null;
             logger.info(String.format(
@@ -195,6 +233,7 @@ public final class RedisMessagingDatabase implements MessagingDatabaseProvider, 
             }
             pool = null;
             bus = null;
+            durableBus = null;
             outageLogger.error(logger, "[RedisMessagingDatabase] Connection failed. ("
                     + failure.getClass().getSimpleName() + ").");
         }
@@ -208,6 +247,13 @@ public final class RedisMessagingDatabase implements MessagingDatabaseProvider, 
             }
         } catch (Exception failure) {
             logger.warn("[RedisMessagingDatabase] Timed out while shutting down direct subscriptions.");
+        }
+        try {
+            if (durableBus != null) {
+                durableBus.shutdown().get(3, TimeUnit.SECONDS);
+            }
+        } catch (Exception failure) {
+            logger.warn("[RedisMessagingDatabase] Timed out while shutting down durable consumers; pending entries remain reclaimable.");
         } finally {
             execution.close();
             if (pool != null && !pool.isClosed()) {
@@ -215,6 +261,9 @@ public final class RedisMessagingDatabase implements MessagingDatabaseProvider, 
             }
             pool = null;
             bus = null;
+            durableBus = null;
+            scopedAccess.clear();
+            scopedDurableAccess.clear();
             connected = false;
         }
     }
@@ -248,6 +297,11 @@ public final class RedisMessagingDatabase implements MessagingDatabaseProvider, 
         return bus;
     }
 
+    @Override
+    public DurableMessagingDataAccess getDurableDataAccess() {
+        return durableBus;
+    }
+
     public int executionCapacity() {
         if (!isConnected() || commandPoolSize < 1) {
             throw new IllegalStateException("[RedisMessagingDatabase] Jedis pool not initialized!");
@@ -273,11 +327,16 @@ public final class RedisMessagingDatabase implements MessagingDatabaseProvider, 
                 scopeIdentity,
                 ignored -> newAccess(scopedExecution, new MessageRegistry(logger))
         );
+        DurableMessagingDataAccess durableAccessView = scopedDurableAccess.computeIfAbsent(
+                scopeIdentity,
+                ignored -> newDurableAccess(scopedExecution, new MessageRegistry(logger))
+        );
         return new MessagingDatabaseProvider() {
             @Override public boolean isConnected() {
                 return RedisMessagingDatabase.this.isConnected() && !scopedExecution.isClosed();
             }
             @Override public MessagingDataAccess getDataAccess() { return accessView; }
+            @Override public DurableMessagingDataAccess getDurableDataAccess() { return durableAccessView; }
         };
     }
 
@@ -298,6 +357,24 @@ public final class RedisMessagingDatabase implements MessagingDatabaseProvider, 
         );
         String accessId = Long.toUnsignedString(accessSequence.incrementAndGet(), 36);
         return new ObservableMessagingAccess(accessId, delegate);
+    }
+
+    private DurableMessagingDataAccess newDurableAccess(ExecutionHandle accessExecution, MessageRegistry registry) {
+        return new RedisStreamsDurableMessagingDataAccess(
+                () -> pool,
+                accessExecution,
+                logger,
+                registry,
+                maxPayloadChars,
+                durableBatchSize,
+                durableReadBlockMs,
+                durableReclaimIdleMs,
+                durableMaxAttempts,
+                durableRetentionMs,
+                durableRetentionMaxEntries,
+                durableDeduplicationTtlSeconds,
+                durableDeadLetterMaxEntries
+        );
     }
 
     private static final class ObservableMessagingAccess implements MessagingDataAccess {

@@ -9,6 +9,9 @@ import nl.hauntedmc.dataprovider.database.document.DocumentDatabaseProvider;
 import nl.hauntedmc.dataprovider.database.keyvalue.KeyValueDatabaseProvider;
 import nl.hauntedmc.dataprovider.database.messaging.MessagingDatabaseProvider;
 import nl.hauntedmc.dataprovider.database.messaging.api.Subscription;
+import nl.hauntedmc.dataprovider.database.messaging.durable.DurableDelivery;
+import nl.hauntedmc.dataprovider.database.messaging.durable.DurableMessagingDataAccess;
+import nl.hauntedmc.dataprovider.database.messaging.durable.DurableSubscription;
 import nl.hauntedmc.dataprovider.database.relational.RelationalDatabaseProvider;
 import nl.hauntedmc.dataprovider.database.relational.schema.SchemaManager;
 
@@ -110,6 +113,15 @@ final class IdentityBoundDatabaseProvider {
         }
         if (result instanceof Subscription subscription) {
             return proxy(subscription, handler, identity, new Class<?>[] {Subscription.class});
+        }
+        if (result instanceof DurableSubscription subscription) {
+            return proxy(subscription, handler, identity, new Class<?>[] {DurableSubscription.class});
+        }
+        if (result instanceof DurableMessagingDataAccess access) {
+            return proxy(access, handler, identity, new Class<?>[] {DurableMessagingDataAccess.class});
+        }
+        if (result instanceof DurableDelivery<?> delivery) {
+            return proxy(delivery, handler, identity, new Class<?>[] {DurableDelivery.class});
         }
         if (returnType.isInterface() && (DataAccess.class.isAssignableFrom(returnType)
                 || SchemaManager.class.isAssignableFrom(returnType)

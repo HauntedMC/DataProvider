@@ -569,11 +569,15 @@ class DatabaseFactory {
 
     private static final class MessagingLease extends SharedProviderLease implements MessagingDatabaseProvider {
         private final nl.hauntedmc.dataprovider.database.messaging.MessagingDataAccess stableAccess = new StableMessagingAccess(this);
+        private final nl.hauntedmc.dataprovider.database.messaging.durable.DurableMessagingDataAccess stableDurableAccess = new StableDurableMessagingAccess(this);
         private MessagingLease(PhysicalResource r, ExecutionHandle e, ConcurrentMap<ResourceKey, PhysicalResource> rs) {
             super(r, e, rs);
         }
         @Override public nl.hauntedmc.dataprovider.database.messaging.MessagingDataAccess getDataAccess() {
             return stableAccess;
+        }
+        @Override public nl.hauntedmc.dataprovider.database.messaging.durable.DurableMessagingDataAccess getDurableDataAccess() {
+            return stableDurableAccess;
         }
     }
 
@@ -662,6 +666,22 @@ class DatabaseFactory {
         @Override public <T extends nl.hauntedmc.dataprovider.database.messaging.api.EventMessage> java.util.concurrent.CompletableFuture<Void> publish(String destination, T message) { return call("publish", () -> delegate().publish(destination, message)); }
         @Override public <T extends nl.hauntedmc.dataprovider.database.messaging.api.EventMessage> nl.hauntedmc.dataprovider.database.messaging.api.Subscription subscribe(String destination, Class<T> type, java.util.function.Consumer<T> handler) { lease().requireAvailable("subscribe"); return delegate().subscribe(destination, type, handler); }
         @Override public java.util.concurrent.CompletableFuture<Void> shutdown() { return call("shutdown", () -> delegate().shutdown()); }
+    }
+
+    private static final class StableDurableMessagingAccess extends StableAccess
+            implements nl.hauntedmc.dataprovider.database.messaging.durable.DurableMessagingDataAccess {
+        private StableDurableMessagingAccess(SharedProviderLease lease) { super(lease); }
+        private nl.hauntedmc.dataprovider.database.messaging.durable.DurableMessagingDataAccess delegate() {
+            return ((MessagingDatabaseProvider) lease().view()).getDurableDataAccess();
+        }
+        @Override public <T extends nl.hauntedmc.dataprovider.database.messaging.api.EventMessage> java.util.concurrent.CompletableFuture<nl.hauntedmc.dataprovider.database.messaging.durable.PublishedDurableEvent> publish(String stream, nl.hauntedmc.dataprovider.database.messaging.durable.DurableEvent<T> event) {
+            return call("durablePublish", () -> delegate().publish(stream, event));
+        }
+        @Override public <T extends nl.hauntedmc.dataprovider.database.messaging.api.EventMessage> nl.hauntedmc.dataprovider.database.messaging.durable.DurableSubscription consume(String stream, String group, String consumer, Class<T> type, java.util.function.Consumer<nl.hauntedmc.dataprovider.database.messaging.durable.DurableDelivery<T>> handler) {
+            lease().requireAvailable("durableConsume"); return delegate().consume(stream, group, consumer, type, handler);
+        }
+        @Override public java.util.List<nl.hauntedmc.dataprovider.database.messaging.durable.DurableSubscriptionSnapshot> subscriptions() { lease().requireAvailable("durableSubscriptions"); return delegate().subscriptions(); }
+        @Override public java.util.concurrent.CompletableFuture<Void> shutdown() { return call("durableShutdown", () -> delegate().shutdown()); }
     }
 
     private static final class StableSchemaManager extends StableAccess

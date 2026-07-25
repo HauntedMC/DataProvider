@@ -207,6 +207,13 @@ Jedis connection-pool settings remain connection-specific. Worker and queue capa
 - `socket_timeout_ms`
 - `security.max_payload_chars`
 - `security.max_queued_messages_per_handler`
+- `durable.batch_size`: maximum stream entries fetched or reclaimed per polling cycle
+- `durable.read_block_ms`: bounded blocking read time; also bounds consumer shutdown latency
+- `durable.reclaim_idle_ms`: idle duration before another named consumer may reclaim pending work
+- `durable.max_attempts`: attempts before an unacknowledged or failed entry is atomically moved to its dead-letter stream
+- `durable.retention_ms` / `durable.retention_max_entries`: retention limits; trimming never removes an entry pending in any group
+- `durable.deduplication_ttl_seconds`: producer event-ID deduplication lifetime
+- `durable.dead_letter_max_entries`: bounded per-group dead-letter stream length
 
 Each logical Redis subscription owns at most one long-lived physical listener connection. DataProvider adds subscription capacity on top of `pool.connections`, so subscriptions cannot consume command connections reserved for publishing and shutdown. Listener failures retain the original logical subscription and handler registrations, then reconnect with bounded exponential backoff and jitter. Pool recreation by the resilience layer does not replace the logical subscription handle.
 
@@ -218,7 +225,7 @@ Each logical Redis subscription owns at most one long-lived physical listener co
 - Shared workers clear interrupt state before serving another plugin.
 - Messaging handler queues drop excess messages rather than allowing unbounded growth; drop counts are included in execution metrics.
 - Redis Pub/Sub delivery is at-most-once. Messages published while a listener is disconnected can be lost and are not replayed.
-- Use Redis Streams or another acknowledged durable queue with event IDs and idempotent consumers for votes, purchases, punishments and cross-server state changes.
+- Use `MessagingDatabaseProvider.getDurableDataAccess()` for votes, purchases, punishments and cross-server state changes. A consumer must persist `DurableEvent.processingKey()` under a unique constraint in the same business transaction, then call `delivery.acknowledge()` after commit.
 - Use `default` for single-backend setups and explicit identifiers such as `rw`, `ro` or `analytics` for multi-backend setups.
 - Never commit production credentials.
 - During full plugin shutdown, pair cleanup with `unregisterAllDatabasesForPlugin()`.

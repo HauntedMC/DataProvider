@@ -31,6 +31,19 @@ default:
     jitter: 0.20
     # Zero keeps retrying until the subscription is explicitly closed or the scope shuts down.
     max_attempts: 0
+  # Redis Streams-backed, acknowledged delivery for votes, purchases, punishments and authoritative state.
+  # Pub/Sub above remains only for disposable notifications.
+  durable:
+    batch_size: 32
+    read_block_ms: 500
+    reclaim_idle_ms: 30000
+    max_attempts: 8
+    # Retention is trimmed only up to the oldest pending entry in every consumer group.
+    retention_ms: 604800000
+    retention_max_entries: 1000000
+    # Must cover the maximum interval in which a producer may retry an uncertain publish result.
+    deduplication_ttl_seconds: 604800
+    dead_letter_max_entries: 100000
   connection_timeout_ms: 2000
   socket_timeout_ms: 2000
   security:

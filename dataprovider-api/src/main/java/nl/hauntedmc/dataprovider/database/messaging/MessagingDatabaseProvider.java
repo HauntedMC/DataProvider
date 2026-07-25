@@ -1,6 +1,7 @@
 package nl.hauntedmc.dataprovider.database.messaging;
 
 import nl.hauntedmc.dataprovider.database.DatabaseProvider;
+import nl.hauntedmc.dataprovider.database.messaging.durable.DurableMessagingDataAccess;
 
 import javax.sql.DataSource;
 
@@ -16,6 +17,14 @@ public interface MessagingDatabaseProvider extends DatabaseProvider {
      */
     @Override
     MessagingDataAccess getDataAccess();
+
+    /**
+     * Durable Streams-backed access for authoritative events. Pub/Sub remains available from
+     * {@link #getDataAccess()} for disposable notifications.
+     */
+    default DurableMessagingDataAccess getDurableDataAccess() {
+        throw new UnsupportedOperationException("This messaging provider does not support durable messaging");
+    }
 
     @Override
     default DataSource getDataSource() {
