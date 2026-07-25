@@ -6,7 +6,11 @@ import nl.hauntedmc.dataprovider.core.database.security.TlsSupport;
 import nl.hauntedmc.dataprovider.core.logging.RateLimitedLogger;
 import nl.hauntedmc.dataprovider.database.messaging.MessagingDataAccess;
 import nl.hauntedmc.dataprovider.database.messaging.MessagingDatabaseProvider;
+import nl.hauntedmc.dataprovider.database.messaging.api.EventMessage;
 import nl.hauntedmc.dataprovider.database.messaging.api.MessageRegistry;
+import nl.hauntedmc.dataprovider.database.messaging.api.Subscription;
+import nl.hauntedmc.dataprovider.database.messaging.api.SubscriptionSnapshot;
+import nl.hauntedmc.dataprovider.database.messaging.api.SubscriptionState;
 import nl.hauntedmc.dataprovider.logging.LoggerAdapter;
 import org.spongepowered.configurate.CommentedConfigurationNode;
 import redis.clients.jedis.DefaultJedisClientConfig;
@@ -17,10 +21,15 @@ import redis.clients.jedis.JedisPoolConfig;
 
 import javax.net.ssl.SSLContext;
 import java.time.Duration;
+import java.util.List;
 import java.util.Objects;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.Consumer;
 import java.util.regex.Pattern;
 
 /** Redis messaging provider backed by the shared messaging execution lane. */
@@ -33,9 +42,10 @@ public final class RedisMessagingDatabase implements MessagingDatabaseProvider, 
     private final MessageRegistry messageRegistry;
     private final ExecutionHandle execution;
     private final RateLimitedLogger outageLogger = new RateLimitedLogger(Duration.ofSeconds(30));
-    private final ConcurrentMap<Object, RedisMessagingDataAccess> scopedAccess = new ConcurrentHashMap<>();
+    private final ConcurrentMap<Object, MessagingDataAccess> scopedAccess = new ConcurrentHashMap<>();
+    private final AtomicLong accessSequence = new AtomicLong();
     private volatile JedisPool pool;
-    private volatile RedisMessagingDataAccess bus;
+    private volatile MessagingDataAccess bus;
     private volatile boolean connected;
     private volatile Throwable lifecycleFailure;
     private volatile int maxSubscriptions;
@@ -258,7 +268,7 @@ public final class RedisMessagingDatabase implements MessagingDatabaseProvider, 
             throw new IllegalStateException("[RedisMessagingDatabase] Jedis pool not initialized!");
         }
         Object scopeIdentity = scopedExecution.scopeIdentity();
-        RedisMessagingDataAccess accessView = scopedAccess.computeIfAbsent(
+        MessagingDataAccess accessView = scopedAccess.computeIfAbsent(
                 scopeIdentity,
                 ignored -> newAccess(scopedExecution, new MessageRegistry(logger))
         );
@@ -270,8 +280,8 @@ public final class RedisMessagingDatabase implements MessagingDatabaseProvider, 
         };
     }
 
-    private RedisMessagingDataAccess newAccess(ExecutionHandle accessExecution, MessageRegistry registry) {
-        return new RedisMessagingDataAccess(
+    private MessagingDataAccess newAccess(ExecutionHandle accessExecution, MessageRegistry registry) {
+        RedisMessagingDataAccess delegate = new RedisMessagingDataAccess(
                 () -> pool,
                 accessExecution,
                 logger,
@@ -285,6 +295,134 @@ public final class RedisMessagingDatabase implements MessagingDatabaseProvider, 
                 reconnectJitter,
                 reconnectMaxAttempts
         );
+        String accessId = Long.toUnsignedString(accessSequence.incrementAndGet(), 36);
+        return new ObservableMessagingAccess(accessId, delegate);
+    }
+
+    private static final class ObservableMessagingAccess implements MessagingDataAccess {
+        private final String accessId;
+        private final MessagingDataAccess delegate;
+
+        private ObservableMessagingAccess(String accessId, MessagingDataAccess delegate) {
+            this.accessId = Objects.requireNonNull(accessId, "Access id cannot be null.");
+            this.delegate = Objects.requireNonNull(delegate, "Messaging delegate cannot be null.");
+        }
+
+        @Override
+        public <T extends EventMessage> CompletableFuture<Void> publish(String destination, T message) {
+            return delegate.publish(destination, message);
+        }
+
+        @Override
+        public <T extends EventMessage> Subscription subscribe(
+                String destination,
+                Class<T> type,
+                Consumer<T> handler
+        ) {
+            Subscription subscription = delegate.subscribe(destination, type, handler);
+            return new ObservableSubscription(accessId, destination, subscription);
+        }
+
+        @Override
+        public List<SubscriptionSnapshot> subscriptions() {
+            return delegate.subscriptions().stream()
+                    .map(snapshot -> remapSnapshot(accessId, snapshot.destination(), snapshot, snapshot.state()))
+                    .toList();
+        }
+
+        @Override
+        public CompletableFuture<Void> shutdown() {
+            return delegate.shutdown();
+        }
+    }
+
+    private static final class ObservableSubscription implements Subscription {
+        private final String logicalId;
+        private final String destination;
+        private final Subscription delegate;
+        private final AtomicReference<SubscriptionSnapshot> terminalSnapshot = new AtomicReference<>();
+
+        private ObservableSubscription(String accessId, String destination, Subscription delegate) {
+            this.logicalId = compositeId(accessId, destination, delegate.id());
+            this.destination = destination;
+            this.delegate = Objects.requireNonNull(delegate, "Subscription delegate cannot be null.");
+            delegate.completion().whenComplete((unused, failure) -> {
+                if (failure != null) {
+                    SubscriptionSnapshot snapshot = delegate.snapshot();
+                    terminalSnapshot.compareAndSet(null, new SubscriptionSnapshot(
+                            logicalId,
+                            snapshot.destination(),
+                            snapshot.messageType(),
+                            SubscriptionState.FAILED,
+                            snapshot.reconnectCount(),
+                            snapshot.generation(),
+                            snapshot.lastFailureAt(),
+                            snapshot.lastFailure(),
+                            Duration.ZERO,
+                            snapshot.totalDowntime(),
+                            false
+                    ));
+                }
+            });
+        }
+
+        @Override
+        public CompletableFuture<Void> unsubscribe() {
+            return delegate.unsubscribe();
+        }
+
+        @Override
+        public String id() {
+            return logicalId;
+        }
+
+        @Override
+        public SubscriptionState state() {
+            return terminalSnapshot.get() == null ? delegate.state() : SubscriptionState.FAILED;
+        }
+
+        @Override
+        public SubscriptionSnapshot snapshot() {
+            SubscriptionSnapshot terminal = terminalSnapshot.get();
+            if (terminal != null) {
+                return terminal;
+            }
+            SubscriptionSnapshot snapshot = delegate.snapshot();
+            return remapSnapshot(logicalId, destination, snapshot, snapshot.state());
+        }
+
+        @Override
+        public CompletableFuture<Void> completion() {
+            return delegate.completion();
+        }
+    }
+
+    private static SubscriptionSnapshot remapSnapshot(
+            String idPrefix,
+            String destination,
+            SubscriptionSnapshot snapshot,
+            SubscriptionState state
+    ) {
+        String logicalId = idPrefix.contains(":")
+                ? idPrefix
+                : compositeId(idPrefix, destination, snapshot.logicalId());
+        return new SubscriptionSnapshot(
+                logicalId,
+                snapshot.destination(),
+                snapshot.messageType(),
+                state,
+                snapshot.reconnectCount(),
+                snapshot.generation(),
+                snapshot.lastFailureAt(),
+                snapshot.lastFailure(),
+                snapshot.currentDowntime(),
+                snapshot.totalDowntime(),
+                snapshot.activeListener()
+        );
+    }
+
+    private static String compositeId(String accessId, String destination, String handlerId) {
+        return accessId + ":" + destination + ":" + handlerId;
     }
 
     private static String requireNonBlank(String value, String fieldName) {
