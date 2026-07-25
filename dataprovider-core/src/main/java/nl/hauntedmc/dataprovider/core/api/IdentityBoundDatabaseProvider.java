@@ -25,6 +25,7 @@ import java.sql.Connection;
 import java.sql.SQLException;
 import java.sql.SQLFeatureNotSupportedException;
 import java.util.Objects;
+import java.util.function.Consumer;
 import java.util.logging.Logger;
 
 /**
@@ -96,11 +97,29 @@ final class IdentityBoundDatabaseProvider {
                 return ((Class<?>) args[0]).isInstance(proxy);
             }
             try {
-                Object result = method.invoke(delegate, args);
+                Object[] invocationArguments = guardedDurableHandlerArguments(method, args, handler, identity);
+                Object result = method.invoke(delegate, invocationArguments);
                 return bindResult(method.getReturnType(), result, handler, identity);
             } catch (InvocationTargetException exception) {
                 throw exception.getCause();
             }
+        }
+
+        @SuppressWarnings({"rawtypes", "unchecked"})
+        private static Object[] guardedDurableHandlerArguments(
+                Method method,
+                Object[] arguments,
+                DataProviderHandler handler,
+                PluginIdentity identity
+        ) {
+            if (!method.getName().equals("consume") || arguments == null || arguments.length != 5
+                    || !(arguments[4] instanceof Consumer originalHandler)) {
+                return arguments;
+            }
+            Object[] guarded = arguments.clone();
+            guarded[4] = (Consumer<DurableDelivery<?>>) delivery -> originalHandler.accept(
+                    (DurableDelivery<?>) bindResult(DurableDelivery.class, delivery, handler, identity));
+            return guarded;
         }
     }
 

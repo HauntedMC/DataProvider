@@ -13,9 +13,11 @@ import nl.hauntedmc.dataprovider.database.messaging.MessagingDatabaseProvider;
 import nl.hauntedmc.dataprovider.database.messaging.api.EventMessage;
 import nl.hauntedmc.dataprovider.database.messaging.durable.DurableEvent;
 import nl.hauntedmc.dataprovider.database.messaging.durable.DurableMessagingDataAccess;
+import nl.hauntedmc.dataprovider.database.messaging.durable.PublishedDurableEvent;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.testcontainers.containers.GenericContainer;
+import org.testcontainers.containers.MySQLContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.utility.DockerImageName;
@@ -24,14 +26,18 @@ import redis.clients.jedis.JedisPool;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.Set;
-import java.util.concurrent.ConcurrentHashMap;
+import java.sql.Connection;
+import java.sql.DriverManager;
+import java.sql.PreparedStatement;
+import java.sql.Statement;
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
-import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /** Production failure-mode proof: persistent Streams survive Redis and consumer process restart. */
@@ -50,12 +56,19 @@ class RedisDurableMessagingIT {
                     + "else redis-server --appendonly yes --appendfsync always --requirepass '" + PASSWORD
                     + "'; sleep 0.1; fi; done");
 
+    @Container
+    private static final MySQLContainer<?> BUSINESS_DATABASE = new MySQLContainer<>(DockerImageName.parse("mysql:8.4"))
+            .withDatabaseName("durable_business")
+            .withUsername("durable_business")
+            .withPassword("durable-business-secret");
+
     @TempDir
     Path dataDirectory;
 
     @Test
     void eventSurvivesRedisRestartAndRedeliveryAppliesTheBusinessEffectExactlyOnce() throws Exception {
         writeConfiguration();
+        initializeBusinessTable();
         AtomicBoolean redisStopped = new AtomicBoolean();
         DataProvider producer = null;
         DataProvider crashedConsumer = null;
@@ -65,7 +78,15 @@ class RedisDurableMessagingIT {
             DurableMessagingDataAccess publishedBy = durable(producer);
             DurableEvent<VoteEvent> vote = new DurableEvent<>("vote-1001", "vote:player-42:1001",
                     new VoteEvent("vote.received", "player-42"));
-            assertTrue(publishedBy.publish(STREAM, vote).get(5, TimeUnit.SECONDS).newlyPublished());
+            PublishedDurableEvent initialPublication = publishedBy.publish(STREAM, vote).get(5, TimeUnit.SECONDS);
+            PublishedDurableEvent retriedPublication = publishedBy.publish(STREAM, vote).get(5, TimeUnit.SECONDS);
+            assertTrue(initialPublication.newlyPublished());
+            assertFalse(retriedPublication.newlyPublished());
+            assertEquals(initialPublication.streamEntryId(), retriedPublication.streamEntryId());
+            DurableEvent<VoteEvent> conflictingRetry = new DurableEvent<>(vote.eventId(), "vote:player-42:other",
+                    new VoteEvent("vote.received", "player-99"));
+            assertThrows(ExecutionException.class,
+                    () -> publishedBy.publish(STREAM, conflictingRetry).get(5, TimeUnit.SECONDS));
             producer.shutdownAllDatabases();
             producer = null;
 
@@ -73,15 +94,11 @@ class RedisDurableMessagingIT {
             stopRedis(redisStopped);
             startRedis(redisStopped);
 
-            Set<String> committedProcessingKeys = ConcurrentHashMap.newKeySet();
-            AtomicInteger businessEffects = new AtomicInteger();
             CountDownLatch firstApplication = new CountDownLatch(1);
             crashedConsumer = provider();
             DurableMessagingDataAccess first = durable(crashedConsumer);
             first.consume(STREAM, GROUP, "consumer-before-crash", VoteEvent.class, delivery -> {
-                if (committedProcessingKeys.add(delivery.event().processingKey())) {
-                    businessEffects.incrementAndGet(); // Represents the committed transaction's unique processing key.
-                }
+                applyVoteTransactionally(delivery.event().processingKey(), delivery.event().payload());
                 firstApplication.countDown();
                 // Simulate a process crash after commit and before Redis acknowledgement.
             });
@@ -93,15 +110,14 @@ class RedisDurableMessagingIT {
             recoveredConsumer = provider();
             DurableMessagingDataAccess second = durable(recoveredConsumer);
             second.consume(STREAM, GROUP, "consumer-after-crash", VoteEvent.class, delivery -> {
-                if (committedProcessingKeys.add(delivery.event().processingKey())) {
-                    businessEffects.incrementAndGet();
-                }
+                applyVoteTransactionally(delivery.event().processingKey(), delivery.event().payload());
                 delivery.acknowledge().join();
                 recovered.countDown();
             });
             assertTrue(recovered.await(15, TimeUnit.SECONDS));
-            assertEquals(1, businessEffects.get(), "the retry must not duplicate the committed business effect");
+            assertEquals(1, appliedBusinessEffects(), "the retry must not duplicate the committed business effect");
             assertTrue(second.subscriptions().getFirst().acknowledgedCount() >= 1L);
+            assertTrue(second.subscriptions().getFirst().reclaimedCount() >= 1L);
         } finally {
             if (redisStopped.get()) startRedis(redisStopped);
             if (producer != null) producer.shutdownAllDatabases();
@@ -112,6 +128,43 @@ class RedisDurableMessagingIT {
 
     private DataProvider provider() {
         return new DataProvider(new RecordingLoggerAdapter(), dataDirectory, getClass().getClassLoader(), callerResolver());
+    }
+
+    private void initializeBusinessTable() throws Exception {
+        try (Connection connection = businessConnection(); Statement statement = connection.createStatement()) {
+            statement.execute("CREATE TABLE IF NOT EXISTS durable_vote_effects ("
+                    + "processing_key VARCHAR(200) PRIMARY KEY, player_id VARCHAR(64) NOT NULL)");
+            statement.executeUpdate("DELETE FROM durable_vote_effects");
+        }
+    }
+
+    private void applyVoteTransactionally(String processingKey, VoteEvent vote) {
+        try (Connection connection = businessConnection()) {
+            connection.setAutoCommit(false);
+            try (PreparedStatement statement = connection.prepareStatement(
+                    "INSERT INTO durable_vote_effects (processing_key, player_id) VALUES (?, ?) "
+                            + "ON DUPLICATE KEY UPDATE processing_key = VALUES(processing_key)")) {
+                statement.setString(1, processingKey);
+                statement.setString(2, vote.player());
+                statement.executeUpdate();
+            }
+            connection.commit();
+        } catch (Exception failure) {
+            throw new IllegalStateException("Could not commit durable vote effect", failure);
+        }
+    }
+
+    private int appliedBusinessEffects() throws Exception {
+        try (Connection connection = businessConnection(); Statement statement = connection.createStatement();
+             var results = statement.executeQuery("SELECT COUNT(*) FROM durable_vote_effects")) {
+            assertTrue(results.next());
+            return results.getInt(1);
+        }
+    }
+
+    private Connection businessConnection() throws Exception {
+        return DriverManager.getConnection(BUSINESS_DATABASE.getJdbcUrl(), BUSINESS_DATABASE.getUsername(),
+                BUSINESS_DATABASE.getPassword());
     }
 
     private DurableMessagingDataAccess durable(DataProvider provider) {

@@ -94,5 +94,7 @@ bounded retries and per-group dead-letter streams. Durable delivery is at-least-
 and must commit it under a unique constraint with the business effect before acknowledgement, which provides exactly-once
 business effects across redelivery.
 
+The Redis Streams implementation requires Redis 6.2 or newer because it uses `XAUTOCLAIM` for pending-message reclaim.
+
 Redis must itself be configured durably in production (for example AOF with an appropriate fsync policy or RDB plus
 durable storage). Streams cannot preserve an event across a Redis data-loss configuration or an ephemeral Redis volume.

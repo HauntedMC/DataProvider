@@ -28,6 +28,10 @@ import redis.clients.jedis.resps.StreamPendingSummary;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
+import java.util.HexFormat;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -41,15 +45,18 @@ import java.util.regex.Pattern;
 @SuppressWarnings("deprecation")
 final class RedisStreamsDurableMessagingDataAccess implements DurableMessagingDataAccess {
     private static final Pattern NAME_PATTERN = Pattern.compile("[A-Za-z0-9_.:-]{1,128}");
-    private static final String PUBLISH_SCRIPT = "local id=redis.call('HGET',KEYS[2],ARGV[1]);"
-            + " if id then return {id,'0'} end;"
-            + " id=redis.call('XADD',KEYS[1],'*','event_id',ARGV[1],'processing_key',ARGV[2],"
-            + "'type',ARGV[3],'payload',ARGV[4]); redis.call('HSET',KEYS[2],ARGV[1],id);"
-            + " redis.call('EXPIRE',KEYS[2],ARGV[5]); return {id,'1'};";
+    private static final String PUBLISH_SCRIPT = "local saved=redis.call('GET',KEYS[2]);"
+            + " if saved then local separator=string.find(saved,'|',1,true);"
+            + " if not separator or string.sub(saved,separator+1) ~= ARGV[5] then"
+            + " return redis.error_reply('DURABLE_EVENT_ID_CONFLICT') end;"
+            + " return {string.sub(saved,1,separator-1),'0'} end;"
+            + " local id=redis.call('XADD',KEYS[1],'*','event_id',ARGV[1],'processing_key',ARGV[2],"
+            + "'type',ARGV[3],'payload',ARGV[4]); redis.call('SET',KEYS[2],id..'|'..ARGV[5],'EX',ARGV[6]);"
+            + " return {id,'1'};";
     private static final String ACK_SCRIPT = "local n=redis.call('XACK',KEYS[1],ARGV[1],ARGV[2]);"
             + " if n>0 then redis.call('HDEL',KEYS[2],ARGV[2]) end; return n;";
     private static final String DEAD_LETTER_SCRIPT = "local attempt=redis.call('HGET',KEYS[2],ARGV[2]) or ARGV[7];"
-            + " redis.call('XADD',KEYS[3],'MAXLEN','~',ARGV[8],'*','source_stream',KEYS[1],"
+            + " redis.call('XADD',KEYS[3],'MAXLEN',ARGV[8],'*','source_stream',KEYS[1],"
             + "'source_group',ARGV[1],'source_entry_id',ARGV[2],'event_id',ARGV[3],"
             + "'processing_key',ARGV[4],'type',ARGV[5],'payload',ARGV[6],'attempt',attempt,'failure',ARGV[7]);"
             + " redis.call('XACK',KEYS[1],ARGV[1],ARGV[2]); redis.call('HDEL',KEYS[2],ARGV[2]); return 1;";
@@ -67,7 +74,9 @@ final class RedisStreamsDurableMessagingDataAccess implements DurableMessagingDa
     private final long retentionMaxEntries;
     private final long deduplicationTtlSeconds;
     private final long deadLetterMaxEntries;
+    private final long retentionTrimIntervalMs;
     private final Map<String, ConsumerLoop<?>> consumers = new ConcurrentHashMap<>();
+    private final Map<String, AtomicLong> nextTrimAtMillis = new ConcurrentHashMap<>();
     private final AtomicBoolean shuttingDown = new AtomicBoolean();
 
     RedisStreamsDurableMessagingDataAccess(
@@ -83,7 +92,8 @@ final class RedisStreamsDurableMessagingDataAccess implements DurableMessagingDa
             long retentionMs,
             long retentionMaxEntries,
             long deduplicationTtlSeconds,
-            long deadLetterMaxEntries
+            long deadLetterMaxEntries,
+            long retentionTrimIntervalMs
     ) {
         this.poolSupplier = Objects.requireNonNull(poolSupplier, "Pool supplier cannot be null");
         this.execution = Objects.requireNonNull(execution, "Execution cannot be null");
@@ -98,6 +108,7 @@ final class RedisStreamsDurableMessagingDataAccess implements DurableMessagingDa
         this.retentionMaxEntries = positive(retentionMaxEntries, "retentionMaxEntries");
         this.deduplicationTtlSeconds = positive(deduplicationTtlSeconds, "deduplicationTtlSeconds");
         this.deadLetterMaxEntries = positive(deadLetterMaxEntries, "deadLetterMaxEntries");
+        this.retentionTrimIntervalMs = positive(retentionTrimIntervalMs, "retentionTrimIntervalMs");
     }
 
     @Override
@@ -119,12 +130,13 @@ final class RedisStreamsDurableMessagingDataAccess implements DurableMessagingDa
                     execution, "redis.streams.serialize"));
         }
         String type = name(event.payload().getType(), "event type");
+        String fingerprint = fingerprint(event.processingKey(), type, payload);
         return AsyncTaskSupport.supplyAsync(execution, "redis.streams.publish", () -> {
             try (Jedis jedis = pool().getResource()) {
                 @SuppressWarnings("unchecked")
                 List<Object> result = (List<Object>) jedis.eval(PUBLISH_SCRIPT,
-                        List.of(name, dedupeKey(name)), List.of(event.eventId(), event.processingKey(), type, payload,
-                                Long.toString(deduplicationTtlSeconds)));
+                        List.of(name, dedupeKey(name, event.eventId())), List.of(event.eventId(), event.processingKey(), type,
+                                payload, fingerprint, Long.toString(deduplicationTtlSeconds)));
                 String entryId = String.valueOf(result.get(0));
                 boolean created = "1".equals(String.valueOf(result.get(1)));
                 return new PublishedDurableEvent(event.eventId(), entryId, created);
@@ -199,9 +211,22 @@ final class RedisStreamsDurableMessagingDataAccess implements DurableMessagingDa
         return value;
     }
 
-    private static String dedupeKey(String stream) { return stream + ":durable:published"; }
+    private static String dedupeKey(String stream, String eventId) { return stream + ":durable:published:" + eventId; }
     private static String retryKey(String stream, String group) { return stream + ":durable:retries:" + group; }
     private static String deadLetterKey(String stream, String group) { return stream + ":durable:dead:" + group; }
+
+    private static String fingerprint(String processingKey, String type, String payload) {
+        try {
+            MessageDigest digest = MessageDigest.getInstance("SHA-256");
+            digest.update(processingKey.getBytes(StandardCharsets.UTF_8));
+            digest.update((byte) 0);
+            digest.update(type.getBytes(StandardCharsets.UTF_8));
+            digest.update((byte) 0);
+            return HexFormat.of().formatHex(digest.digest(payload.getBytes(StandardCharsets.UTF_8)));
+        } catch (NoSuchAlgorithmException unavailable) {
+            throw new IllegalStateException("SHA-256 is required by the Java runtime.", unavailable);
+        }
+    }
 
     private final class ConsumerLoop<T extends EventMessage> implements DurableSubscription {
         private final String id;
@@ -218,6 +243,7 @@ final class RedisStreamsDurableMessagingDataAccess implements DurableMessagingDa
         private final AtomicLong acknowledged = new AtomicLong();
         private final AtomicLong reclaimed = new AtomicLong();
         private final AtomicLong deadLettered = new AtomicLong();
+        private boolean groupReady;
         private volatile long pending;
         private volatile long lag;
 
@@ -239,10 +265,10 @@ final class RedisStreamsDurableMessagingDataAccess implements DurableMessagingDa
 
         private void run() {
             try {
-                ensureGroup();
                 StreamEntryID cursor = new StreamEntryID(0, 0);
                 while (!closing.get() && !shuttingDown.get()) {
                     try (Jedis jedis = pool().getResource()) {
+                        ensureGroup(jedis);
                         Map.Entry<StreamEntryID, List<StreamEntry>> claims = jedis.xautoclaim(stream, group, consumer,
                                 reclaimIdleMs, cursor, XAutoClaimParams.xAutoClaimParams().count(batchSize));
                         cursor = claims.getKey();
@@ -259,6 +285,7 @@ final class RedisStreamsDurableMessagingDataAccess implements DurableMessagingDa
                         }
                         refreshDiagnostics(jedis);
                     } catch (Exception failure) {
+                        groupReady = false;
                         if (!closing.get() && !shuttingDown.get()) {
                             lastFailure.set(compact(failure));
                             logger.warn("[RedisStreams] Durable consumer " + id + " will retry: " + compact(failure));
@@ -276,14 +303,16 @@ final class RedisStreamsDurableMessagingDataAccess implements DurableMessagingDa
             }
         }
 
-        private void ensureGroup() {
-            try (Jedis jedis = pool().getResource()) {
-                try {
-                    jedis.xgroupCreate(stream, group, new StreamEntryID(0, 0), true);
-                } catch (JedisDataException alreadyExists) {
-                    if (alreadyExists.getMessage() == null || !alreadyExists.getMessage().contains("BUSYGROUP")) throw alreadyExists;
-                }
+        private void ensureGroup(Jedis jedis) {
+            if (groupReady) {
+                return;
             }
+            try {
+                jedis.xgroupCreate(stream, group, new StreamEntryID(0, 0), true);
+            } catch (JedisDataException alreadyExists) {
+                if (alreadyExists.getMessage() == null || !alreadyExists.getMessage().contains("BUSYGROUP")) throw alreadyExists;
+            }
+            groupReady = true;
         }
 
         private void deliver(Jedis jedis, List<StreamEntry> entries) {
@@ -297,6 +326,7 @@ final class RedisStreamsDurableMessagingDataAccess implements DurableMessagingDa
                     deadLetter(jedis, entry, "Retry policy exhausted after " + maxAttempts + " attempts");
                     continue;
                 }
+                DurableEvent<T> event;
                 try {
                     String eventId = required(fields, "event_id");
                     String processingKey = required(fields, "processing_key");
@@ -304,15 +334,19 @@ final class RedisStreamsDurableMessagingDataAccess implements DurableMessagingDa
                     if (payload == null || !required(fields, "type").equals(payload.getType())) {
                         throw new IllegalArgumentException("Payload type does not match the durable event envelope");
                     }
-                    handler.accept(new Delivery(entry.getID(), new DurableEvent<>(eventId, processingKey, payload), attempt));
+                    event = new DurableEvent<>(eventId, processingKey, payload);
                 } catch (Exception failure) {
                     lastFailure.set(compact(failure));
-                    if (failure instanceof IllegalArgumentException || failure instanceof com.google.gson.JsonSyntaxException) {
-                        deadLetter(jedis, entry, "Unprocessable event: " + compact(failure));
-                    } else {
-                        logger.warn("[RedisStreams] Durable event " + entryId + " failed on " + id
-                                + " and remains pending: " + compact(failure));
-                    }
+                    deadLetter(jedis, entry, "Unprocessable event: " + compact(failure));
+                    continue;
+                }
+                try {
+                    AsyncTaskSupport.runAsync(execution, "redis.streams.handle", () ->
+                            handler.accept(new Delivery(entry.getID(), event, attempt))).join();
+                } catch (Exception failure) {
+                    lastFailure.set(compact(failure));
+                    logger.warn("[RedisStreams] Durable event " + entryId + " failed on " + id
+                            + " and remains pending: " + compact(failure));
                 }
             }
         }
@@ -374,8 +408,9 @@ final class RedisStreamsDurableMessagingDataAccess implements DurableMessagingDa
 
             @Override public synchronized CompletableFuture<Void> acknowledge() {
                 CompletableFuture<Void> current = acknowledgement.get();
-                if (current != null) return current;
-                CompletableFuture<Void> created = AsyncTaskSupport.runAsync(execution, "redis.streams.ack", () -> {
+                if (current != null && !current.isCompletedExceptionally() && !current.isCancelled()) return current;
+                CompletableFuture<Void> created = new CompletableFuture<>();
+                try {
                     try (Jedis jedis = pool().getResource()) {
                         Object result = jedis.eval(ACK_SCRIPT, List.of(stream, retryKey(stream, group)),
                                 List.of(group, entryId.toString()));
@@ -384,10 +419,12 @@ final class RedisStreamsDurableMessagingDataAccess implements DurableMessagingDa
                             trimAfterAcknowledgement(stream);
                         }
                     }
-                });
-                // Avoid duplicate acknowledgements even when callers race from multiple callback threads.
-                if (acknowledgement.compareAndSet(null, created)) return created;
-                return acknowledgement.get();
+                    created.complete(null);
+                } catch (Throwable failure) {
+                    created.completeExceptionally(failure);
+                }
+                acknowledgement.set(created);
+                return created;
             }
         }
     }
@@ -399,12 +436,19 @@ final class RedisStreamsDurableMessagingDataAccess implements DurableMessagingDa
     }
 
     private void trimAfterAcknowledgement(String stream) {
+        long now = System.currentTimeMillis();
+        AtomicLong nextAt = nextTrimAtMillis.computeIfAbsent(stream, ignored -> new AtomicLong());
+        long previouslyScheduled = nextAt.get();
+        if (now < previouslyScheduled || !nextAt.compareAndSet(previouslyScheduled, now + retentionTrimIntervalMs)) {
+            return;
+        }
         try (Jedis jedis = pool().getResource()) {
-            StreamEntryID cutoff = new StreamEntryID(Math.max(0L, System.currentTimeMillis() - retentionMs), 0);
+            StreamEntryID cutoff = new StreamEntryID(Math.max(0L, redisTimeMillis(jedis) - retentionMs), 0);
             List<StreamEntry> retained = jedis.xrevrange(stream, StreamEntryID.MAXIMUM_ID, StreamEntryID.MINIMUM_ID,
                     Math.toIntExact(Math.min(retentionMaxEntries, Integer.MAX_VALUE)));
-            if (retained.size() == retentionMaxEntries) cutoff = older(cutoff, retained.get(retained.size() - 1).getID());
+            if (retained.size() == retentionMaxEntries) cutoff = newer(cutoff, retained.get(retained.size() - 1).getID());
             for (StreamGroupInfo group : jedis.xinfoGroups(stream)) {
+                if (group.getLastDeliveredId() != null) cutoff = older(cutoff, group.getLastDeliveredId());
                 StreamPendingSummary pending = jedis.xpending(stream, group.getName());
                 if (pending.getMinId() != null) cutoff = older(cutoff, pending.getMinId());
             }
@@ -414,8 +458,18 @@ final class RedisStreamsDurableMessagingDataAccess implements DurableMessagingDa
         }
     }
 
+    private static long redisTimeMillis(Jedis jedis) {
+        List<String> time = jedis.time();
+        return Math.addExact(Math.multiplyExact(Long.parseLong(time.getFirst()), 1_000L),
+                Long.parseLong(time.get(1)) / 1_000L);
+    }
+
     private static StreamEntryID older(StreamEntryID first, StreamEntryID second) {
         return first.compareTo(second) <= 0 ? first : second;
+    }
+
+    private static StreamEntryID newer(StreamEntryID first, StreamEntryID second) {
+        return first.compareTo(second) >= 0 ? first : second;
     }
 
     private static String compact(Throwable failure) {

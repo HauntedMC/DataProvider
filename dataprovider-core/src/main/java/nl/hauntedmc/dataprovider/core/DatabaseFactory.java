@@ -473,8 +473,16 @@ class DatabaseFactory {
                 } catch (Exception ignored) {
                     // Scope closure below prevents new work; the physical resource will close on its final lease.
                 }
+                try {
+                    messaging.getDurableDataAccess().shutdown().get(3, TimeUnit.SECONDS);
+                } catch (Exception ignored) {
+                    // Pending durable entries are deliberately left for consumer-group reclaim after shutdown.
+                }
             }
             ResourceExecutionHandle scopedExecution = resourceExecution;
+            if (scopedExecution != null && resource.provider instanceof RedisMessagingDatabase redisMessaging) {
+                redisMessaging.releaseScope(scopedExecution);
+            }
             if (scopedExecution != null) {
                 scopedExecution.close();
             } else {

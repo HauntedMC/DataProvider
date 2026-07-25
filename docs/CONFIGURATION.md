@@ -208,12 +208,16 @@ Jedis connection-pool settings remain connection-specific. Worker and queue capa
 - `security.max_payload_chars`
 - `security.max_queued_messages_per_handler`
 - `durable.batch_size`: maximum stream entries fetched or reclaimed per polling cycle
-- `durable.read_block_ms`: bounded blocking read time; also bounds consumer shutdown latency
-- `durable.reclaim_idle_ms`: idle duration before another named consumer may reclaim pending work
+- `durable.read_block_ms`: bounded blocking read time; also bounds consumer shutdown latency. `socket_timeout_ms` must exceed it by at least 250 ms.
+- `durable.reclaim_idle_ms`: idle duration before another named consumer may reclaim pending work; set it higher than the longest normal business transaction to avoid concurrent redelivery of slow work
 - `durable.max_attempts`: attempts before an unacknowledged or failed entry is atomically moved to its dead-letter stream
-- `durable.retention_ms` / `durable.retention_max_entries`: retention limits; trimming never removes an entry pending in any group
-- `durable.deduplication_ttl_seconds`: producer event-ID deduplication lifetime
+- `durable.retention_ms` / `durable.retention_max_entries`: retention limits; trimming does not pass any group’s pending or undelivered position
+- `durable.retention_trim_interval_ms`: minimum interval between safe retention scans; this avoids a costly full group scan after every acknowledgement
+- `durable.deduplication_ttl_seconds`: producer event-ID deduplication lifetime; it must be at least `retention_ms` rounded up to seconds
 - `durable.dead_letter_max_entries`: bounded per-group dead-letter stream length
+
+Use a consumer name that is unique among simultaneous process instances in a consumer group. Redis may reclaim a delivery whose idle time exceeds `durable.reclaim_idle_ms`, so the business operation must remain idempotent even when a slow or failed process is still running. An inactive group prevents trimming past its undelivered position; intentionally retired groups should be drained and removed with an operational Redis procedure.
+Redis 6.2 or newer is required. Per-group dead letters are stored in `<stream>:durable:dead:<group>` and retain the source entry ID, event ID, processing key, payload, attempt and failure reason.
 
 Each logical Redis subscription owns at most one long-lived physical listener connection. DataProvider adds subscription capacity on top of `pool.connections`, so subscriptions cannot consume command connections reserved for publishing and shutdown. Listener failures retain the original logical subscription and handler registrations, then reconnect with bounded exponential backoff and jitter. Pool recreation by the resilience layer does not replace the logical subscription handle.
 

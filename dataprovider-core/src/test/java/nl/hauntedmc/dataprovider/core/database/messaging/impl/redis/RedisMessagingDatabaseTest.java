@@ -65,4 +65,36 @@ class RedisMessagingDatabaseTest {
         RedisMessagingDatabase database = new RedisMessagingDatabase(config, new RecordingLoggerAdapter());
         assertThrows(IllegalArgumentException.class, database::connect);
     }
+
+    @Test
+    void connectRejectsInvalidDurableRetentionAndDeduplicationSettings() throws Exception {
+        CommentedConfigurationNode config = CommentedConfigurationNode.root();
+        config.node("durable", "retention_ms").set(120_000L);
+        config.node("durable", "deduplication_ttl_seconds").set(60L);
+
+        RedisMessagingDatabase database = new RedisMessagingDatabase(config, new RecordingLoggerAdapter());
+
+        assertThrows(IllegalArgumentException.class, database::connect);
+    }
+
+    @Test
+    void connectRejectsDurableReclaimIntervalBelowSafeMinimum() throws Exception {
+        CommentedConfigurationNode config = CommentedConfigurationNode.root();
+        config.node("durable", "reclaim_idle_ms").set(999L);
+
+        RedisMessagingDatabase database = new RedisMessagingDatabase(config, new RecordingLoggerAdapter());
+
+        assertThrows(IllegalArgumentException.class, database::connect);
+    }
+
+    @Test
+    void connectRejectsSocketTimeoutThatCannotCoverDurableBlockingReads() throws Exception {
+        CommentedConfigurationNode config = CommentedConfigurationNode.root();
+        config.node("durable", "read_block_ms").set(1_000);
+        config.node("socket_timeout_ms").set(1_000);
+
+        RedisMessagingDatabase database = new RedisMessagingDatabase(config, new RecordingLoggerAdapter());
+
+        assertThrows(IllegalArgumentException.class, database::connect);
+    }
 }

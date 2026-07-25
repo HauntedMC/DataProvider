@@ -35,12 +35,15 @@ default:
   # Pub/Sub above remains only for disposable notifications.
   durable:
     batch_size: 32
+    # Keep this below socket_timeout_ms; leave time for the Redis response to traverse the network.
     read_block_ms: 500
+    # Set this higher than the longest normal business transaction. A live slow handler can otherwise be reclaimed.
     reclaim_idle_ms: 30000
     max_attempts: 8
-    # Retention is trimmed only up to the oldest pending entry in every consumer group.
+    # Retention is trimmed only before every group's pending and undelivered positions.
     retention_ms: 604800000
     retention_max_entries: 1000000
+    retention_trim_interval_ms: 30000
     # Must cover the maximum interval in which a producer may retry an uncertain publish result.
     deduplication_ttl_seconds: 604800
     dead_letter_max_entries: 100000

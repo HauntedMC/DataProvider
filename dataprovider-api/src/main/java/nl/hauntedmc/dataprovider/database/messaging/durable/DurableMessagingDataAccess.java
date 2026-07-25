@@ -1,5 +1,6 @@
 package nl.hauntedmc.dataprovider.database.messaging.durable;
 
+import nl.hauntedmc.dataprovider.database.DataAccess;
 import nl.hauntedmc.dataprovider.database.messaging.api.EventMessage;
 
 import java.util.List;
@@ -13,7 +14,7 @@ import java.util.function.Consumer;
  * acknowledge after the effect is committed. This yields exactly-once business effects despite
  * redelivery after process or Redis failure.</p>
  */
-public interface DurableMessagingDataAccess {
+public interface DurableMessagingDataAccess extends DataAccess {
     <T extends EventMessage> CompletableFuture<PublishedDurableEvent> publish(String stream, DurableEvent<T> event);
 
     <T extends EventMessage> DurableSubscription consume(

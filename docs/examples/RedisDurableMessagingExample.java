@@ -21,7 +21,7 @@ public final class RedisDurableMessagingExample {
             // In one database transaction: INSERT processing_key with a UNIQUE constraint, then apply the vote.
             // If the key already exists, the transaction makes this a no-op.
             applyVoteIdempotently(delivery.event().processingKey(), delivery.event().payload());
-            delivery.acknowledge(); // Only after the transaction commits.
+            delivery.acknowledge().join(); // Only after the transaction commits.
         });
     }
 

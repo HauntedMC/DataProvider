@@ -22,8 +22,11 @@ import redis.clients.jedis.JedisPoolConfig;
 
 import javax.net.ssl.SSLContext;
 import java.time.Duration;
+import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Objects;
+import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
@@ -69,6 +72,7 @@ public final class RedisMessagingDatabase implements MessagingDatabaseProvider, 
     private volatile long durableRetentionMaxEntries;
     private volatile long durableDeduplicationTtlSeconds;
     private volatile long durableDeadLetterMaxEntries;
+    private volatile long durableRetentionTrimIntervalMs;
 
     public RedisMessagingDatabase(CommentedConfigurationNode config, LoggerAdapter logger) {
         this(config, logger, ExecutionHandle.direct());
@@ -147,6 +151,18 @@ public final class RedisMessagingDatabase implements MessagingDatabaseProvider, 
         long durableDeadLetterMaxEntries = requireInRange(
                 config.node("durable", "dead_letter_max_entries").getLong(100_000L),
                 1L, Integer.MAX_VALUE, "durable.dead_letter_max_entries");
+        long durableRetentionTrimIntervalMs = requireInRange(
+                config.node("durable", "retention_trim_interval_ms").getLong(30_000L),
+                1_000L, 3_600_000L, "durable.retention_trim_interval_ms");
+        long minimumSocketTimeoutMs = Math.addExact((long) durableReadBlockMs, 250L);
+        if (socketTimeoutMs < minimumSocketTimeoutMs) {
+            throw new IllegalArgumentException("Redis messaging config 'socket_timeout_ms' must be at least "
+                    + minimumSocketTimeoutMs + "ms to exceed durable.read_block_ms.");
+        }
+        if (durableDeduplicationTtlSeconds < Math.ceilDiv(durableRetentionMs, 1_000L)) {
+            throw new IllegalArgumentException("Redis messaging config 'durable.deduplication_ttl_seconds' must be at least "
+                    + "durable.retention_ms rounded up to seconds.");
+        }
         boolean tlsEnabled = config.node("tls", "enabled").getBoolean(false);
         boolean verifyHostname = config.node("tls", "verify_hostname").getBoolean(true);
         boolean trustAllCertificates = config.node("tls", "trust_all_certificates").getBoolean(false);
@@ -217,6 +233,7 @@ public final class RedisMessagingDatabase implements MessagingDatabaseProvider, 
             this.durableRetentionMaxEntries = durableRetentionMaxEntries;
             this.durableDeduplicationTtlSeconds = durableDeduplicationTtlSeconds;
             this.durableDeadLetterMaxEntries = durableDeadLetterMaxEntries;
+            this.durableRetentionTrimIntervalMs = durableRetentionTrimIntervalMs;
             bus = newAccess(execution, messageRegistry);
             durableBus = newDurableAccess(execution, messageRegistry);
             connected = true;
@@ -241,19 +258,22 @@ public final class RedisMessagingDatabase implements MessagingDatabaseProvider, 
 
     @Override
     public synchronized void disconnect() {
-        try {
-            if (bus != null) {
-                bus.shutdown().get(3, TimeUnit.SECONDS);
-            }
-        } catch (Exception failure) {
-            logger.warn("[RedisMessagingDatabase] Timed out while shutting down direct subscriptions.");
+        List<CompletableFuture<Void>> shutdowns = new ArrayList<>();
+        Set<MessagingDataAccess> ephemeralAccess = new HashSet<>(scopedAccess.values());
+        if (bus != null) {
+            ephemeralAccess.add(bus);
         }
+        ephemeralAccess.forEach(access -> shutdowns.add(access.shutdown()));
+        Set<DurableMessagingDataAccess> durableAccess = new HashSet<>(scopedDurableAccess.values());
+        if (durableBus != null) {
+            durableAccess.add(durableBus);
+        }
+        durableAccess.forEach(access -> shutdowns.add(access.shutdown()));
         try {
-            if (durableBus != null) {
-                durableBus.shutdown().get(3, TimeUnit.SECONDS);
-            }
+            CompletableFuture.allOf(shutdowns.toArray(CompletableFuture[]::new)).get(3, TimeUnit.SECONDS);
         } catch (Exception failure) {
-            logger.warn("[RedisMessagingDatabase] Timed out while shutting down durable consumers; pending entries remain reclaimable.");
+            logger.warn("[RedisMessagingDatabase] Timed out while shutting down messaging consumers; "
+                    + "unacknowledged durable entries remain reclaimable.");
         } finally {
             execution.close();
             if (pool != null && !pool.isClosed()) {
@@ -340,6 +360,14 @@ public final class RedisMessagingDatabase implements MessagingDatabaseProvider, 
         };
     }
 
+    /** Releases the cached access views for one closed logical execution scope. */
+    public void releaseScope(ExecutionHandle scopedExecution) {
+        Objects.requireNonNull(scopedExecution, "Scoped execution cannot be null.");
+        Object scopeIdentity = scopedExecution.scopeIdentity();
+        scopedAccess.remove(scopeIdentity);
+        scopedDurableAccess.remove(scopeIdentity);
+    }
+
     private MessagingDataAccess newAccess(ExecutionHandle accessExecution, MessageRegistry registry) {
         RedisMessagingDataAccess delegate = new RedisMessagingDataAccess(
                 () -> pool,
@@ -373,7 +401,8 @@ public final class RedisMessagingDatabase implements MessagingDatabaseProvider, 
                 durableRetentionMs,
                 durableRetentionMaxEntries,
                 durableDeduplicationTtlSeconds,
-                durableDeadLetterMaxEntries
+                durableDeadLetterMaxEntries,
+                durableRetentionTrimIntervalMs
         );
     }
 
