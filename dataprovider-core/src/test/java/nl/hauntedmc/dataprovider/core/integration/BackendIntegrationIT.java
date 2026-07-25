@@ -284,7 +284,7 @@ class BackendIntegrationIT {
     }
 
     @Test
-    void stableLogicalReferencesWorkAfterEachBackendIsPausedAndRestored() throws Exception {
+    void stableLogicalReferencesWorkAfterEachBackendTransportInterruption() throws Exception {
         writeResilienceConnectionFiles();
         DataProvider provider = new DataProvider(
                 logger(), dataDirectory, getClass().getClassLoader(),
@@ -318,36 +318,29 @@ class BackendIntegrationIT {
             assertTrue(stableDataSource.unwrap(javax.sql.DataSource.class) == stableDataSource);
             mysqlAccess.executeUpdate("CREATE TABLE resilience_it (id INT PRIMARY KEY, value VARCHAR(64))").join();
 
-            MYSQL.getDockerClient().pauseContainerCmd(MYSQL.getContainerId()).exec();
-            try {
-                assertFalse(mysqlRecovery.probeRemoteHealth());
-            } finally {
-                MYSQL.getDockerClient().unpauseContainerCmd(MYSQL.getContainerId()).exec();
-            }
-            awaitRecovery(mysqlRecovery, "MySQL");
+            interruptBackendTransport(MYSQL, mysqlRecovery, "MySQL");
             mysqlAccess.executeUpdate("INSERT INTO resilience_it VALUES (?, ?)", 1, "restored").join();
             assertEquals("restored", mysqlAccess.queryForSingleValue(
                     "SELECT value FROM resilience_it WHERE id = ?", 1).join());
-
-            MONGODB.getDockerClient().pauseContainerCmd(MONGODB.getContainerId()).exec();
-            try {
-                assertFalse(mongoRecovery.probeRemoteHealth());
-            } finally {
-                MONGODB.getDockerClient().unpauseContainerCmd(MONGODB.getContainerId()).exec();
+            try (var connection = stableDataSource.getConnection()) {
+                assertTrue(connection.isValid(2));
             }
-            awaitRecovery(mongoRecovery, "MongoDB");
+            interruptBackendTransport(MYSQL, mysqlRecovery, "MySQL");
+            assertEquals("restored", mysqlAccess.queryForSingleValue(
+                    "SELECT value FROM resilience_it WHERE id = ?", 1).join());
+
+            interruptBackendTransport(MONGODB, mongoRecovery, "MongoDB");
             mongoAccess.insertOne("resilience_it", Map.of("key", "restored")).join();
             assertEquals("restored", mongoAccess.findOne("resilience_it",
                     new DocumentQuery().eq("key", "restored")).join().get("key"));
+            interruptBackendTransport(MONGODB, mongoRecovery, "MongoDB");
+            assertEquals("restored", mongoAccess.findOne("resilience_it",
+                    new DocumentQuery().eq("key", "restored")).join().get("key"));
 
-            REDIS.getDockerClient().pauseContainerCmd(REDIS.getContainerId()).exec();
-            try {
-                assertFalse(redisRecovery.probeRemoteHealth());
-            } finally {
-                REDIS.getDockerClient().unpauseContainerCmd(REDIS.getContainerId()).exec();
-            }
-            awaitRecovery(redisRecovery, "Redis");
+            interruptBackendTransport(REDIS, redisRecovery, "Redis");
             redisAccess.setKey("resilience:stable-reference", "restored").join();
+            assertEquals("restored", redisAccess.getKey("resilience:stable-reference").join());
+            interruptBackendTransport(REDIS, redisRecovery, "Redis");
             assertEquals("restored", redisAccess.getKey("resilience:stable-reference").join());
         } finally {
             provider.shutdownAllDatabases();
@@ -409,9 +402,27 @@ class BackendIntegrationIT {
                 """.formatted(REDIS.getHost(), REDIS.getMappedPort(6379), REDIS_PASSWORD));
     }
 
+    /** Forces a failed recovery while the backend cannot service network requests. */
+    private static void interruptBackendTransport(
+            GenericContainer<?> container,
+            ManagedDatabaseProvider provider,
+            String backend
+    ) throws Exception {
+        container.getDockerClient().pauseContainerCmd(container.getContainerId()).exec();
+        try {
+            assertFalse(provider.probeRemoteHealth(), backend + " remained healthy after its container paused.");
+            // Record a failed recovery while the server is unavailable. The next recovery must rebuild
+            // a still-locally-open client or pool rather than merely rely on its old socket.
+            assertFalse(provider.recover(), backend + " recovered while its container was paused.");
+        } finally {
+            container.getDockerClient().unpauseContainerCmd(container.getContainerId()).exec();
+        }
+        awaitRecovery(provider, backend);
+    }
+
     /**
-     * Docker unpause is deterministic, but the resumed server may need a short moment before it
-     * accepts a new socket. This probes only the recovery path; no application operation is retried.
+     * A restarted server may need a short moment before it accepts a new socket. This probes only
+     * the recovery path; no application operation is replayed by the provider.
      */
     private static void awaitRecovery(ManagedDatabaseProvider provider, String backend) throws InterruptedException {
         long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(10);
