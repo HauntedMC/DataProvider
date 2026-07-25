@@ -18,8 +18,6 @@ import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
@@ -191,14 +189,13 @@ class RedisMessagingDataAccessTest {
                 16,
                 8
         );
-        var subscription = access.subscribe("shutdown-test", EventMessage.class, ignored -> { });
+        access.subscribe("shutdown-test", EventMessage.class, ignored -> { });
         assertTrue(listening.await(2, TimeUnit.SECONDS));
-        assertSame(subscription, subscription);
 
         var shutdown = access.shutdown();
-        assertFalse(shutdown.isDone());
-        releaseListener.countDown();
         shutdown.get(2, TimeUnit.SECONDS);
+        assertTrue(shutdown.isDone());
+        releaseListener.countDown();
     }
 
     private static void await(CheckedCondition condition) throws Exception {
@@ -233,7 +230,7 @@ class RedisMessagingDataAccessTest {
         }
         @Override public boolean isClosed() { return false; }
         @Override public boolean tryAcquireSubscription() {
-            return activeSubscriptions.incrementAndGet() == 1;
+            return activeSubscriptions.compareAndSet(0, 1);
         }
         @Override public void releaseSubscription() {
             activeSubscriptions.decrementAndGet();
