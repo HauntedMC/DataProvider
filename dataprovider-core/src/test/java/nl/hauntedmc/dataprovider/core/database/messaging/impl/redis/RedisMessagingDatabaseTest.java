@@ -46,4 +46,23 @@ class RedisMessagingDatabaseTest {
         RedisMessagingDatabase database = new RedisMessagingDatabase(config, new RecordingLoggerAdapter());
         assertThrows(IllegalStateException.class, database::connect);
     }
+
+    @Test
+    void connectRejectsReconnectBackoffWithInvalidBounds() throws Exception {
+        CommentedConfigurationNode config = CommentedConfigurationNode.root();
+        config.node("reconnect", "initial_backoff_ms").set(1_000L);
+        config.node("reconnect", "max_backoff_ms").set(500L);
+
+        RedisMessagingDatabase database = new RedisMessagingDatabase(config, new RecordingLoggerAdapter());
+        assertThrows(IllegalArgumentException.class, database::connect);
+    }
+
+    @Test
+    void connectRejectsReconnectJitterOutsideUnitInterval() throws Exception {
+        CommentedConfigurationNode config = CommentedConfigurationNode.root();
+        config.node("reconnect", "jitter").set(1.01D);
+
+        RedisMessagingDatabase database = new RedisMessagingDatabase(config, new RecordingLoggerAdapter());
+        assertThrows(IllegalArgumentException.class, database::connect);
+    }
 }
