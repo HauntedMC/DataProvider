@@ -7,8 +7,7 @@
 - Verify local checks:
 
 ```bash
-mvn -B -ntp verify
-mvn -B -ntp -DskipTests checkstyle:check
+mvn -B -ntp -Pintegration-tests verify
 ```
 
 ## 2. Bump and Tag
@@ -45,10 +44,12 @@ Trigger:
 
 What it does:
 
-1. Verifies the full reactor and checks that the tag matches `revision`.
-2. Uploads the Paper and Velocity bundled jars.
-3. Deploys every Maven module to GitHub Packages.
-4. Creates a GitHub Release with generated notes and both platform jars.
+1. Checks that the tag matches `revision`.
+2. Runs the full reactor release gate on the tag checkout: unit tests, container-backed
+   backend integration tests, Checkstyle, JaCoCo thresholds, dependency convergence,
+   upper-bound dependency checks, duplicate-class checks, and shaded platform packaging.
+3. Deploys every Maven module to GitHub Packages only after that complete gate succeeds.
+4. Uploads the Paper and Velocity bundled jars and creates a GitHub Release with them.
 
 ## 4.  Artifacts
 

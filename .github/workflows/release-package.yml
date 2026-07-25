@@ -29,14 +29,21 @@ jobs:
           server-username: GITHUB_ACTOR
           server-password: GITHUB_TOKEN
 
-      - name: Verify build
-        run: mvn -U -B -ntp verify
-
       - name: Validate release version
         run: |
           PROJECT_VERSION="$(mvn -q -ntp -DforceStdout help:evaluate -Dexpression=project.version | tail -n 1)"
           TAG_VERSION="${GITHUB_REF_NAME#v}"
           test "$PROJECT_VERSION" = "$TAG_VERSION" || { echo "Tag version does not match Maven project version." >&2; exit 1; }
+
+      - name: Run the production release gate
+        # Do not start publication until the entire reactor on this exact checkout has passed
+        # unit tests, Checkstyle, JaCoCo, dependency convergence, duplicate-class analysis and backend ITs.
+        run: mvn -U -B -ntp -Pintegration-tests verify
+
+      - name: Publish verified Maven artifacts
+        run: mvn -U -B -ntp -DskipTests deploy
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
 
       - name: Upload platform distributables
         uses: actions/upload-artifact@v7
@@ -46,11 +53,6 @@ jobs:
           path: |
             dataprovider-platform-paper/target/dataprovider-platform-paper-*-bundled.jar
             dataprovider-platform-velocity/target/dataprovider-platform-velocity-*-bundled.jar
-
-      - name: Publish to GitHub Packages (Maven)
-        run: mvn -U -B -ntp -DskipTests deploy
-        env:
-          GITHUB_TOKEN: ${{ github.token }}
 
       - name: Create GitHub release
         uses: softprops/action-gh-release@v3
