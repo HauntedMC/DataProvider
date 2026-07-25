@@ -29,6 +29,7 @@ public final class ResourceExecutionHandle implements ExecutionHandle {
     @Override public DatabaseType backendType() { return delegate.backendType(); }
     @Override public String connectionIdentifier() { return delegate.connectionIdentifier(); }
     @Override public String pluginId() { return delegate.pluginId(); }
+    @Override public Object scopeIdentity() { return delegate.scopeIdentity(); }
     @Override
     public boolean tryAcquireSubscription() {
         if (!admission.tryAcquireSubscription()) {
