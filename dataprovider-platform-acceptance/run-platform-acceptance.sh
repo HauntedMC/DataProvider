@@ -52,7 +52,16 @@ fail() {
 pom_property() {
     local property_name=$1
     local value
-    value="$(rg -o "<${property_name}>[^<]+" "$ROOT_DIRECTORY/pom.xml" | head -n 1 | sed "s#<${property_name}>##")"
+    value="$(awk -v opening_tag="<${property_name}>" -v closing_tag="</${property_name}>" '
+        index($0, opening_tag) {
+            value = substr($0, index($0, opening_tag) + length(opening_tag))
+            closing_tag_index = index(value, closing_tag)
+            if (closing_tag_index > 0) {
+                print substr(value, 1, closing_tag_index - 1)
+            }
+            exit
+        }
+    ' "$ROOT_DIRECTORY/pom.xml")"
     [[ -n "$value" ]] || fail "Missing Maven property ${property_name}."
     printf '%s' "$value"
 }
@@ -104,10 +113,10 @@ wait_for_log() {
     local timeout_seconds=$3
     local deadline=$((SECONDS + timeout_seconds))
     while (( SECONDS < deadline )); do
-        if rg -q "$expected" "$log_file"; then
+        if grep -Eq -- "$expected" "$log_file"; then
             return
         fi
-        if rg -q 'DATAPROVIDER_ACCEPTANCE_FAIL|Exception in thread|Could not load' "$log_file"; then
+        if grep -Eq 'DATAPROVIDER_ACCEPTANCE_FAIL|Exception in thread|Could not load' "$log_file"; then
             fail "Platform reported an acceptance or boot failure while waiting for ${expected}."
         fi
         sleep 1
@@ -130,7 +139,7 @@ stop_process() {
         fail "Platform did not terminate after ${stop_command}."
     fi
     wait "$process_id" || fail "Platform exited unsuccessfully after ${stop_command}."
-    rg -q 'DataProvider disabled' "$log_file" || fail "DataProvider did not report clean platform shutdown."
+    grep -Eq 'DataProvider disabled' "$log_file" || fail "DataProvider did not report clean platform shutdown."
 }
 
 write_dataprovider_configuration() {
@@ -279,10 +288,10 @@ for artifact in "$PAPER_BUNDLE" "$VELOCITY_BUNDLE" "$PAPER_CONSUMER" "$VELOCITY_
     [[ -f "$artifact" ]] || fail "Missing required release artifact ${artifact}."
 done
 
-if jar tf "$PAPER_CONSUMER" | rg -q '^nl/hauntedmc/dataprovider/api/'; then
+if jar tf "$PAPER_CONSUMER" | grep -Eq '^nl/hauntedmc/dataprovider/api/'; then
     fail "Paper consumer bundled DataProvider API classes instead of compiling against the provided API."
 fi
-if jar tf "$VELOCITY_CONSUMER" | rg -q '^nl/hauntedmc/dataprovider/api/'; then
+if jar tf "$VELOCITY_CONSUMER" | grep -Eq '^nl/hauntedmc/dataprovider/api/'; then
     fail "Velocity consumer bundled DataProvider API classes instead of compiling against the provided API."
 fi
 
