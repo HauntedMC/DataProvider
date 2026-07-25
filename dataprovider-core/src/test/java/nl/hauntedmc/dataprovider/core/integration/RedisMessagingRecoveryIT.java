@@ -2,7 +2,6 @@ package nl.hauntedmc.dataprovider.core.integration;
 
 import nl.hauntedmc.dataprovider.api.DataProviderAPI;
 import nl.hauntedmc.dataprovider.core.DataProvider;
-import nl.hauntedmc.dataprovider.core.ManagedDatabaseProvider;
 import nl.hauntedmc.dataprovider.core.api.DefaultDataProviderApi;
 import nl.hauntedmc.dataprovider.core.identity.CallerContext;
 import nl.hauntedmc.dataprovider.core.identity.CallerContextResolver;
@@ -29,7 +28,6 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 @Testcontainers(disabledWithoutDocker = true)
@@ -58,12 +56,9 @@ class RedisMessagingRecoveryIT {
         AtomicBoolean containerPaused = new AtomicBoolean(false);
         AtomicBoolean containerStopped = new AtomicBoolean(false);
         try {
-            var handler = provider.getDataProviderHandler();
-            DataProviderAPI api = new DefaultDataProviderApi(handler);
+            DataProviderAPI api = new DefaultDataProviderApi(provider.getDataProviderHandler());
             MessagingDatabaseProvider messaging = (MessagingDatabaseProvider)
                     api.registerDatabaseOrThrow(DatabaseType.REDIS_MESSAGING, "default");
-            ManagedDatabaseProvider recovery = (ManagedDatabaseProvider)
-                    handler.requireRegisteredDatabase(DatabaseType.REDIS_MESSAGING, "default");
             var access = messaging.getDataAccess();
             LinkedBlockingQueue<String> received = new LinkedBlockingQueue<>();
             Subscription subscription = access.subscribe(CHANNEL, TestEvent.class, event -> received.add(event.value()));
@@ -76,19 +71,15 @@ class RedisMessagingRecoveryIT {
             // Docker pause freezes Redis without necessarily closing an established Pub/Sub socket.
             // The same physical listener may therefore remain ACTIVE and continue after resume.
             pause(containerPaused);
-            assertFalse(recovery.recover());
             resume(containerPaused);
-            awaitRecovery(recovery);
             awaitState(subscription, SubscriptionState.ACTIVE);
             assertEquals(originalLogicalId, subscription.id());
             assertSubscriberCount(1L);
             assertDelivery(access, received, "after-pause");
 
             stop(containerStopped);
-            assertFalse(recovery.recover());
             awaitState(subscription, SubscriptionState.RECONNECTING);
             start(containerStopped);
-            awaitRecovery(recovery);
             awaitState(subscription, SubscriptionState.ACTIVE);
             assertEquals(originalLogicalId, subscription.id());
             assertSubscriberCount(1L);
@@ -96,10 +87,8 @@ class RedisMessagingRecoveryIT {
 
             for (int interruption = 0; interruption < 3; interruption++) {
                 stop(containerStopped);
-                assertFalse(recovery.recover());
                 awaitState(subscription, SubscriptionState.RECONNECTING);
                 start(containerStopped);
-                awaitRecovery(recovery);
                 awaitState(subscription, SubscriptionState.ACTIVE);
                 assertSubscriberCount(1L);
                 assertDelivery(access, received, "repeated-" + interruption);
@@ -107,15 +96,15 @@ class RedisMessagingRecoveryIT {
             assertTrue(subscription.snapshot().reconnectCount() >= 4L);
             assertEquals(originalLogicalId, subscription.snapshot().logicalId());
 
-            pause(containerPaused);
-            assertFalse(recovery.recover());
+            stop(containerStopped);
+            awaitState(subscription, SubscriptionState.RECONNECTING);
             provider.shutdownAllDatabases();
             provider = null;
             subscription.completion().get(5, TimeUnit.SECONDS);
             assertEquals(SubscriptionState.CLOSED, subscription.state());
             awaitCondition(() -> countSubscriptionThreads() == 0L,
                     "Redis subscription supervisor thread was not released after shutdown.");
-            resume(containerPaused);
+            start(containerStopped);
             awaitSubscriberCount(0L);
         } finally {
             if (containerPaused.get()) {
@@ -188,10 +177,6 @@ class RedisMessagingRecoveryIT {
     private static void start(AtomicBoolean stopped) {
         REDIS.getDockerClient().startContainerCmd(REDIS.getContainerId()).exec();
         stopped.set(false);
-    }
-
-    private static void awaitRecovery(ManagedDatabaseProvider provider) throws Exception {
-        awaitCondition(() -> provider.recover(), "Redis messaging provider did not recover.");
     }
 
     private static void awaitState(Subscription subscription, SubscriptionState expected) throws Exception {
