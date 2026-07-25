@@ -23,6 +23,14 @@ public interface ExecutionHandle extends Executor, AutoCloseable {
         return null;
     }
 
+    /**
+     * Stable identity of the logical execution scope. Wrappers that may be recreated around the same
+     * scope must delegate this value so long-lived resources can retain one scoped view across generations.
+     */
+    default Object scopeIdentity() {
+        return this;
+    }
+
     default boolean tryAcquireSubscription() {
         return true;
     }
