@@ -199,12 +199,16 @@ Jedis connection-pool settings remain connection-specific. Worker and queue capa
 - `pool.test_while_idle`
 - `pool.max_subscriptions`: local provider subscription cap
 - `pool.handler_batch_size`: messages processed before a hot handler yields shared capacity
+- `reconnect.initial_backoff_ms`: delay before the first physical listener replacement
+- `reconnect.max_backoff_ms`: upper bound for exponential reconnect delay
+- `reconnect.jitter`: random proportional variation from `0.0` through `1.0`
+- `reconnect.max_attempts`: terminal retry limit; `0` retries until close or scope shutdown
 - `connection_timeout_ms`
 - `socket_timeout_ms`
 - `security.max_payload_chars`
 - `security.max_queued_messages_per_handler`
 
-Each active Redis subscription owns a long-lived physical connection. DataProvider adds subscription capacity on top of `pool.connections`, so subscriptions cannot consume command connections reserved for publishing and shutdown.
+Each logical Redis subscription owns at most one long-lived physical listener connection. DataProvider adds subscription capacity on top of `pool.connections`, so subscriptions cannot consume command connections reserved for publishing and shutdown. Listener failures retain the original logical subscription and handler registrations, then reconnect with bounded exponential backoff and jitter. Pool recreation by the resilience layer does not replace the logical subscription handle.
 
 ## Operational Notes
 
@@ -213,9 +217,12 @@ Each active Redis subscription owns a long-lived physical connection. DataProvid
 - Closing a connection rejects queued work, waits for active work up to the configured grace period, then completes remaining futures exceptionally and interrupts the worker.
 - Shared workers clear interrupt state before serving another plugin.
 - Messaging handler queues drop excess messages rather than allowing unbounded growth; drop counts are included in execution metrics.
+- Redis Pub/Sub delivery is at-most-once. Messages published while a listener is disconnected can be lost and are not replayed.
+- Use Redis Streams or another acknowledged durable queue with event IDs and idempotent consumers for votes, purchases, punishments and cross-server state changes.
 - Use `default` for single-backend setups and explicit identifiers such as `rw`, `ro` or `analytics` for multi-backend setups.
 - Never commit production credentials.
 - During full plugin shutdown, pair cleanup with `unregisterAllDatabasesForPlugin()`.
+
 ## Resilience Runtime
 
 `config.yml` has a `resilience` section for core-owned health and recovery work. `workers` and
