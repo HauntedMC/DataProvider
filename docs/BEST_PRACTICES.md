@@ -25,8 +25,13 @@
 
 - Use one clear message class per channel contract.
 - Keep channels stable and namespaced (for example: `proxy.staffchat.message`).
-- Handle parse/dispatch failures as non-fatal.
+- Retain the returned `Subscription`; the same logical handle remains valid through Redis reconnects.
+- Inspect `Subscription.snapshot()` or `MessagingDataAccess.subscriptions()` for state, reconnect count, last failure and downtime.
+- Treat a normally completed subscription as explicitly closed and an exceptionally completed subscription as terminally failed.
 - Keep handlers fast and non-blocking; use `security.max_queued_messages_per_handler` to cap per-handler backlog.
+- Redis Pub/Sub is at-most-once: messages emitted during an outage can disappear even though the listener reconnects.
+- Use Redis Streams or another durable acknowledged queue for votes, purchases, punishments and cross-server state changes.
+- Durable consumers need stable event IDs and idempotent processing because retries can redeliver work.
 
 ## ORM
 

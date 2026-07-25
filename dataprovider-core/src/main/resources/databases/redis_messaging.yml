@@ -25,6 +25,12 @@ default:
     test_while_idle: true
     max_subscriptions: 64
     handler_batch_size: 64
+  reconnect:
+    initial_backoff_ms: 250
+    max_backoff_ms: 10000
+    jitter: 0.20
+    # Zero keeps retrying until the subscription is explicitly closed or the scope shuts down.
+    max_attempts: 0
   connection_timeout_ms: 2000
   socket_timeout_ms: 2000
   security:

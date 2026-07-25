@@ -6,7 +6,11 @@ import nl.hauntedmc.dataprovider.core.database.security.TlsSupport;
 import nl.hauntedmc.dataprovider.core.logging.RateLimitedLogger;
 import nl.hauntedmc.dataprovider.database.messaging.MessagingDataAccess;
 import nl.hauntedmc.dataprovider.database.messaging.MessagingDatabaseProvider;
+import nl.hauntedmc.dataprovider.database.messaging.api.EventMessage;
 import nl.hauntedmc.dataprovider.database.messaging.api.MessageRegistry;
+import nl.hauntedmc.dataprovider.database.messaging.api.Subscription;
+import nl.hauntedmc.dataprovider.database.messaging.api.SubscriptionSnapshot;
+import nl.hauntedmc.dataprovider.database.messaging.api.SubscriptionState;
 import nl.hauntedmc.dataprovider.logging.LoggerAdapter;
 import org.spongepowered.configurate.CommentedConfigurationNode;
 import redis.clients.jedis.DefaultJedisClientConfig;
@@ -17,8 +21,15 @@ import redis.clients.jedis.JedisPoolConfig;
 
 import javax.net.ssl.SSLContext;
 import java.time.Duration;
+import java.util.List;
 import java.util.Objects;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentMap;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.Consumer;
 import java.util.regex.Pattern;
 
 /** Redis messaging provider backed by the shared messaging execution lane. */
@@ -31,8 +42,10 @@ public final class RedisMessagingDatabase implements MessagingDatabaseProvider, 
     private final MessageRegistry messageRegistry;
     private final ExecutionHandle execution;
     private final RateLimitedLogger outageLogger = new RateLimitedLogger(Duration.ofSeconds(30));
+    private final ConcurrentMap<Object, MessagingDataAccess> scopedAccess = new ConcurrentHashMap<>();
+    private final AtomicLong accessSequence = new AtomicLong();
     private volatile JedisPool pool;
-    private volatile RedisMessagingDataAccess bus;
+    private volatile MessagingDataAccess bus;
     private volatile boolean connected;
     private volatile Throwable lifecycleFailure;
     private volatile int maxSubscriptions;
@@ -40,6 +53,10 @@ public final class RedisMessagingDatabase implements MessagingDatabaseProvider, 
     private volatile int maxQueuedMessagesPerHandler;
     private volatile int handlerBatchSize;
     private volatile int commandPoolSize;
+    private volatile long reconnectInitialBackoffMs;
+    private volatile long reconnectMaxBackoffMs;
+    private volatile double reconnectJitter;
+    private volatile int reconnectMaxAttempts;
 
     public RedisMessagingDatabase(CommentedConfigurationNode config, LoggerAdapter logger) {
         this(config, logger, ExecutionHandle.direct());
@@ -88,6 +105,18 @@ public final class RedisMessagingDatabase implements MessagingDatabaseProvider, 
                 250, 300_000, "connection_timeout_ms");
         int socketTimeoutMs = requireInRange(config.node("socket_timeout_ms").getInt(2_000),
                 250, 300_000, "socket_timeout_ms");
+        long reconnectInitialBackoffMs = requireInRange(
+                config.node("reconnect", "initial_backoff_ms").getLong(250L),
+                0L, 300_000L, "reconnect.initial_backoff_ms");
+        long reconnectMaxBackoffMs = requireInRange(
+                config.node("reconnect", "max_backoff_ms").getLong(10_000L),
+                reconnectInitialBackoffMs, 300_000L, "reconnect.max_backoff_ms");
+        double reconnectJitter = requireDoubleInRange(
+                config.node("reconnect", "jitter").getDouble(0.20D),
+                0.0D, 1.0D, "reconnect.jitter");
+        int reconnectMaxAttempts = requireInRange(
+                config.node("reconnect", "max_attempts").getInt(0),
+                0, 1_000_000, "reconnect.max_attempts");
         boolean tlsEnabled = config.node("tls", "enabled").getBoolean(false);
         boolean verifyHostname = config.node("tls", "verify_hostname").getBoolean(true);
         boolean trustAllCertificates = config.node("tls", "trust_all_certificates").getBoolean(false);
@@ -146,31 +175,27 @@ public final class RedisMessagingDatabase implements MessagingDatabaseProvider, 
             this.maxPayloadChars = maxPayloadChars;
             this.maxQueuedMessagesPerHandler = maxQueuedMessagesPerHandler;
             this.handlerBatchSize = handlerBatchSize;
-            bus = new RedisMessagingDataAccess(
-                    pool,
-                    execution,
-                    logger,
-                    messageRegistry,
-                    maxSubscriptions,
-                    maxPayloadChars,
-                    maxQueuedMessagesPerHandler,
-                    handlerBatchSize
-            );
+            this.reconnectInitialBackoffMs = reconnectInitialBackoffMs;
+            this.reconnectMaxBackoffMs = reconnectMaxBackoffMs;
+            this.reconnectJitter = reconnectJitter;
+            this.reconnectMaxAttempts = reconnectMaxAttempts;
+            bus = newAccess(execution, messageRegistry);
             connected = true;
             lifecycleFailure = null;
             logger.info(String.format(
                     "[RedisMessagingDatabase] Connected at %s:%d (db=%d, auth=%s, tls=%s, commandCapacity=%d, subscriptionCapacity=%d)",
                     host, port, database, password.isBlank() ? "disabled" : "enabled",
                     tlsEnabled ? "enabled" : "disabled", commandPoolSize, maxSubscriptions));
-        } catch (Exception e) {
-            lifecycleFailure = e;
+        } catch (Exception failure) {
+            lifecycleFailure = failure;
             connected = false;
             if (createdPool != null && !createdPool.isClosed()) {
                 createdPool.close();
             }
             pool = null;
             bus = null;
-            outageLogger.error(logger, "[RedisMessagingDatabase] Connection failed. (" + e.getClass().getSimpleName() + ").");
+            outageLogger.error(logger, "[RedisMessagingDatabase] Connection failed. ("
+                    + failure.getClass().getSimpleName() + ").");
         }
     }
 
@@ -180,8 +205,8 @@ public final class RedisMessagingDatabase implements MessagingDatabaseProvider, 
             if (bus != null) {
                 bus.shutdown().get(3, TimeUnit.SECONDS);
             }
-        } catch (Exception e) {
-            logger.warn("[RedisMessagingDatabase] Timed out while shutting down subscriptions.");
+        } catch (Exception failure) {
+            logger.warn("[RedisMessagingDatabase] Timed out while shutting down direct subscriptions.");
         } finally {
             execution.close();
             if (pool != null && !pool.isClosed()) {
@@ -212,7 +237,7 @@ public final class RedisMessagingDatabase implements MessagingDatabaseProvider, 
         }
         try (Jedis jedis = snapshot.getResource()) {
             return "PONG".equalsIgnoreCase(jedis.ping());
-        } catch (Exception e) {
+        } catch (Exception failure) {
             return false;
         }
     }
@@ -237,21 +262,15 @@ public final class RedisMessagingDatabase implements MessagingDatabaseProvider, 
         return maxSubscriptions;
     }
 
-    /** Creates a logical provider view without creating another Redis messaging pool. */
+    /** Creates or reuses one durable logical provider view for an execution scope. */
     public MessagingDatabaseProvider scoped(ExecutionHandle scopedExecution) {
-        JedisPool source = pool;
-        if (!connected || source == null || source.isClosed()) {
+        if (!isConnected()) {
             throw new IllegalStateException("[RedisMessagingDatabase] Jedis pool not initialized!");
         }
-        RedisMessagingDataAccess accessView = new RedisMessagingDataAccess(
-                source,
-                scopedExecution,
-                logger,
-                new MessageRegistry(logger),
-                maxSubscriptions,
-                maxPayloadChars,
-                maxQueuedMessagesPerHandler,
-                handlerBatchSize
+        Object scopeIdentity = scopedExecution.scopeIdentity();
+        MessagingDataAccess accessView = scopedAccess.computeIfAbsent(
+                scopeIdentity,
+                ignored -> newAccess(scopedExecution, new MessageRegistry(logger))
         );
         return new MessagingDatabaseProvider() {
             @Override public boolean isConnected() {
@@ -259,6 +278,151 @@ public final class RedisMessagingDatabase implements MessagingDatabaseProvider, 
             }
             @Override public MessagingDataAccess getDataAccess() { return accessView; }
         };
+    }
+
+    private MessagingDataAccess newAccess(ExecutionHandle accessExecution, MessageRegistry registry) {
+        RedisMessagingDataAccess delegate = new RedisMessagingDataAccess(
+                () -> pool,
+                accessExecution,
+                logger,
+                registry,
+                maxSubscriptions,
+                maxPayloadChars,
+                maxQueuedMessagesPerHandler,
+                handlerBatchSize,
+                reconnectInitialBackoffMs,
+                reconnectMaxBackoffMs,
+                reconnectJitter,
+                reconnectMaxAttempts
+        );
+        String accessId = Long.toUnsignedString(accessSequence.incrementAndGet(), 36);
+        return new ObservableMessagingAccess(accessId, delegate);
+    }
+
+    private static final class ObservableMessagingAccess implements MessagingDataAccess {
+        private final String accessId;
+        private final MessagingDataAccess delegate;
+
+        private ObservableMessagingAccess(String accessId, MessagingDataAccess delegate) {
+            this.accessId = Objects.requireNonNull(accessId, "Access id cannot be null.");
+            this.delegate = Objects.requireNonNull(delegate, "Messaging delegate cannot be null.");
+        }
+
+        @Override
+        public <T extends EventMessage> CompletableFuture<Void> publish(String destination, T message) {
+            return delegate.publish(destination, message);
+        }
+
+        @Override
+        public <T extends EventMessage> Subscription subscribe(
+                String destination,
+                Class<T> type,
+                Consumer<T> handler
+        ) {
+            Subscription subscription = delegate.subscribe(destination, type, handler);
+            return new ObservableSubscription(accessId, destination, subscription);
+        }
+
+        @Override
+        public List<SubscriptionSnapshot> subscriptions() {
+            return delegate.subscriptions().stream()
+                    .map(snapshot -> remapSnapshot(accessId, snapshot.destination(), snapshot, snapshot.state()))
+                    .toList();
+        }
+
+        @Override
+        public CompletableFuture<Void> shutdown() {
+            return delegate.shutdown();
+        }
+    }
+
+    private static final class ObservableSubscription implements Subscription {
+        private final String logicalId;
+        private final String destination;
+        private final Subscription delegate;
+        private final AtomicReference<SubscriptionSnapshot> terminalSnapshot = new AtomicReference<>();
+
+        private ObservableSubscription(String accessId, String destination, Subscription delegate) {
+            this.logicalId = compositeId(accessId, destination, delegate.id());
+            this.destination = destination;
+            this.delegate = Objects.requireNonNull(delegate, "Subscription delegate cannot be null.");
+            delegate.completion().whenComplete((unused, failure) -> {
+                if (failure != null) {
+                    SubscriptionSnapshot snapshot = delegate.snapshot();
+                    terminalSnapshot.compareAndSet(null, new SubscriptionSnapshot(
+                            logicalId,
+                            snapshot.destination(),
+                            snapshot.messageType(),
+                            SubscriptionState.FAILED,
+                            snapshot.reconnectCount(),
+                            snapshot.generation(),
+                            snapshot.lastFailureAt(),
+                            snapshot.lastFailure(),
+                            Duration.ZERO,
+                            snapshot.totalDowntime(),
+                            false
+                    ));
+                }
+            });
+        }
+
+        @Override
+        public CompletableFuture<Void> unsubscribe() {
+            return delegate.unsubscribe();
+        }
+
+        @Override
+        public String id() {
+            return logicalId;
+        }
+
+        @Override
+        public SubscriptionState state() {
+            return terminalSnapshot.get() == null ? delegate.state() : SubscriptionState.FAILED;
+        }
+
+        @Override
+        public SubscriptionSnapshot snapshot() {
+            SubscriptionSnapshot terminal = terminalSnapshot.get();
+            if (terminal != null) {
+                return terminal;
+            }
+            SubscriptionSnapshot snapshot = delegate.snapshot();
+            return remapSnapshot(logicalId, destination, snapshot, snapshot.state());
+        }
+
+        @Override
+        public CompletableFuture<Void> completion() {
+            return delegate.completion();
+        }
+    }
+
+    private static SubscriptionSnapshot remapSnapshot(
+            String idPrefix,
+            String destination,
+            SubscriptionSnapshot snapshot,
+            SubscriptionState state
+    ) {
+        String logicalId = idPrefix.contains(":")
+                ? idPrefix
+                : compositeId(idPrefix, destination, snapshot.logicalId());
+        return new SubscriptionSnapshot(
+                logicalId,
+                snapshot.destination(),
+                snapshot.messageType(),
+                state,
+                snapshot.reconnectCount(),
+                snapshot.generation(),
+                snapshot.lastFailureAt(),
+                snapshot.lastFailure(),
+                snapshot.currentDowntime(),
+                snapshot.totalDowntime(),
+                snapshot.activeListener()
+        );
+    }
+
+    private static String compositeId(String accessId, String destination, String handlerId) {
+        return accessId + ":" + destination + ":" + handlerId;
     }
 
     private static String requireNonBlank(String value, String fieldName) {
@@ -279,6 +443,22 @@ public final class RedisMessagingDatabase implements MessagingDatabaseProvider, 
 
     private static int requireInRange(int value, int min, int max, String fieldName) {
         if (value < min || value > max) {
+            throw new IllegalArgumentException("Redis messaging config '" + fieldName + "' must be between "
+                    + min + " and " + max + ", but got " + value + ".");
+        }
+        return value;
+    }
+
+    private static long requireInRange(long value, long min, long max, String fieldName) {
+        if (value < min || value > max) {
+            throw new IllegalArgumentException("Redis messaging config '" + fieldName + "' must be between "
+                    + min + " and " + max + ", but got " + value + ".");
+        }
+        return value;
+    }
+
+    private static double requireDoubleInRange(double value, double min, double max, String fieldName) {
+        if (!Double.isFinite(value) || value < min || value > max) {
             throw new IllegalArgumentException("Redis messaging config '" + fieldName + "' must be between "
                     + min + " and " + max + ", but got " + value + ".");
         }
