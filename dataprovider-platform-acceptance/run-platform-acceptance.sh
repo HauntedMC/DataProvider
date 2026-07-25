@@ -116,7 +116,7 @@ wait_for_log() {
         if grep -Eq -- "$expected" "$log_file"; then
             return
         fi
-        if grep -Eq 'DATAPROVIDER_ACCEPTANCE_FAIL|Exception in thread|Could not load' "$log_file"; then
+        if grep -Eq 'DATAPROVIDER_ACCEPTANCE_FAIL|Exception in thread|Could not load|FAILED TO BIND TO PORT|Error occurred while enabling' "$log_file"; then
             fail "Platform reported an acceptance or boot failure while waiting for ${expected}."
         fi
         sleep 1
@@ -237,7 +237,7 @@ start_paper() {
     mkfifo "$directory/console.in"
     (
         cd "$directory"
-        java -Xms512M -Xmx1G -jar "$WORK_DIRECTORY/paper.jar" --nogui <console.in >paper.log 2>&1
+        exec java -Xms512M -Xmx1G -jar "$WORK_DIRECTORY/paper.jar" --nogui <console.in >paper.log 2>&1
     ) &
     paper_process=$!
     exec {paper_input_fd}>"$directory/console.in"
@@ -258,7 +258,7 @@ start_velocity() {
     mkfifo "$directory/console.in"
     (
         cd "$directory"
-        java -Xms256M -Xmx768M -jar "$WORK_DIRECTORY/velocity.jar" <console.in >velocity.log 2>&1
+        exec java -Xms256M -Xmx768M -jar "$WORK_DIRECTORY/velocity.jar" <console.in >velocity.log 2>&1
     ) &
     velocity_process=$!
     exec {velocity_input_fd}>"$directory/console.in"

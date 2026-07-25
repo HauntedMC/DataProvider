@@ -98,13 +98,13 @@ class DatabaseConfigMapTest {
                 DatabaseType.MYSQL,
                 ConnectionIdentifier.of("shared"),
                 PluginId.of("ServerFeatures"),
-                plugin -> plugin.equals("ServerFeatures") || plugin.equals("Economy")
+                plugin -> plugin.equals("serverfeatures") || plugin.equals("economy")
         );
         DatabaseConfigMap.AuthorizedConnection shared = configMap.getAuthorizedConfig(
                 DatabaseType.MYSQL,
                 ConnectionIdentifier.of("shared"),
                 PluginId.of("Economy"),
-                plugin -> plugin.equals("ServerFeatures") || plugin.equals("Economy")
+                plugin -> plugin.equals("serverfeatures") || plugin.equals("economy")
         );
 
         assertNotNull(owner);
@@ -114,7 +114,7 @@ class DatabaseConfigMapTest {
                 DatabaseType.MYSQL,
                 ConnectionIdentifier.of("shared"),
                 PluginId.of("UntrustedPlugin"),
-                plugin -> plugin.equals("ServerFeatures") || plugin.equals("Economy") || plugin.equals("UntrustedPlugin")
+                plugin -> plugin.equals("serverfeatures") || plugin.equals("economy") || plugin.equals("untrustedplugin")
         ));
     }
 
