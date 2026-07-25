@@ -1,11 +1,15 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-readonly ROOT_DIRECTORY="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+ROOT_DIRECTORY="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+readonly ROOT_DIRECTORY
 readonly ACCEPTANCE_DIRECTORY="$ROOT_DIRECTORY/dataprovider-platform-acceptance"
 readonly COMPOSE_FILE="$ACCEPTANCE_DIRECTORY/docker-compose.yml"
 readonly USER_AGENT="DataProvider-release-validation/1.0 (https://github.com/HauntedMC/DataProvider)"
-readonly WORK_DIRECTORY="$(mktemp -d)"
+readonly WORK_DIRECTORY="${PLATFORM_ACCEPTANCE_WORK_DIRECTORY:-$(mktemp -d)}"
+readonly KEEP_WORK_DIRECTORY="${PLATFORM_ACCEPTANCE_KEEP_WORK_DIRECTORY:-false}"
+
+mkdir -p "$WORK_DIRECTORY"
 
 paper_process=""
 paper_input_fd=""
@@ -31,7 +35,11 @@ cleanup() {
     if [[ $exit_code -ne 0 ]]; then
         find "$WORK_DIRECTORY" -maxdepth 2 -name '*.log' -type f -print -exec tail -n 250 {} \; >&2 || true
     fi
-    rm -rf "$WORK_DIRECTORY"
+    if [[ "$KEEP_WORK_DIRECTORY" == "true" ]]; then
+        echo "Platform acceptance logs retained in $WORK_DIRECTORY" >&2
+    else
+        rm -rf "$WORK_DIRECTORY"
+    fi
     exit "$exit_code"
 }
 trap cleanup EXIT
@@ -53,18 +61,28 @@ download_runtime() {
     local project=$1
     local version=$2
     local build=$3
-    local destination=$4
-    local build_metadata url checksum actual_checksum
-    build_metadata="$(curl --fail --silent --show-error --location --header "User-Agent: $USER_AGENT" \
+    local expected_checksum=$4
+    local destination=$5
+    local build_metadata url actual_checksum
+    build_metadata="$(curl --fail --silent --show-error --location --retry 3 --retry-all-errors \
+        --connect-timeout 15 --max-time 120 --header "User-Agent: $USER_AGENT" \
         "https://fill.papermc.io/v3/projects/${project}/versions/${version}/builds")"
     url="$(jq --raw-output --argjson build "$build" \
         '.[] | select(.id == $build) | .downloads["server:default"].url' <<<"$build_metadata")"
-    checksum="$(jq --raw-output --argjson build "$build" \
-        '.[] | select(.id == $build) | .downloads["server:default"].checksums.sha256' <<<"$build_metadata")"
-    [[ "$url" != "null" && "$checksum" != "null" ]] || fail "No ${project} ${version} build ${build} server download exists."
-    curl --fail --silent --show-error --location --output "$destination" "$url"
+    [[ "$url" != "null" ]] || fail "No ${project} ${version} build ${build} server download exists."
+    curl --fail --silent --show-error --location --retry 3 --retry-all-errors --connect-timeout 15 --max-time 120 \
+        --output "$destination" "$url"
     actual_checksum="$(sha256sum "$destination" | awk '{print $1}')"
-    [[ "$actual_checksum" == "$checksum" ]] || fail "Checksum mismatch for ${project} ${version} build ${build}."
+    [[ "$actual_checksum" == "$expected_checksum" ]] || fail "Checksum mismatch for ${project} ${version} build ${build}."
+}
+
+backend_port() {
+    local service=$1
+    local container_port=$2
+    local endpoint
+    endpoint="$(docker compose --file "$COMPOSE_FILE" port "$service" "$container_port" | head -n 1)"
+    [[ "$endpoint" =~ :([0-9]+)$ ]] || fail "Could not determine the host port for ${service}:${container_port}."
+    printf '%s' "${BASH_REMATCH[1]}"
 }
 
 wait_for_healthy_backends() {
@@ -119,6 +137,9 @@ write_dataprovider_configuration() {
     local data_directory=$1
     local owner_plugin=$2
     local connection_identifier=$3
+    local mysql_port=$4
+    local mongodb_port=$5
+    local redis_port=$6
     mkdir -p "$data_directory/databases"
     cp "$ROOT_DIRECTORY/dataprovider-core/src/main/resources/config.yml" "$data_directory/config.yml"
     cat >"$data_directory/databases/mysql.yml" <<EOF
@@ -127,7 +148,7 @@ ${connection_identifier}:
     owner_plugin: "${owner_plugin}"
     shared_with: []
   host: 127.0.0.1
-  port: 3307
+  port: ${mysql_port}
   database: minecraft
   username: root
   password: acceptance-root
@@ -145,7 +166,7 @@ ${connection_identifier}:
     owner_plugin: "${owner_plugin}"
     shared_with: []
   host: 127.0.0.1
-  port: 27018
+  port: ${mongodb_port}
   database: minecraft
   authSource: minecraft
   max_connection_pool_size: 4
@@ -159,7 +180,7 @@ ${connection_identifier}:
     owner_plugin: "${owner_plugin}"
     shared_with: []
   host: 127.0.0.1
-  port: 6380
+  port: ${redis_port}
   password: acceptance-redis
   pool:
     connections: 2
@@ -174,7 +195,7 @@ ${connection_identifier}:
     owner_plugin: "${owner_plugin}"
     shared_with: []
   host: 127.0.0.1
-  port: 6380
+  port: ${redis_port}
   password: acceptance-redis
   pool:
     connections: 2
@@ -197,7 +218,8 @@ start_paper() {
     mkdir -p "$directory/plugins/DataProvider"
     cp "$PAPER_BUNDLE" "$directory/plugins/DataProvider.jar"
     cp "$PAPER_CONSUMER" "$directory/plugins/DataProviderAcceptance.jar"
-    write_dataprovider_configuration "$directory/plugins/DataProvider" "DataProviderAcceptance" paper
+    write_dataprovider_configuration "$directory/plugins/DataProvider" "DataProviderAcceptance" paper \
+        "$MYSQL_PORT" "$MONGODB_PORT" "$REDIS_PORT"
     printf 'eula=true\n' >"$directory/eula.txt"
     mkfifo "$directory/console.in"
     (
@@ -218,7 +240,8 @@ start_velocity() {
     mkdir -p "$directory/plugins/dataprovider"
     cp "$VELOCITY_BUNDLE" "$directory/plugins/DataProvider.jar"
     cp "$VELOCITY_CONSUMER" "$directory/plugins/DataProviderAcceptance.jar"
-    write_dataprovider_configuration "$directory/plugins/dataprovider" "dataprovider-acceptance" velocity
+    write_dataprovider_configuration "$directory/plugins/dataprovider" "dataprovider-acceptance" velocity \
+        "$MYSQL_PORT" "$MONGODB_PORT" "$REDIS_PORT"
     mkfifo "$directory/console.in"
     (
         cd "$directory"
@@ -233,15 +256,24 @@ start_velocity() {
     velocity_process=""
 }
 
-readonly RELEASE_VERSION="$(pom_property revision)"
+RELEASE_VERSION="$(pom_property revision)"
+readonly RELEASE_VERSION
 readonly PAPER_BUNDLE="$ROOT_DIRECTORY/dataprovider-platform-paper/target/dataprovider-platform-paper-${RELEASE_VERSION}-bundled.jar"
 readonly VELOCITY_BUNDLE="$ROOT_DIRECTORY/dataprovider-platform-velocity/target/dataprovider-platform-velocity-${RELEASE_VERSION}-bundled.jar"
 readonly PAPER_CONSUMER="$ACCEPTANCE_DIRECTORY/consumer-paper/target/dataprovider-acceptance-consumer-paper-${RELEASE_VERSION}.jar"
 readonly VELOCITY_CONSUMER="$ACCEPTANCE_DIRECTORY/consumer-velocity/target/dataprovider-acceptance-consumer-velocity-${RELEASE_VERSION}.jar"
-readonly PAPER_VERSION="$(pom_property paper.runtime.version)"
-readonly PAPER_BUILD="$(pom_property paper.runtime.build)"
-readonly VELOCITY_VERSION="$(pom_property velocity.version)"
-readonly VELOCITY_BUILD="$(pom_property velocity.runtime.build)"
+PAPER_VERSION="$(pom_property paper.runtime.version)"
+readonly PAPER_VERSION
+PAPER_BUILD="$(pom_property paper.runtime.build)"
+readonly PAPER_BUILD
+PAPER_SHA256="$(pom_property paper.runtime.sha256)"
+readonly PAPER_SHA256
+VELOCITY_VERSION="$(pom_property velocity.version)"
+readonly VELOCITY_VERSION
+VELOCITY_BUILD="$(pom_property velocity.runtime.build)"
+readonly VELOCITY_BUILD
+VELOCITY_SHA256="$(pom_property velocity.runtime.sha256)"
+readonly VELOCITY_SHA256
 
 for artifact in "$PAPER_BUNDLE" "$VELOCITY_BUNDLE" "$PAPER_CONSUMER" "$VELOCITY_CONSUMER"; do
     [[ -f "$artifact" ]] || fail "Missing required release artifact ${artifact}."
@@ -254,10 +286,16 @@ if jar tf "$VELOCITY_CONSUMER" | rg -q '^nl/hauntedmc/dataprovider/api/'; then
     fail "Velocity consumer bundled DataProvider API classes instead of compiling against the provided API."
 fi
 
-download_runtime paper "$PAPER_VERSION" "$PAPER_BUILD" "$WORK_DIRECTORY/paper.jar"
-download_runtime velocity "$VELOCITY_VERSION" "$VELOCITY_BUILD" "$WORK_DIRECTORY/velocity.jar"
+download_runtime paper "$PAPER_VERSION" "$PAPER_BUILD" "$PAPER_SHA256" "$WORK_DIRECTORY/paper.jar"
+download_runtime velocity "$VELOCITY_VERSION" "$VELOCITY_BUILD" "$VELOCITY_SHA256" "$WORK_DIRECTORY/velocity.jar"
 docker compose --file "$COMPOSE_FILE" up --detach --wait
 wait_for_healthy_backends
+MYSQL_PORT="$(backend_port mysql 3306)"
+readonly MYSQL_PORT
+MONGODB_PORT="$(backend_port mongodb 27017)"
+readonly MONGODB_PORT
+REDIS_PORT="$(backend_port redis 6379)"
+readonly REDIS_PORT
 start_paper
 start_velocity
 echo "Platform acceptance passed for Paper ${PAPER_VERSION} build ${PAPER_BUILD} and Velocity ${VELOCITY_VERSION} build ${VELOCITY_BUILD}."

@@ -3,19 +3,21 @@
 ## Local Build Commands
 
 ```bash
-mvn -q -DskipTests compile
-mvn -q test
-mvn -B verify
-mvn -B -DskipTests checkstyle:check
-mvn -B package
+./mvnw -q -DskipTests compile
+./mvnw -q test
+./mvnw -B -ntp -Pintegration-tests verify
+./mvnw -B -ntp -Pplatform-acceptance verify
+./mvnw -B -ntp -DskipTests checkstyle:check
 ```
+
+The Maven Wrapper is the supported build entry point. The platform acceptance command needs Docker and boots the generated Paper and Velocity artifacts. Use it for changes to platform startup, shading, configuration reload, backend registration, or resource recovery.
 
 ## Typical Workflow
 
 1. Create a branch from `main`.
 2. Make focused changes.
 3. Run compile + tests locally.
-4. Run `verify` and `checkstyle` before opening a PR.
+4. Run the applicable integration or platform-acceptance gate, then Checkstyle, before opening a PR.
 5. Open a pull request using the repository template.
 
 ## Project Structure
@@ -41,3 +43,4 @@ mvn -B package
 - DB config defaults generate as expected.
 - Register/unregister lifecycle leaves no leaked connections.
 - Messaging subscriptions are unsubscribed during shutdown.
+- Run the bundled acceptance gate for changes that affect shaded artifacts, startup, reload, or a backend driver.

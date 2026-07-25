@@ -1,11 +1,11 @@
 services:
   mysql:
-    image: mysql:8.4
+    image: mysql:8.4@sha256:8dbcf531a03aade657e181b9cf2f1d1803ce621a1d55610cb44cb531ab7d7db6
     environment:
       MYSQL_DATABASE: minecraft
       MYSQL_ROOT_PASSWORD: acceptance-root
     ports:
-      - "3307:3306"
+      - "127.0.0.1::3306"
     healthcheck:
       test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -uroot -pacceptance-root --silent"]
       interval: 2s
@@ -13,9 +13,9 @@ services:
       retries: 30
 
   mongodb:
-    image: mongo:7.0
+    image: mongo:7.0@sha256:9bdaeb6dac6e7e762e84e2f84103d1f9bb078fa1ba6bde8bb9d2274f655ad173
     ports:
-      - "27018:27017"
+      - "127.0.0.1::27017"
     healthcheck:
       test: ["CMD-SHELL", "mongosh --quiet --eval 'db.runCommand({ ping: 1 }).ok' | grep 1"]
       interval: 2s
@@ -23,10 +23,10 @@ services:
       retries: 30
 
   redis:
-    image: redis:7.4-alpine
+    image: redis:7.4-alpine@sha256:6ab0b6e7381779332f97b8ca76193e45b0756f38d4c0dcda72dbb3c32061ab99
     command: ["redis-server", "--requirepass", "acceptance-redis"]
     ports:
-      - "6380:6379"
+      - "127.0.0.1::6379"
     healthcheck:
       test: ["CMD-SHELL", "redis-cli -a acceptance-redis ping | grep PONG"]
       interval: 2s

@@ -5,16 +5,14 @@ Thanks for contributing.
 ## Prerequisites
 
 - Java 25
-- Maven 3.9+
-- Local Velocity and/or Bukkit/Paper environment for manual validation
-- Optional local MySQL, MongoDB, and Redis instances for integration checks
+- Docker for integration and bundled-platform acceptance checks
 
 ## Development Setup
 
 ```bash
 git clone git@github.com:HauntedMC/DataProvider.git
 cd DataProvider
-mvn -q -DskipTests compile
+./mvnw -q -DskipTests compile
 ```
 
 ## Project Layout
@@ -50,16 +48,19 @@ Examples:
 Minimum:
 
 ```bash
-mvn -q -DskipTests compile
-mvn -q test
+./mvnw -q -DskipTests compile
+./mvnw -q test
 ```
 
 Recommended:
 
 ```bash
-mvn -B verify
-mvn -B -DskipTests checkstyle:check
+./mvnw -B -ntp -Pintegration-tests verify
+./mvnw -B -ntp -Pplatform-acceptance verify
+./mvnw -B -ntp -DskipTests checkstyle:check
 ```
+
+The Maven Wrapper downloads the repository-pinned Maven version. The platform-acceptance gate requires Docker and starts real Paper and Velocity runtimes with the bundled artifacts; use it for platform, backend, configuration reload, or shading changes.
 
 ## Pull Requests
 

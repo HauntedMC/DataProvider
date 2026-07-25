@@ -7,8 +7,7 @@
 - Verify local checks:
 
 ```bash
-mvn -B -ntp -Pintegration-tests,platform-acceptance verify
-./dataprovider-platform-acceptance/run-platform-acceptance.sh
+./mvnw -B -ntp -Pintegration-tests,platform-acceptance verify
 ```
 
 ## 2. Bump and Tag
@@ -50,16 +49,17 @@ What it does:
    backend integration tests, Checkstyle, JaCoCo thresholds, dependency convergence,
    upper-bound dependency checks, duplicate-class checks, shaded platform packaging, and
    the API-only Paper and Velocity consumer fixtures.
-3. Downloads the pinned Paper and Velocity runtime builds with SHA-256 verification,
+3. As the final reactor module, downloads the pinned Paper and Velocity runtime builds with SHA-256 verification,
    starts each real platform with its bundled DataProvider JAR, and validates MySQL,
-   MongoDB, Redis, Redis messaging, configuration reload, and clean shutdown.
-4. Deploys every Maven module to GitHub Packages only after those complete gates succeed.
+   MongoDB, Redis, Redis messaging, configuration reload, per-provider thread cleanup,
+   and clean shutdown.
+4. Uses Maven `deployAtEnd`, so it deploys the already-verified Maven artifacts only after every gate succeeds; the acceptance fixtures themselves are not published.
 5. Uploads the Paper and Velocity bundled jars and creates a GitHub Release with them.
 
 The platform acceptance runner is at
 `dataprovider-platform-acceptance/run-platform-acceptance.sh`. It uses the pinned runtime
-build properties in the root POM; update the corresponding runtime build property whenever
-the Paper or Velocity API dependency is advanced.
+build properties and SHA-256 checksums in the root POM; update the corresponding version,
+build, and checksum together whenever the Paper or Velocity API dependency is advanced.
 
 ## 4.  Artifacts
 

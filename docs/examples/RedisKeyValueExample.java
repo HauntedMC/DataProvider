@@ -3,6 +3,8 @@ import nl.hauntedmc.dataprovider.database.DatabaseType;
 import nl.hauntedmc.dataprovider.database.keyvalue.KeyValueDataAccess;
 import nl.hauntedmc.dataprovider.database.keyvalue.KeyValueDatabaseProvider;
 
+import java.util.concurrent.CompletableFuture;
+
 /**
  * Example: Redis key-value access.
  */
@@ -17,22 +19,23 @@ public final class RedisKeyValueExample {
         keyValue = provider.getDataAccess();
     }
 
-    public void cachePlayerLanguage(String playerUuid, String languageCode) {
-        if (keyValue == null) {
-            return;
-        }
-        keyValue.setKey("player:lang:" + playerUuid, languageCode);
+    public CompletableFuture<Void> cachePlayerLanguage(String playerUuid, String languageCode) {
+        return dataAccess().setKey("player:lang:" + playerUuid, languageCode);
     }
 
-    public void loadPlayerLanguage(String playerUuid) {
-        if (keyValue == null) {
-            return;
-        }
-        keyValue.getKey("player:lang:" + playerUuid)
-                .thenAccept(language -> System.out.println("Language for " + playerUuid + ": " + language));
+    public CompletableFuture<String> loadPlayerLanguage(String playerUuid) {
+        return dataAccess().getKey("player:lang:" + playerUuid);
     }
 
     public void onDisable(DataProviderAPI api) {
+        keyValue = null;
         api.unregisterDatabase(DatabaseType.REDIS, "default");
+    }
+
+    private KeyValueDataAccess dataAccess() {
+        if (keyValue == null) {
+            throw new IllegalStateException("Redis is not registered.");
+        }
+        return keyValue;
     }
 }

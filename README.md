@@ -28,7 +28,7 @@ It gives you one clean API for MySQL, MongoDB, Redis, and Redis messaging so you
 ## Requirements
 
 - Java 25
-- Velocity `4.0.0-SNAPSHOT` and/or Paper API `26.1.2+` (compile targets)
+- The currently pinned Paper and Velocity runtime builds (see the root `pom.xml`)
 - MySQL, MongoDB, and/or Redis for the backends you enable
 
 ## Quick Start
@@ -114,7 +114,7 @@ Maven:
 <dependency>
   <groupId>nl.hauntedmc.dataprovider</groupId>
   <artifactId>dataprovider-api</artifactId>
-  <version>3.0.1</version>
+  <version>3.0.9</version>
   <scope>provided</scope>
 </dependency>
 ```
@@ -122,7 +122,7 @@ Maven:
 Gradle (Groovy):
 
 ```groovy
-compileOnly "nl.hauntedmc.dataprovider:dataprovider-api:3.0.1"
+compileOnly "nl.hauntedmc.dataprovider:dataprovider-api:3.0.9"
 ```
 
 GitHub Packages authentication details are in the docs.
@@ -130,12 +130,13 @@ GitHub Packages authentication details are in the docs.
 ## Build
 
 ```bash
-mvn -q -DskipTests compile
-mvn -q test
-mvn -B verify
-mvn -B -DskipTests checkstyle:check
-mvn -B package
+./mvnw -q -DskipTests compile
+./mvnw -q test
+./mvnw -B -ntp -Pintegration-tests verify
+./mvnw -B -ntp -Pplatform-acceptance verify
 ```
+
+The Maven Wrapper pins the build-tool version. The platform-acceptance command requires Docker and boots the bundled Paper and Velocity jars against MySQL, MongoDB, Redis, and Redis messaging. See [Testing and CI](docs/TESTING_AND_CI.md) for the full test matrix and diagnostics.
 
 Build outputs:
 

@@ -63,8 +63,10 @@
         <paper.version>26.2.build.65-beta</paper.version>
         <paper.runtime.version>26.2</paper.runtime.version>
         <paper.runtime.build>65</paper.runtime.build>
+        <paper.runtime.sha256>d290ee2a3ae92fea10afb0c74f797023d74cfd72cbcee44314e0c50d5551f2c6</paper.runtime.sha256>
         <velocity.version>4.1.0-SNAPSHOT</velocity.version>
         <velocity.runtime.build>9</velocity.runtime.build>
+        <velocity.runtime.sha256>635ffe27b4fe1b97e61479012121d4e7c61a9eec99e6bd5a1f923053c2a259ce</velocity.runtime.sha256>
         <adventure.version>5.2.0</adventure.version>
         <configurate.version>4.2.0</configurate.version>
         <mysql.version>9.7.0</mysql.version>
@@ -93,11 +95,13 @@
         <maven.resources.version>3.5.0</maven.resources.version>
         <maven.install.version>3.1.4</maven.install.version>
         <maven.deploy.version>3.1.4</maven.deploy.version>
+        <exec.maven.plugin.version>3.6.2</exec.maven.plugin.version>
         <maven.site.version>3.22.0</maven.site.version>
         <maven.enforcer.version>3.6.3</maven.enforcer.version>
         <maven.checkstyle.plugin.version>3.6.0</maven.checkstyle.plugin.version>
         <checkstyle.version>13.8.0</checkstyle.version>
         <maven.shade.version>3.6.2</maven.shade.version>
+        <build.helper.maven.plugin.version>3.6.1</build.helper.maven.plugin.version>
         <jacoco.version>0.8.15</jacoco.version>
         <flatten.plugin.version>1.7.3</flatten.plugin.version>
     </properties>
@@ -302,6 +306,13 @@
                         </configuration>
                     </execution>
                 </executions>
+            </plugin>
+            <!-- Queue publication until the final reactor project has passed its verification gate. -->
+            <plugin>
+                <artifactId>maven-deploy-plugin</artifactId>
+                <configuration>
+                    <deployAtEnd>true</deployAtEnd>
+                </configuration>
             </plugin>
         </plugins>
         <pluginManagement>

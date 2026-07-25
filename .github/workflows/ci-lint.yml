@@ -29,4 +29,7 @@ jobs:
           cache: maven
 
       - name: Run Checkstyle
-        run: mvn -U -B -ntp -DskipTests checkstyle:check
+        run: ./mvnw -U -B -ntp -DskipTests checkstyle:check
+
+      - name: Lint platform acceptance runner
+        run: shellcheck dataprovider-platform-acceptance/run-platform-acceptance.sh

@@ -5,6 +5,7 @@ import nl.hauntedmc.dataprovider.database.document.DocumentDatabaseProvider;
 import nl.hauntedmc.dataprovider.database.document.model.DocumentQuery;
 
 import java.util.Map;
+import java.util.concurrent.CompletableFuture;
 
 /**
  * Example: MongoDB document operations.
@@ -20,25 +21,26 @@ public final class MongoDocumentExample {
         documents = provider.getDataAccess();
     }
 
-    public void createProfile(String uuid, String name) {
-        if (documents == null) {
-            return;
-        }
-        documents.insertOne("profiles", Map.of(
+    public CompletableFuture<Void> createProfile(String uuid, String name) {
+        return dataAccess().insertOne("profiles", Map.of(
                 "uuid", uuid,
                 "name", name
         ));
     }
 
-    public void findProfile(String uuid) {
-        if (documents == null) {
-            return;
-        }
-        documents.findOne("profiles", new DocumentQuery().eq("uuid", uuid))
-                .thenAccept(profile -> System.out.println("Profile: " + profile));
+    public CompletableFuture<Map<String, Object>> findProfile(String uuid) {
+        return dataAccess().findOne("profiles", new DocumentQuery().eq("uuid", uuid));
     }
 
     public void onDisable(DataProviderAPI api) {
+        documents = null;
         api.unregisterDatabase(DatabaseType.MONGODB, "default");
+    }
+
+    private DocumentDataAccess dataAccess() {
+        if (documents == null) {
+            throw new IllegalStateException("MongoDB is not registered.");
+        }
+        return documents;
     }
 }

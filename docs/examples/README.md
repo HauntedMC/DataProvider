@@ -1,11 +1,11 @@
 # DataProvider Examples
 
-These examples are intentionally minimal and focused on API usage patterns.
+These examples are compiled with the API module, so their imports and public API calls stay current. They show lifecycle boundaries only; callers should compose returned `CompletableFuture` values with their platform scheduler and error handling.
 
 - [RelationalOrmExample.java](RelationalOrmExample.java)
   - Register a MySQL connection and initialize `ORMContext`.
 - [RedisMessagingExample.java](RedisMessagingExample.java)
-  - Register Redis messaging, subscribe, publish, and unsubscribe cleanly.
+  - Register Redis messaging, subscribe, publish, and unregister through the API lifecycle.
 - [MongoDocumentExample.java](MongoDocumentExample.java)
   - Register MongoDB and perform simple document insert/find operations.
 - [RedisKeyValueExample.java](RedisKeyValueExample.java)

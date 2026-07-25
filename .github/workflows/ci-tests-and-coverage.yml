@@ -31,7 +31,7 @@ jobs:
 
       - name: Run Unit and Backend Integration Tests
         id: tests
-        run: mvn -U -B -ntp -Pintegration-tests verify
+        run: ./mvnw -U -B -ntp -Pintegration-tests verify
 
       - name: Print failing test reports
         if: failure() && steps.tests.outcome == 'failure'
@@ -59,3 +59,35 @@ jobs:
             **/target/surefire-reports
             **/target/failsafe-reports
             target/ci
+
+  platform-acceptance:
+    name: Bundled Platform Acceptance
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Set up JDK 25
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "25"
+          cache: maven
+
+      - name: Run bundled platform acceptance
+        run: ./mvnw -U -B -ntp -Pplatform-acceptance verify
+        env:
+          PLATFORM_ACCEPTANCE_WORK_DIRECTORY: ${{ runner.temp }}/dataprovider-platform-acceptance
+          PLATFORM_ACCEPTANCE_KEEP_WORK_DIRECTORY: "true"
+
+      - name: Upload platform acceptance logs
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: platform-acceptance-logs
+          if-no-files-found: warn
+          path: ${{ runner.temp }}/dataprovider-platform-acceptance

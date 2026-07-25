@@ -5,62 +5,74 @@ import nl.hauntedmc.dataprovider.database.messaging.MessagingDatabaseProvider;
 import nl.hauntedmc.dataprovider.database.messaging.api.AbstractEventMessage;
 import nl.hauntedmc.dataprovider.database.messaging.api.Subscription;
 
+import java.util.Objects;
+import java.util.concurrent.CompletableFuture;
+import java.util.function.Consumer;
+
 /**
  * Example: Redis messaging publish/subscribe workflow.
  */
 public final class RedisMessagingExample {
 
+    private static final String STAFF_CHAT_CHANNEL = "proxy.staffchat.message";
+
     private MessagingDataAccess bus;
     private Subscription subscription;
 
-    public void onEnable(DataProviderAPI api) {
+    public void onEnable(DataProviderAPI api, Consumer<StaffChatMessage> messageHandler) {
         MessagingDatabaseProvider provider = (MessagingDatabaseProvider) api.registerDatabaseOrThrow(
                 DatabaseType.REDIS_MESSAGING, "default"
         );
-        bus = provider.getDataAccess();
-
-        subscription = bus.subscribe("proxy.staffchat.message", StaffChatMessage.class, msg -> {
-            System.out.println("[" + msg.getServer() + "] " + msg.getSender() + ": " + msg.getMessage());
-        });
+        try {
+            bus = provider.getDataAccess();
+            subscription = bus.subscribe(STAFF_CHAT_CHANNEL, StaffChatMessage.class,
+                    Objects.requireNonNull(messageHandler, "Message handler cannot be null."));
+        } catch (RuntimeException exception) {
+            bus = null;
+            api.unregisterDatabase(DatabaseType.REDIS_MESSAGING, "default");
+            throw exception;
+        }
     }
 
-    public void publishMessage(String sender, String server, String message) {
-        if (bus == null) {
-            return;
-        }
-        bus.publish("proxy.staffchat.message", new StaffChatMessage(sender, server, message));
+    public CompletableFuture<Void> publishMessage(String sender, String server, String message) {
+        return dataAccess().publish(STAFF_CHAT_CHANNEL, new StaffChatMessage(sender, server, message));
     }
 
     public void onDisable(DataProviderAPI api) {
-        if (subscription != null) {
-            subscription.unsubscribe();
-            subscription = null;
+        Subscription current = subscription;
+        subscription = null;
+        bus = null;
+        try {
+            if (current != null) {
+                current.unsubscribe();
+            }
+        } finally {
+            api.unregisterDatabase(DatabaseType.REDIS_MESSAGING, "default");
         }
-        if (bus != null) {
-            bus.shutdown();
-            bus = null;
+    }
+
+    private MessagingDataAccess dataAccess() {
+        if (bus == null) {
+            throw new IllegalStateException("Redis messaging is not registered.");
         }
-        api.unregisterDatabase(DatabaseType.REDIS_MESSAGING, "default");
+        return bus;
     }
 
     public static final class StaffChatMessage extends AbstractEventMessage {
-        private final String sender;
-        private final String server;
-        private final String message;
+        private String sender;
+        private String server;
+        private String message;
 
-        @SuppressWarnings("unused")
-        private StaffChatMessage() {
+        /** Required for reflective message deserialization. */
+        public StaffChatMessage() {
             super("staffchat");
-            this.sender = null;
-            this.server = null;
-            this.message = null;
         }
 
         public StaffChatMessage(String sender, String server, String message) {
-            super("staffchat");
-            this.sender = sender;
-            this.server = server;
-            this.message = message;
+            this();
+            this.sender = Objects.requireNonNull(sender, "Sender cannot be null.");
+            this.server = Objects.requireNonNull(server, "Server cannot be null.");
+            this.message = Objects.requireNonNull(message, "Message cannot be null.");
         }
 
         public String getSender() {

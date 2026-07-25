@@ -20,8 +20,10 @@ import nl.hauntedmc.dataprovider.database.relational.RelationalDatabaseProvider;
 import org.slf4j.Logger;
 
 import java.time.Duration;
+import java.util.HashSet;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
@@ -51,14 +53,33 @@ public final class VelocityAcceptanceConsumer {
     @Subscribe
     public void onProxyInitialize(ProxyInitializeEvent event) {
         proxy.getScheduler().buildTask(this, () -> {
+            Set<String> databaseThreadsBefore = databaseThreadNames();
+            DataProviderAPI api = null;
+            boolean passed = false;
             try {
-                runAcceptance(resolveApi());
+                api = resolveApi();
+                KeyValueDatabaseProvider redis = runAcceptance(api);
                 require(await(proxy.getCommandManager().executeAsync(
                         proxy.getConsoleCommandSource(), "dataprovider reload"
                 )), "DataProvider reload command was rejected.");
-                logger.info("DATAPROVIDER_ACCEPTANCE_PASS platform=velocity");
+                require("redis-ok".equals(await(redis.getDataAccess().getKey("dataprovider:acceptance:velocity"))),
+                        "Registered Redis provider did not remain usable after configuration reload.");
+                passed = true;
             } catch (Exception exception) {
                 logger.error("DATAPROVIDER_ACCEPTANCE_FAIL platform=velocity", exception);
+            } finally {
+                if (api != null) {
+                    try {
+                        api.unregisterAllDatabasesForPlugin();
+                        awaitDatabaseThreadsToReturn(databaseThreadsBefore);
+                    } catch (Exception exception) {
+                        passed = false;
+                        logger.error("DATAPROVIDER_ACCEPTANCE_FAIL platform=velocity cleanup", exception);
+                    }
+                }
+            }
+            if (passed) {
+                logger.info("DATAPROVIDER_ACCEPTANCE_PASS platform=velocity");
             }
         }).schedule();
     }
@@ -73,7 +94,7 @@ public final class VelocityAcceptanceConsumer {
         return supplier.dataProviderApi();
     }
 
-    private static void runAcceptance(DataProviderAPI api) throws Exception {
+    private static KeyValueDatabaseProvider runAcceptance(DataProviderAPI api) throws Exception {
         RelationalDatabaseProvider mysql = (RelationalDatabaseProvider) api.registerDatabaseOrThrow(
                 DatabaseType.MYSQL, CONNECTION
         );
@@ -117,12 +138,17 @@ public final class VelocityAcceptanceConsumer {
                 received.countDown();
             }
         });
-        awaitActiveSubscription(subscription);
-        await(messaging.getDataAccess().publish(CHANNEL, new AcceptanceMessage("velocity-message")));
-        require(received.await(OPERATION_TIMEOUT.toMillis(), TimeUnit.MILLISECONDS),
-                "Redis messaging subscription did not receive its published message.");
-        await(subscription.unsubscribe());
-        api.unregisterAllDatabasesForPlugin();
+        try {
+            awaitActiveSubscription(subscription);
+            await(messaging.getDataAccess().publish(CHANNEL, new AcceptanceMessage("velocity-message")));
+            require(received.await(OPERATION_TIMEOUT.toMillis(), TimeUnit.MILLISECONDS),
+                    "Redis messaging subscription did not receive its published message.");
+        } finally {
+            await(subscription.unsubscribe());
+            require(subscription.state() == SubscriptionState.CLOSED,
+                    "Redis messaging subscription did not close cleanly.");
+        }
+        return redis;
     }
 
     private static <T> T await(CompletableFuture<T> future) throws Exception {
@@ -138,6 +164,38 @@ public final class VelocityAcceptanceConsumer {
             Thread.sleep(25L);
         }
         throw new IllegalStateException("Redis messaging subscription did not become active.");
+    }
+
+    private static Set<String> databaseThreadNames() {
+        Set<String> names = new HashSet<>();
+        for (Thread thread : Thread.getAllStackTraces().keySet()) {
+            if (thread.isAlive() && isDatabaseThread(thread.getName())) {
+                names.add(thread.getName());
+            }
+        }
+        return names;
+    }
+
+    private static void awaitDatabaseThreadsToReturn(Set<String> baseline) throws InterruptedException {
+        long deadline = System.nanoTime() + OPERATION_TIMEOUT.toNanos();
+        while (System.nanoTime() < deadline) {
+            Set<String> leaked = databaseThreadNames();
+            leaked.removeAll(baseline);
+            if (leaked.isEmpty()) {
+                return;
+            }
+            Thread.sleep(25L);
+        }
+        Set<String> leaked = databaseThreadNames();
+        leaked.removeAll(baseline);
+        throw new IllegalStateException("Database worker threads remained after provider cleanup: " + leaked);
+    }
+
+    private static boolean isDatabaseThread(String name) {
+        return name.startsWith("HikariPool-")
+                || name.startsWith("redis-sub-")
+                || name.startsWith("cluster-")
+                || name.startsWith("MaintenanceTimer");
     }
 
     private static void require(boolean condition, String message) {

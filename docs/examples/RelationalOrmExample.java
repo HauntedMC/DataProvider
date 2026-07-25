@@ -16,22 +16,30 @@ public final class RelationalOrmExample {
         RelationalDatabaseProvider relational = (RelationalDatabaseProvider) api.registerDatabaseOrThrow(
                 DatabaseType.MYSQL, "example"
         );
-
-        ormContext = api.createOrmContext(
-                relational.getDataSource(),
-                logger,
-                "validate",
-                PlayerEntity.class,
-                PlayerProfileEntity.class
-        );
+        try {
+            ormContext = api.createOrmContext(
+                    relational.getDataSource(),
+                    logger,
+                    "validate",
+                    PlayerEntity.class,
+                    PlayerProfileEntity.class
+            );
+        } catch (RuntimeException exception) {
+            api.unregisterDatabase(DatabaseType.MYSQL, "example");
+            throw exception;
+        }
     }
 
     public void onDisable(DataProviderAPI api) {
-        if (ormContext != null) {
-            ormContext.shutdown();
-            ormContext = null;
+        ORMContext current = ormContext;
+        ormContext = null;
+        try {
+            if (current != null) {
+                current.close();
+            }
+        } finally {
+            api.unregisterDatabase(DatabaseType.MYSQL, "example");
         }
-        api.unregisterDatabase(DatabaseType.MYSQL, "example");
     }
 
     private static final class PlayerEntity {

@@ -9,6 +9,7 @@ jobs:
   release:
     name: Build and Publish
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     permissions:
       contents: write
       packages: write
@@ -30,23 +31,28 @@ jobs:
           server-password: GITHUB_TOKEN
 
       - name: Validate release version
+        id: release-version
         run: |
-          PROJECT_VERSION="$(mvn -q -ntp -DforceStdout help:evaluate -Dexpression=project.version | tail -n 1)"
+          PROJECT_VERSION="$(./mvnw -q -ntp -DforceStdout help:evaluate -Dexpression=project.version | tail -n 1)"
           TAG_VERSION="${GITHUB_REF_NAME#v}"
           test "$PROJECT_VERSION" = "$TAG_VERSION" || { echo "Tag version does not match Maven project version." >&2; exit 1; }
+          echo "value=$PROJECT_VERSION" >> "$GITHUB_OUTPUT"
 
-      - name: Run the production release gate
-        # Do not start publication until the entire reactor on this exact checkout has passed
-        # unit tests, Checkstyle, JaCoCo, dependency convergence, duplicate-class analysis and backend ITs.
-        run: mvn -U -B -ntp -Pintegration-tests,platform-acceptance verify
-
-      - name: Boot the bundled artifacts in Paper and Velocity
-        run: ./dataprovider-platform-acceptance/run-platform-acceptance.sh
-
-      - name: Publish verified Maven artifacts
-        run: mvn -U -B -ntp -DskipTests deploy
+      - name: Verify and publish the exact release reactor
+        # deployAtEnd prevents publication until the final runtime fixture has booted the packaged Paper and Velocity bundles.
+        run: ./mvnw -U -B -ntp -Pintegration-tests,platform-acceptance deploy
         env:
           GITHUB_TOKEN: ${{ github.token }}
+          PLATFORM_ACCEPTANCE_WORK_DIRECTORY: ${{ runner.temp }}/dataprovider-platform-acceptance
+          PLATFORM_ACCEPTANCE_KEEP_WORK_DIRECTORY: "true"
+
+      - name: Upload failing platform acceptance logs
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: platform-acceptance-logs
+          if-no-files-found: warn
+          path: ${{ runner.temp }}/dataprovider-platform-acceptance
 
       - name: Upload platform distributables
         uses: actions/upload-artifact@v7
@@ -54,8 +60,8 @@ jobs:
           name: dataprovider-platform-jars
           if-no-files-found: error
           path: |
-            dataprovider-platform-paper/target/dataprovider-platform-paper-*-bundled.jar
-            dataprovider-platform-velocity/target/dataprovider-platform-velocity-*-bundled.jar
+            dataprovider-platform-paper/target/dataprovider-platform-paper-${{ steps.release-version.outputs.value }}-bundled.jar
+            dataprovider-platform-velocity/target/dataprovider-platform-velocity-${{ steps.release-version.outputs.value }}-bundled.jar
 
       - name: Create GitHub release
         uses: softprops/action-gh-release@v3
@@ -65,5 +71,5 @@ jobs:
           prerelease: false
           generate_release_notes: true
           files: |
-            dataprovider-platform-paper/target/dataprovider-platform-paper-*-bundled.jar
-            dataprovider-platform-velocity/target/dataprovider-platform-velocity-*-bundled.jar
+            dataprovider-platform-paper/target/dataprovider-platform-paper-${{ steps.release-version.outputs.value }}-bundled.jar
+            dataprovider-platform-velocity/target/dataprovider-platform-velocity-${{ steps.release-version.outputs.value }}-bundled.jar

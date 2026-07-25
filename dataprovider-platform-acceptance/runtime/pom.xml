@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>nl.hauntedmc.dataprovider</groupId>
+        <artifactId>dataprovider-platform-acceptance</artifactId>
+        <version>${revision}</version>
+    </parent>
+
+    <artifactId>dataprovider-platform-acceptance-runtime</artifactId>
+    <packaging>pom</packaging>
+    <name>DataProvider Platform Acceptance Runtime Gate</name>
+
+    <build>
+        <plugins>
+            <plugin>
+                <groupId>org.codehaus.mojo</groupId>
+                <artifactId>exec-maven-plugin</artifactId>
+                <version>${exec.maven.plugin.version}</version>
+                <executions>
+                    <execution>
+                        <id>boot-packaged-platform-artifacts</id>
+                        <phase>verify</phase>
+                        <goals><goal>exec</goal></goals>
+                        <configuration>
+                            <executable>bash</executable>
+                            <arguments>
+                                <argument>${maven.multiModuleProjectDirectory}/dataprovider-platform-acceptance/run-platform-acceptance.sh</argument>
+                            </arguments>
+                            <workingDirectory>${maven.multiModuleProjectDirectory}</workingDirectory>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+        </plugins>
+    </build>
+</project>
