@@ -35,11 +35,14 @@ class RedisMessagingRecoveryIT {
 
     private static final String REDIS_PASSWORD = "messaging-recovery-secret";
     private static final String CHANNEL = "dataprovider.recovery.acceptance";
+    private static final String REDIS_DISABLED_MARKER = "/tmp/dataprovider-redis-disabled";
 
     @Container
     private static final GenericContainer<?> REDIS = new GenericContainer<>(DockerImageName.parse("redis:7.4-alpine"))
             .withExposedPorts(6379)
-            .withCommand("redis-server", "--requirepass", REDIS_PASSWORD);
+            .withCommand("sh", "-c", "while true; do "
+                    + "if [ -f " + REDIS_DISABLED_MARKER + " ]; then sleep 0.1; "
+                    + "else redis-server --requirepass '" + REDIS_PASSWORD + "'; sleep 0.1; fi; done");
 
     @TempDir
     Path dataDirectory;
@@ -54,7 +57,7 @@ class RedisMessagingRecoveryIT {
                 callerResolver()
         );
         AtomicBoolean containerPaused = new AtomicBoolean(false);
-        AtomicBoolean containerStopped = new AtomicBoolean(false);
+        AtomicBoolean redisStopped = new AtomicBoolean(false);
         try {
             DataProviderAPI api = new DefaultDataProviderApi(provider.getDataProviderHandler());
             MessagingDatabaseProvider messaging = (MessagingDatabaseProvider)
@@ -77,18 +80,18 @@ class RedisMessagingRecoveryIT {
             assertSubscriberCount(1L);
             assertDelivery(access, received, "after-pause");
 
-            stop(containerStopped);
+            stopRedis(redisStopped);
             awaitState(subscription, SubscriptionState.RECONNECTING);
-            start(containerStopped);
+            startRedis(redisStopped);
             awaitState(subscription, SubscriptionState.ACTIVE);
             assertEquals(originalLogicalId, subscription.id());
             assertSubscriberCount(1L);
             assertDelivery(access, received, "after-restart");
 
             for (int interruption = 0; interruption < 3; interruption++) {
-                stop(containerStopped);
+                stopRedis(redisStopped);
                 awaitState(subscription, SubscriptionState.RECONNECTING);
-                start(containerStopped);
+                startRedis(redisStopped);
                 awaitState(subscription, SubscriptionState.ACTIVE);
                 assertSubscriberCount(1L);
                 assertDelivery(access, received, "repeated-" + interruption);
@@ -96,7 +99,7 @@ class RedisMessagingRecoveryIT {
             assertTrue(subscription.snapshot().reconnectCount() >= 4L);
             assertEquals(originalLogicalId, subscription.snapshot().logicalId());
 
-            stop(containerStopped);
+            stopRedis(redisStopped);
             awaitState(subscription, SubscriptionState.RECONNECTING);
             provider.shutdownAllDatabases();
             provider = null;
@@ -104,14 +107,14 @@ class RedisMessagingRecoveryIT {
             assertEquals(SubscriptionState.CLOSED, subscription.state());
             awaitCondition(() -> countSubscriptionThreads() == 0L,
                     "Redis subscription supervisor thread was not released after shutdown.");
-            start(containerStopped);
+            startRedis(redisStopped);
             awaitSubscriberCount(0L);
         } finally {
             if (containerPaused.get()) {
                 resume(containerPaused);
             }
-            if (containerStopped.get()) {
-                start(containerStopped);
+            if (redisStopped.get()) {
+                startRedis(redisStopped);
             }
             if (provider != null) {
                 provider.shutdownAllDatabases();
@@ -169,14 +172,27 @@ class RedisMessagingRecoveryIT {
         paused.set(false);
     }
 
-    private static void stop(AtomicBoolean stopped) {
-        REDIS.getDockerClient().stopContainerCmd(REDIS.getContainerId()).withTimeout(2).exec();
+    private static void stopRedis(AtomicBoolean stopped) throws Exception {
+        REDIS.execInContainer("sh", "-c", "touch " + REDIS_DISABLED_MARKER
+                + " && redis-cli -a '" + REDIS_PASSWORD + "' shutdown nosave >/dev/null 2>&1 || true");
         stopped.set(true);
+        awaitCondition(() -> !redisReady(), "Redis server process did not stop.");
     }
 
-    private static void start(AtomicBoolean stopped) {
-        REDIS.getDockerClient().startContainerCmd(REDIS.getContainerId()).exec();
+    private static void startRedis(AtomicBoolean stopped) throws Exception {
+        REDIS.execInContainer("rm", "-f", REDIS_DISABLED_MARKER);
+        awaitCondition(RedisMessagingRecoveryIT::redisReady, "Redis server process did not restart.");
         stopped.set(false);
+    }
+
+    private static boolean redisReady() {
+        try (JedisPool pool = new JedisPool(REDIS.getHost(), REDIS.getMappedPort(6379));
+             Jedis jedis = pool.getResource()) {
+            jedis.auth(REDIS_PASSWORD);
+            return "PONG".equalsIgnoreCase(jedis.ping());
+        } catch (RuntimeException unavailable) {
+            return false;
+        }
     }
 
     private static void awaitState(Subscription subscription, SubscriptionState expected) throws Exception {
