@@ -52,7 +52,10 @@ jobs:
         with:
           name: platform-acceptance-logs
           if-no-files-found: warn
-          path: ${{ runner.temp }}/dataprovider-platform-acceptance
+          path: |
+            ${{ runner.temp }}/dataprovider-platform-acceptance/paper/logs/latest.log
+            ${{ runner.temp }}/dataprovider-platform-acceptance/backend.log
+            ${{ runner.temp }}/dataprovider-platform-acceptance/velocity/logs/latest.log
 
       - name: Upload platform distributables
         uses: actions/upload-artifact@v7
