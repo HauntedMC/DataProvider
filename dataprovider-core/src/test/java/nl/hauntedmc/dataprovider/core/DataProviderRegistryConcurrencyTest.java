@@ -19,6 +19,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
@@ -179,8 +180,20 @@ class DataProviderRegistryConcurrencyTest {
                     () -> registry.registerDatabase("plugin", "scope", DatabaseType.MYSQL, "default"), executor);
             assertTrue(provider.connectStarted.await(5, TimeUnit.SECONDS));
 
-            registry.shutdownAllDatabases();
+            CompletableFuture<Void> shutdown = CompletableFuture.runAsync(registry::shutdownAllDatabases);
+            DatabaseConnectionKey key = new DatabaseConnectionKey("plugin", DatabaseType.MYSQL, "default");
+            long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5);
+            while (registry.getProviderLifecycleSnapshots().get(key).state() != ProviderLifecycleState.CLOSING
+                    && System.nanoTime() < deadline) {
+                Thread.sleep(5L);
+            }
+            assertEquals(
+                    ProviderLifecycleState.CLOSING,
+                    registry.getProviderLifecycleSnapshots().get(key).state()
+            );
+            assertFalse(shutdown.isDone());
             provider.allowConnect.countDown();
+            shutdown.get(5, TimeUnit.SECONDS);
 
             assertNull(registration.get(5, TimeUnit.SECONDS));
             assertEquals(1, provider.connectCalls.get());

@@ -495,6 +495,7 @@ class DataProviderRegistry {
         private final CompletableFuture<ManagedDatabaseProvider> readyFuture = new CompletableFuture<>();
         private final AtomicBoolean closeStarted = new AtomicBoolean();
         private final AtomicBoolean providerCloseStarted = new AtomicBoolean();
+        private final CompletableFuture<Void> closedFuture = new CompletableFuture<>();
         private volatile ManagedDatabaseProvider provider;
         private volatile Throwable failure;
         private volatile Instant changedAt = Instant.now();
@@ -543,7 +544,7 @@ class DataProviderRegistry {
                     changedAt = Instant.now();
                     publishSnapshot();
                     closeProviderOnce(connectFailure);
-                    state.set(ProviderLifecycleState.CLOSED);
+                    markClosed();
                 } else {
                     state.set(ProviderLifecycleState.FAILED);
                     closeProviderOnce(connectFailure);
@@ -612,36 +613,44 @@ class DataProviderRegistry {
         }
 
         private void close(String reason) {
-            if (!closeStarted.compareAndSet(false, true)) {
-                return;
-            }
-            Object target = resilienceKey;
-            if (target != null) {
-                resilienceRuntime.untrack(target);
-                resilienceKey = null;
-            }
-            while (true) {
-                ProviderLifecycleState current = state.get();
-                if (current == ProviderLifecycleState.CLOSED || current == ProviderLifecycleState.CLOSING) {
-                    return;
+            if (closeStarted.compareAndSet(false, true)) {
+                Object target = resilienceKey;
+                if (target != null) {
+                    resilienceRuntime.untrack(target);
+                    resilienceKey = null;
                 }
-                if (!state.compareAndSet(current, ProviderLifecycleState.CLOSING)) {
-                    continue;
+                while (true) {
+                    ProviderLifecycleState current = state.get();
+                    if (current == ProviderLifecycleState.CLOSED) {
+                        closedFuture.complete(null);
+                        break;
+                    }
+                    if (current == ProviderLifecycleState.CLOSING) {
+                        break;
+                    }
+                    if (!state.compareAndSet(current, ProviderLifecycleState.CLOSING)) {
+                        continue;
+                    }
+                    changedAt = Instant.now();
+                    publishSnapshot();
+                    readyFuture.completeExceptionally(
+                            new IllegalStateException("Provider closed before ready: " + reason)
+                    );
+                    if (current != ProviderLifecycleState.CONNECTING) {
+                        closeProviderOnce(null);
+                        markClosed();
+                    }
+                    break;
                 }
-                changedAt = Instant.now();
-                publishSnapshot();
-                readyFuture.completeExceptionally(
-                        new IllegalStateException("Provider closed before ready: " + reason)
-                );
-                if (current == ProviderLifecycleState.CONNECTING) {
-                    return;
-                }
-                closeProviderOnce(null);
-                state.set(ProviderLifecycleState.CLOSED);
-                changedAt = Instant.now();
-                publishSnapshot();
-                return;
             }
+            closedFuture.join();
+        }
+
+        private void markClosed() {
+            state.set(ProviderLifecycleState.CLOSED);
+            changedAt = Instant.now();
+            publishSnapshot();
+            closedFuture.complete(null);
         }
 
         private void closeProviderOnce(Throwable originalFailure) {
