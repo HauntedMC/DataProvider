@@ -436,6 +436,7 @@ class DataProviderRegistry {
         boolean mainSnapshotApplied = false;
         boolean databaseSnapshotApplied = false;
         ResilienceRuntime replacementRuntime = null;
+        DatabaseFactory.PreparedConfigurationReload replacementPlan = null;
         Lock writeLock = lifecycleLock.writeLock();
         writeLock.lock();
         try {
@@ -444,11 +445,18 @@ class DataProviderRegistry {
             previousDatabaseSnapshot = factory.currentConfigurationSnapshot();
             ConfigHandler.ConfigSnapshot mainSnapshot = configHandler.loadSnapshot();
             DatabaseConfigMap.DatabaseConfigSnapshot databaseSnapshot = factory.loadConfigurationSnapshot();
+            // Connect and validate changed backend generations before exposing either candidate
+            // snapshot. A failed password/endpoint/TLS/pool update therefore leaves both the
+            // active configuration and every current resource untouched.
+            replacementPlan = factory.prepareConfigurationReload(databaseSnapshot);
             replacementRuntime = new ResilienceRuntime(ResilienceRuntimeConfig.from(mainSnapshot.root()));
             configHandler.applySnapshot(mainSnapshot);
             mainSnapshotApplied = true;
             factory.applyConfigurationSnapshot(databaseSnapshot);
             databaseSnapshotApplied = true;
+            if (replacementPlan != null) {
+                replacementPlan.commit();
+            }
             activeDatabases.forEach((key, slot) -> {
                 if ((!mainSnapshot.enabledTypes().getOrDefault(key.type(), false)
                         || !factory.isConnectionAuthorized(
@@ -467,8 +475,11 @@ class DataProviderRegistry {
             logger.info("Reloaded DataProvider configuration snapshot from disk: "
                     + describeMainConfigurationChanges(previousMainSnapshot, mainSnapshot)
                     + ", changed database files=" + previousDatabaseSnapshot.changedTypeCount(databaseSnapshot)
-                    + ". Existing connections retain their previous settings until reconnected.");
+                    + ". Changed active connection settings were validated and replaced where required.");
         } catch (RuntimeException e) {
+            if (replacementPlan != null) {
+                replacementPlan.close();
+            }
             if (replacementRuntime != null) {
                 replacementRuntime.close();
             }

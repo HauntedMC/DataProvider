@@ -532,6 +532,7 @@ class DataProviderRegistryTest {
 
         registry.reloadConfiguration();
         verify(configHandler).applySnapshot(mainSnapshot);
+        verify(factory).prepareConfigurationReload(databaseSnapshot);
         verify(factory).applyConfigurationSnapshot(databaseSnapshot);
     }
 

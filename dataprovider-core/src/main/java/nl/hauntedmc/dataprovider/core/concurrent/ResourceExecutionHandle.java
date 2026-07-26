@@ -89,6 +89,16 @@ public final class ResourceExecutionHandle implements ExecutionHandle {
 
     @Override
     public void close() {
+        releaseResource();
+        delegate.close();
+    }
+
+    /**
+     * Releases this resource generation's permits without closing the logical execution scope.
+     * A scope survives physical-provider replacement and is rebound to a new resource admission
+     * gate, so closing the delegate here would incorrectly strand the replacement view.
+     */
+    public void releaseResource() {
         admission.cancel(this);
         issuedConnections.forEach(connection -> {
             try {
@@ -99,6 +109,5 @@ public final class ResourceExecutionHandle implements ExecutionHandle {
         });
         // Do not release subscription capacity here. A subscription owns a physical
         // connection until its listener has actually stopped and calls releaseSubscription().
-        delegate.close();
     }
 }

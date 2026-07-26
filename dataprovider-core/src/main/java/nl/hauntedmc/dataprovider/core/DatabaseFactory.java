@@ -22,6 +22,12 @@ import nl.hauntedmc.dataprovider.database.relational.RelationalDatabaseProvider;
 import nl.hauntedmc.dataprovider.logging.LoggerAdapter;
 import org.spongepowered.configurate.CommentedConfigurationNode;
 
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
+import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.List;
 import java.util.Objects;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
@@ -132,7 +138,8 @@ class DatabaseFactory {
                 return new PhysicalResource(
                         key,
                         createPhysical(type, connectionConfig),
-                        executionRuntime.admissionLimits(type)
+                        executionRuntime.admissionLimits(type),
+                        connectionFingerprint(connectionConfig)
                 );
             });
             return switch (type) {
@@ -147,7 +154,7 @@ class DatabaseFactory {
         }
     }
 
-    private ManagedDatabaseProvider createPhysical(DatabaseType type, CommentedConfigurationNode connectionConfig) {
+    protected ManagedDatabaseProvider createPhysical(DatabaseType type, CommentedConfigurationNode connectionConfig) {
         return switch (type) {
             case MYSQL -> new MySQLDatabase(connectionConfig, logger, ExecutionHandle.direct());
             case MONGODB -> new MongoDBDatabase(connectionConfig, logger, ExecutionHandle.direct());
@@ -172,6 +179,58 @@ class DatabaseFactory {
         configMap.applySnapshot(snapshot);
     }
 
+    /**
+     * Builds and connects every changed physical resource before a configuration snapshot is made
+     * active. The returned plan owns the replacement clients until it is committed or discarded.
+     */
+    protected PreparedConfigurationReload prepareConfigurationReload(
+            DatabaseConfigMap.DatabaseConfigSnapshot snapshot
+    ) {
+        Objects.requireNonNull(snapshot, "Database configuration snapshot cannot be null.");
+        if (executionRuntime == null || physicalResources.isEmpty()) {
+            return PreparedConfigurationReload.empty();
+        }
+        List<PreparedPhysicalReplacement> replacements = new ArrayList<>();
+        try {
+            for (PhysicalResource resource : physicalResources.values()) {
+                CommentedConfigurationNode candidateConfig = configMap.getConfig(
+                        snapshot, resource.key.type(), resource.key.identifier()
+                );
+                // A removed section will revoke its logical leases during reload. Do not attempt
+                // to connect a resource that is about to be retired for policy/configuration removal.
+                if (candidateConfig == null) {
+                    continue;
+                }
+                String candidateFingerprint = connectionFingerprint(candidateConfig);
+                if (!resource.hasFingerprint(candidateFingerprint)) {
+                    ManagedDatabaseProvider candidate = null;
+                    try {
+                        candidate = createPhysical(resource.key.type(), candidateConfig);
+                        candidate.connect();
+                        if (!candidate.isLocallyConnected()) {
+                            throw new IllegalStateException("Replacement provider did not become locally connected for "
+                                    + resource.key, candidate.lifecycleFailure());
+                        }
+                        replacements.add(new PreparedPhysicalReplacement(resource, candidate, candidateFingerprint));
+                    } catch (Throwable failure) {
+                        if (candidate != null) {
+                            try {
+                                candidate.disconnect();
+                            } catch (RuntimeException closeFailure) {
+                                failure.addSuppressed(closeFailure);
+                            }
+                        }
+                        throw failure;
+                    }
+                }
+            }
+            return new PreparedConfigurationReload(replacements);
+        } catch (Throwable failure) {
+            replacements.forEach(PreparedPhysicalReplacement::discard);
+            throw failure;
+        }
+    }
+
     protected DatabaseConfigMap.DatabaseConfigSnapshot currentConfigurationSnapshot() {
         return configMap.currentSnapshot();
     }
@@ -191,6 +250,111 @@ class DatabaseFactory {
         }
     }
 
+    /**
+     * Produces an opaque, deterministic digest of the connection-affecting configuration. Access
+     * policy is intentionally excluded: policy changes affect leases, not the backend client. The
+     * digest includes credentials without retaining or exposing their plaintext values.
+     */
+    static String connectionFingerprint(CommentedConfigurationNode connectionConfig) {
+        Objects.requireNonNull(connectionConfig, "Connection configuration cannot be null.");
+        StringBuilder canonical = new StringBuilder();
+        appendFingerprintNode(canonical, connectionConfig, "");
+        try {
+            byte[] digest = MessageDigest.getInstance("SHA-256")
+                    .digest(canonical.toString().getBytes(StandardCharsets.UTF_8));
+            StringBuilder encoded = new StringBuilder(digest.length * 2);
+            for (byte value : digest) {
+                encoded.append(Character.forDigit((value >>> 4) & 0xF, 16));
+                encoded.append(Character.forDigit(value & 0xF, 16));
+            }
+            return encoded.toString();
+        } catch (NoSuchAlgorithmException unavailable) {
+            throw new IllegalStateException("SHA-256 is unavailable for connection fingerprinting.", unavailable);
+        }
+    }
+
+    private static void appendFingerprintNode(StringBuilder target, CommentedConfigurationNode node, String path) {
+        List<java.util.Map.Entry<Object, CommentedConfigurationNode>> children = node.childrenMap().entrySet()
+                .stream()
+                .filter(entry -> !"access".equals(String.valueOf(entry.getKey())))
+                .sorted(Comparator.comparing(entry -> String.valueOf(entry.getKey())))
+                .toList();
+        if (!children.isEmpty()) {
+            for (java.util.Map.Entry<Object, CommentedConfigurationNode> child : children) {
+                String key = String.valueOf(child.getKey());
+                appendFingerprintNode(target, child.getValue(), path + key + ".");
+            }
+            return;
+        }
+        List<? extends CommentedConfigurationNode> list = node.childrenList();
+        if (!list.isEmpty()) {
+            for (int index = 0; index < list.size(); index++) {
+                appendFingerprintNode(target, list.get(index), path + index + ".");
+            }
+            return;
+        }
+        target.append(path).append('=').append(String.valueOf(node.raw())).append('\n');
+    }
+
+    protected static final class PreparedConfigurationReload implements AutoCloseable {
+        private final List<PreparedPhysicalReplacement> replacements;
+        private final AtomicBoolean completed = new AtomicBoolean();
+
+        private PreparedConfigurationReload(List<PreparedPhysicalReplacement> replacements) {
+            this.replacements = List.copyOf(replacements);
+        }
+
+        private static PreparedConfigurationReload empty() {
+            return new PreparedConfigurationReload(List.of());
+        }
+
+        /** Atomically switches each individual resource after all replacements were validated. */
+        protected void commit() {
+            if (!completed.compareAndSet(false, true)) {
+                return;
+            }
+            replacements.forEach(PreparedPhysicalReplacement::commit);
+        }
+
+        @Override
+        public void close() {
+            if (!completed.compareAndSet(false, true)) {
+                return;
+            }
+            replacements.forEach(PreparedPhysicalReplacement::discard);
+        }
+    }
+
+    private static final class PreparedPhysicalReplacement {
+        private final PhysicalResource resource;
+        private final ManagedDatabaseProvider replacement;
+        private final String fingerprint;
+
+        private PreparedPhysicalReplacement(
+                PhysicalResource resource,
+                ManagedDatabaseProvider replacement,
+                String fingerprint
+        ) {
+            this.resource = resource;
+            this.replacement = replacement;
+            this.fingerprint = fingerprint;
+        }
+
+        private void commit() {
+            if (!resource.replace(replacement, fingerprint)) {
+                discard();
+            }
+        }
+
+        private void discard() {
+            try {
+                replacement.disconnect();
+            } catch (RuntimeException ignored) {
+                // A rejected candidate must not prevent other candidates from being closed.
+            }
+        }
+    }
+
     private record ResourceKey(DatabaseType type, ConnectionIdentifier identifier, PluginId pluginId) {
         private static ResourceKey forConnection(
                 PluginId caller,
@@ -206,8 +370,9 @@ class DatabaseFactory {
     /** One actual backend client/pool, reference counted by logical plugin providers. */
     private static final class PhysicalResource implements ManagedDatabaseProvider, ResilienceGateAware {
         private final ResourceKey key;
-        private final ManagedDatabaseProvider provider;
+        private volatile ManagedDatabaseProvider provider;
         private final DataProviderExecutionRuntime.AdmissionLimits admissionLimits;
+        private String configurationFingerprint;
         private int leases = 1;
         private boolean retired;
         private long generation;
@@ -221,11 +386,48 @@ class DatabaseFactory {
         private PhysicalResource(
                 ResourceKey key,
                 ManagedDatabaseProvider provider,
-                DataProviderExecutionRuntime.AdmissionLimits admissionLimits
+                DataProviderExecutionRuntime.AdmissionLimits admissionLimits,
+                String configurationFingerprint
         ) {
             this.key = key;
             this.provider = provider;
             this.admissionLimits = admissionLimits;
+            this.configurationFingerprint = configurationFingerprint;
+        }
+
+        private synchronized boolean hasFingerprint(String fingerprint) {
+            return !retired && configurationFingerprint.equals(fingerprint);
+        }
+
+        /**
+         * Installs a connected replacement as a new generation. The monitor protects the provider
+         * reference and generation together, so every stable lease observes either the old complete
+         * resource or the new complete resource. The old client is retired only after stable leases
+         * have rebound (including their messaging subscription intent).
+         */
+        private boolean replace(ManagedDatabaseProvider replacement, String fingerprint) {
+            ManagedDatabaseProvider retiredProvider;
+            synchronized (this) {
+                if (retired) {
+                    return false;
+                }
+                if (configurationFingerprint.equals(fingerprint)) {
+                    return false;
+                }
+                retiredProvider = provider;
+                provider = replacement;
+                configurationFingerprint = fingerprint;
+                generation++;
+                consecutiveRecoveryFailures = 0;
+                admission = null;
+            }
+            scopedLeases.forEach(SharedProviderLease::rebindAfterPhysicalReplacement);
+            try {
+                retiredProvider.disconnect();
+            } catch (RuntimeException ignored) {
+                // The replacement is already live; an old pool close failure must not roll it back.
+            }
+            return true;
         }
 
         private synchronized boolean retain() {
@@ -403,7 +605,7 @@ class DatabaseFactory {
                 case REDIS -> ((RedisDatabase) provider).scoped(resourceExecution);
                 case REDIS_MESSAGING -> ((RedisMessagingDatabase) provider).scoped(resourceExecution);
             };
-            return new ScopedProvider(view, resourceExecution, generation);
+            return new ScopedProvider(view, resourceExecution, provider, generation);
         }
 
         private int resourceCapacity() {
@@ -421,7 +623,12 @@ class DatabaseFactory {
                     : 0;
         }
 
-        private record ScopedProvider(DatabaseProvider view, ResourceExecutionHandle execution, long generation) {
+        private record ScopedProvider(
+                DatabaseProvider view,
+                ResourceExecutionHandle execution,
+                ManagedDatabaseProvider provider,
+                long generation
+        ) {
         }
     }
 
@@ -433,6 +640,7 @@ class DatabaseFactory {
         private final AtomicBoolean closed = new AtomicBoolean();
         private volatile DatabaseProvider scoped;
         private volatile ResourceExecutionHandle resourceExecution;
+        private volatile ManagedDatabaseProvider scopedResourceProvider;
         private volatile Throwable failure;
         private volatile long scopedGeneration = -1;
 
@@ -455,6 +663,7 @@ class DatabaseFactory {
                 PhysicalResource.ScopedProvider created = resource.scoped(execution);
                 scoped = created.view();
                 resourceExecution = created.execution();
+                scopedResourceProvider = created.provider();
                 scopedGeneration = created.generation();
                 resource.registerScopedLease(this);
             } catch (RuntimeException exception) {
@@ -500,7 +709,8 @@ class DatabaseFactory {
                 }
             }
             ResourceExecutionHandle scopedExecution = resourceExecution;
-            if (scopedExecution != null && resource.provider instanceof RedisMessagingDatabase redisMessaging) {
+            ManagedDatabaseProvider scopedProvider = scopedResourceProvider;
+            if (scopedExecution != null && scopedProvider instanceof RedisMessagingDatabase redisMessaging) {
                 redisMessaging.releaseScope(scopedExecution);
             }
             if (scopedExecution != null) {
@@ -513,6 +723,7 @@ class DatabaseFactory {
             }
             scoped = null;
             resourceExecution = null;
+            scopedResourceProvider = null;
             scopedGeneration = -1;
         }
 
@@ -552,15 +763,52 @@ class DatabaseFactory {
             if (closed.get() || scopedGeneration == resource.generation()) {
                 return;
             }
+            DatabaseProvider previousView = scoped;
+            ResourceExecutionHandle previousExecution = resourceExecution;
+            ManagedDatabaseProvider previousProvider = scopedResourceProvider;
             PhysicalResource.ScopedProvider rebound = resource.scoped(execution);
             scoped = rebound.view();
             resourceExecution = rebound.execution();
+            scopedResourceProvider = rebound.provider();
             scopedGeneration = rebound.generation();
             onScopedViewRecreated(rebound.view());
+            retireScopedView(previousView, previousProvider, previousExecution);
         }
 
         private void rebindAfterPhysicalReplacement() {
-            refreshScopedViewIfNeeded();
+            try {
+                refreshScopedViewIfNeeded();
+            } catch (RuntimeException rebindFailure) {
+                // The new physical generation remains valid. Retain the failure on this one
+                // logical lease so a later operation can retry its scoped-view construction.
+                failure = rebindFailure;
+            }
+        }
+
+        private void retireScopedView(
+                DatabaseProvider previousView,
+                ManagedDatabaseProvider previousProvider,
+                ResourceExecutionHandle previousExecution
+        ) {
+            if (previousView instanceof MessagingDatabaseProvider messaging) {
+                try {
+                    messaging.getDataAccess().shutdown();
+                } catch (RuntimeException ignored) {
+                    // The replacement view is already attached; old listener cleanup is best effort.
+                }
+                try {
+                    messaging.getDurableDataAccess().shutdown();
+                } catch (RuntimeException ignored) {
+                    // Durable entries remain reclaimable if an old consumer cannot stop immediately.
+                }
+            }
+            if (previousExecution == null) {
+                return;
+            }
+            if (previousProvider instanceof RedisMessagingDatabase redisMessaging) {
+                redisMessaging.releaseScope(previousExecution);
+            }
+            previousExecution.releaseResource();
         }
 
         /**

@@ -199,6 +199,43 @@ class RedisMessagingRecoveryIT {
         }
     }
 
+    @Test
+    void configurationReloadReplacesThePhysicalGenerationWithoutClosingLogicalSubscriptions() throws Exception {
+        writeMessagingConfiguration(2);
+        DataProvider provider = new DataProvider(
+                new RecordingLoggerAdapter(), dataDirectory, getClass().getClassLoader(), callerResolver()
+        );
+        try {
+            DataProviderAPI api = new DefaultDataProviderApi(provider.getDataProviderHandler()).forPlugin(this);
+            MessagingDatabaseProvider messaging = (MessagingDatabaseProvider)
+                    api.registerDatabaseOrThrow(DatabaseType.REDIS_MESSAGING, "messaging-recovery");
+            String suffix = Long.toUnsignedString(System.nanoTime(), 36);
+            String channel = "dataprovider.reload." + suffix;
+            String type = "dataprovider.reload";
+            LinkedBlockingQueue<String> received = new LinkedBlockingQueue<>();
+            Subscription subscription = messaging.getDataAccess().subscribe(channel, type, TestEvent.class,
+                    event -> received.add(event.value()));
+            String logicalId = subscription.id();
+            awaitState(subscription, SubscriptionState.ACTIVE);
+            assertPubSubDelivery(messaging.getDataAccess(), channel, type, received, "before-reload");
+
+            // This is a pool-setting-only change: it must still create a new physical client
+            // generation while preserving the existing logical subscription handle.
+            writeMessagingConfiguration(3);
+            provider.getDataProviderHandler().reloadConfiguration();
+
+            awaitState(subscription, SubscriptionState.ACTIVE);
+            assertEquals(logicalId, subscription.id());
+            assertTrue(!subscription.completion().isDone(), "Reload closed the logical subscription handle.");
+            awaitCondition(() -> subscriberCount(channel) == 1L,
+                    "Reload did not retain exactly one subscriber for the logical subscription.");
+            assertPubSubDelivery(messaging.getDataAccess(), channel, type, received, "after-reload");
+            subscription.unsubscribe().get(5, TimeUnit.SECONDS);
+        } finally {
+            provider.shutdownAllDatabases();
+        }
+    }
+
     private void assertDelivery(
             nl.hauntedmc.dataprovider.database.messaging.MessagingDataAccess access,
             LinkedBlockingQueue<String> received,
@@ -233,6 +270,10 @@ class RedisMessagingRecoveryIT {
     }
 
     private void writeMessagingConfiguration() throws Exception {
+        writeMessagingConfiguration(2);
+    }
+
+    private void writeMessagingConfiguration(int connections) throws Exception {
         Files.createDirectories(dataDirectory.resolve("databases"));
         Files.writeString(dataDirectory.resolve("databases/redis_messaging.yml"), """
                 messaging-recovery:
@@ -244,7 +285,7 @@ class RedisMessagingRecoveryIT {
                   password: %s
                   database: 0
                   pool:
-                    connections: 2
+                    connections: %d
                     min_idle: 0
                     max_idle: 2
                     max_subscriptions: 4
@@ -261,7 +302,7 @@ class RedisMessagingRecoveryIT {
                   security:
                     max_payload_chars: 4096
                     max_queued_messages_per_handler: 64
-                """.formatted(REDIS.getHost(), REDIS.getMappedPort(6379), REDIS_PASSWORD));
+                """.formatted(REDIS.getHost(), REDIS.getMappedPort(6379), REDIS_PASSWORD, connections));
     }
 
     private static void pause(AtomicBoolean paused) {
@@ -312,11 +353,15 @@ class RedisMessagingRecoveryIT {
     }
 
     private static long subscriberCount() {
+        return subscriberCount(CHANNEL);
+    }
+
+    private static long subscriberCount(String channel) {
         try (JedisPool pool = new JedisPool(REDIS.getHost(), REDIS.getMappedPort(6379));
              Jedis jedis = pool.getResource()) {
             jedis.auth(REDIS_PASSWORD);
-            Map<String, Long> counts = jedis.pubsubNumSub(CHANNEL);
-            return counts.getOrDefault(CHANNEL, 0L);
+            Map<String, Long> counts = jedis.pubsubNumSub(channel);
+            return counts.getOrDefault(channel, 0L);
         }
     }
 

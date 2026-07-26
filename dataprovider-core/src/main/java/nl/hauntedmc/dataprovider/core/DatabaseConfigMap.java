@@ -111,6 +111,28 @@ class DatabaseConfigMap {
         return new DatabaseConfigSnapshot(configMap);
     }
 
+    /**
+     * Returns a copied connection section from a candidate snapshot without applying that snapshot.
+     * This is deliberately not an authorization API: callers use it only to construct a replacement
+     * for a resource that already exists. Authorization is evaluated separately against the same
+     * candidate snapshot before the reload is committed.
+     */
+    protected CommentedConfigurationNode getConfig(
+            DatabaseConfigSnapshot snapshot,
+            DatabaseType type,
+            ConnectionIdentifier connectionIdentifier
+    ) {
+        Objects.requireNonNull(snapshot, "Database configuration snapshot cannot be null.");
+        Objects.requireNonNull(type, "Database type cannot be null.");
+        Objects.requireNonNull(connectionIdentifier, "Connection identifier cannot be null.");
+        CommentedConfigurationNode configuration = snapshot.configurations().get(type);
+        if (configuration == null) {
+            return null;
+        }
+        CommentedConfigurationNode section = configuration.node(connectionIdentifier.value());
+        return section.virtual() ? null : copyNode(section);
+    }
+
     private boolean copyDefaultConfigFromResources(String resourcePath, File destinationFile) {
         try (InputStream in = openResource("databases/" + resourcePath)) {
             if (in == null) {
