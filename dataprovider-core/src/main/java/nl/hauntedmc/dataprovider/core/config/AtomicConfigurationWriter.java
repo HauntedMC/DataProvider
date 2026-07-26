@@ -3,6 +3,7 @@ package nl.hauntedmc.dataprovider.core.config;
 import nl.hauntedmc.dataprovider.core.security.FilePermissionHardening;
 import nl.hauntedmc.dataprovider.logging.LoggerAdapter;
 import org.spongepowered.configurate.CommentedConfigurationNode;
+import org.spongepowered.configurate.yaml.NodeStyle;
 import org.spongepowered.configurate.yaml.YamlConfigurationLoader;
 
 import java.io.IOException;
@@ -29,7 +30,13 @@ public final class AtomicConfigurationWriter {
         }
         Path temporaryFile = Files.createTempFile(directory, destination.getFileName().toString(), ".tmp");
         try {
-            YamlConfigurationLoader.builder().path(temporaryFile).build().save(configuration);
+            // Configurate otherwise preserves/infers compact flow mappings for newly
+            // reconciled nodes. Force the conventional, readable block YAML style.
+            YamlConfigurationLoader.builder()
+                    .path(temporaryFile)
+                    .nodeStyle(NodeStyle.BLOCK)
+                    .build()
+                    .save(configuration);
             FilePermissionHardening.restrictFileToOwner(temporaryFile, logger, description + " temporary file");
             try {
                 Files.move(temporaryFile, destination, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING);

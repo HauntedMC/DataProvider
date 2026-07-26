@@ -59,6 +59,7 @@ class ConfigHandlerTest {
         assertTrue(handler.getConfig().node("execution", "obsolete_setting").virtual());
 
         String upgradedContents = Files.readString(tempDir.resolve("config.yml"));
+        assertFalse(upgradedContents.contains("{"), "Reconciled YAML should use block mappings.");
         RecordingLoggerAdapter secondStartupLogger = new RecordingLoggerAdapter();
         new ConfigHandler(tempDir, secondStartupLogger);
         assertEquals(upgradedContents, Files.readString(tempDir.resolve("config.yml")));
