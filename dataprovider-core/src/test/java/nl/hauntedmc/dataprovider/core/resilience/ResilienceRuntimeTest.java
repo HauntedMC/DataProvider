@@ -258,6 +258,29 @@ class ResilienceRuntimeTest {
         runtime.close();
     }
 
+    @Test
+    void statusCallbackFailuresDegradeDiagnosticsWithoutStoppingMonitoring() {
+        ManualScheduler scheduler = new ManualScheduler();
+        ScriptedProvider provider = new ScriptedProvider(false) {
+            @Override
+            public boolean isLocallyConnected() {
+                throw new AssertionError("local status failed");
+            }
+        };
+        ResilienceRuntime runtime = runtime(new DirectExecutorService(), scheduler, 1);
+
+        ResilienceRuntime.Control control = runtime.track(
+                "resource", provider, () -> {
+                    throw new AssertionError("lifecycle status failed");
+                }
+        );
+
+        assertEquals(ConnectionHealthSnapshot.LocalConnectionState.DISCONNECTED, control.snapshot().localState());
+        assertEquals(ProviderLifecycleState.FAILED, control.snapshot().lifecycleState());
+        assertEquals(ConnectionHealthSnapshot.RuntimeHealth.UNAVAILABLE, control.snapshot().runtimeHealth());
+        runtime.close();
+    }
+
     private static ResilienceRuntime runtime(
             java.util.concurrent.ExecutorService workers,
             ScheduledExecutorService scheduler,

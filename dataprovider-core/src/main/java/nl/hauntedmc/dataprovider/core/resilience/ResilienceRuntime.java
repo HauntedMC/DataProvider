@@ -194,7 +194,7 @@ public final class ResilienceRuntime implements AutoCloseable {
         ) {
             this.provider = Objects.requireNonNull(provider, "Provider cannot be null.");
             this.lifecycleState = Objects.requireNonNull(lifecycleState, "Lifecycle state supplier cannot be null.");
-            snapshot = ConnectionHealthSnapshot.unprobed(provider.isLocallyConnected(), lifecycleState.get());
+            snapshot = ConnectionHealthSnapshot.unprobed(locallyConnected(), currentLifecycleState());
             if (provider instanceof ResilienceGateAware gateAware) {
                 gateAware.setResilienceGate(this::acceptsWork, this::snapshot);
             }
@@ -319,7 +319,7 @@ public final class ResilienceRuntime implements AutoCloseable {
                     ConnectionHealthSnapshot.LocalConnectionState.CONNECTED,
                     ConnectionHealthSnapshot.RemoteHealth.HEALTHY,
                     now(),
-                    lifecycleState.get(),
+                    currentLifecycleState(),
                     restored || previous.circuit() == ConnectionHealthSnapshot.Circuit.CLOSED
                             ? ConnectionHealthSnapshot.RuntimeHealth.HEALTHY
                             : ConnectionHealthSnapshot.RuntimeHealth.RECOVERING,
@@ -339,7 +339,7 @@ public final class ResilienceRuntime implements AutoCloseable {
         private void recordFailure(boolean probeError) {
             ConnectionHealthSnapshot previous = snapshot;
             int failures = previous.consecutiveFailures() + 1;
-            boolean locallyConnected = provider.isLocallyConnected();
+            boolean locallyConnected = locallyConnected();
             boolean open = !locallyConnected
                     || previous.circuit() == ConnectionHealthSnapshot.Circuit.HALF_OPEN
                     || failures >= config.failureThreshold();
@@ -351,7 +351,7 @@ public final class ResilienceRuntime implements AutoCloseable {
                             : ConnectionHealthSnapshot.LocalConnectionState.DISCONNECTED,
                     probeError ? ConnectionHealthSnapshot.RemoteHealth.ERROR : ConnectionHealthSnapshot.RemoteHealth.UNHEALTHY,
                     now(),
-                    lifecycleState.get(),
+                    currentLifecycleState(),
                     locallyConnected
                             ? ConnectionHealthSnapshot.RuntimeHealth.DEGRADED
                             : ConnectionHealthSnapshot.RuntimeHealth.UNAVAILABLE,
@@ -391,7 +391,7 @@ public final class ResilienceRuntime implements AutoCloseable {
                         previous.localState(),
                         previous.remoteHealth(),
                         previous.checkedAt(),
-                        lifecycleState.get(),
+                        currentLifecycleState(),
                         ConnectionHealthSnapshot.RuntimeHealth.RECOVERING,
                         ConnectionHealthSnapshot.Circuit.HALF_OPEN,
                         previous.consecutiveFailures(),
@@ -422,6 +422,27 @@ public final class ResilienceRuntime implements AutoCloseable {
 
         private Instant now() {
             return clock.instant();
+        }
+
+        private boolean locallyConnected() {
+            try {
+                return provider.isLocallyConnected();
+            } catch (VirtualMachineError fatal) {
+                throw fatal;
+            } catch (Throwable ignored) {
+                return false;
+            }
+        }
+
+        private ProviderLifecycleState currentLifecycleState() {
+            try {
+                ProviderLifecycleState state = lifecycleState.get();
+                return state == null ? ProviderLifecycleState.FAILED : state;
+            } catch (VirtualMachineError fatal) {
+                throw fatal;
+            } catch (Throwable ignored) {
+                return ProviderLifecycleState.FAILED;
+            }
         }
 
         @Override
