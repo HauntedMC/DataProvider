@@ -42,11 +42,15 @@ public final class StackCallerClassLoaderResolver {
 
         return STACK_WALKER.walk(frames -> frames
                 .map(StackWalker.StackFrame::getDeclaringClass)
-                .filter(declaringClass -> !declaringClass.getName().startsWith(packagePrefix))
+                .filter(declaringClass -> !isInPackage(declaringClass, packagePrefix))
                 .map(Class::getClassLoader)
                 .filter(Objects::nonNull)
                 .findFirst()
                 .orElse(null));
     }
 
+    static boolean isInPackage(Class<?> type, String packageName) {
+        String className = type.getName();
+        return className.equals(packageName) || className.startsWith(packageName + ".");
+    }
 }
