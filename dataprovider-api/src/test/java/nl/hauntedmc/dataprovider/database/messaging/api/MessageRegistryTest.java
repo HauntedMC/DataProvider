@@ -67,6 +67,17 @@ class MessageRegistryTest {
     }
 
     @Test
+    void serializationRejectsCyclesAndDeepPayloads() {
+        MessageRegistry registry = new MessageRegistry(new RecordingLogger());
+        CyclicMessage cyclic = new CyclicMessage();
+
+        assertThrows(IllegalArgumentException.class, () -> registry.toJson(cyclic));
+        String deeplyNested = "{\"type\":\"ping\",\"content\":" + "[".repeat(65)
+                + "\"value\"" + "]".repeat(65) + "}";
+        assertThrows(IllegalArgumentException.class, () -> registry.fromJson(deeplyNested, PingMessage.class));
+    }
+
+    @Test
     void parseHandlesMissingUnknownAndInvalidPayloads() {
         RecordingLogger logger = new RecordingLogger();
         MessageRegistry registry = new MessageRegistry(logger);
@@ -109,6 +120,15 @@ class MessageRegistryTest {
     private static final class OtherMessage extends AbstractEventMessage {
         private OtherMessage() {
             super("other");
+        }
+    }
+
+    private static final class CyclicMessage extends AbstractEventMessage {
+        private final CyclicMessage self;
+
+        private CyclicMessage() {
+            super("cyclic");
+            self = this;
         }
     }
 
