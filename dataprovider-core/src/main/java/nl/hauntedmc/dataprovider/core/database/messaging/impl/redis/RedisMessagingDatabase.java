@@ -423,10 +423,11 @@ public final class RedisMessagingDatabase implements MessagingDatabaseProvider, 
         @Override
         public <T extends EventMessage> Subscription subscribe(
                 String destination,
+                String messageType,
                 Class<T> type,
                 Consumer<T> handler
         ) {
-            Subscription subscription = delegate.subscribe(destination, type, handler);
+            Subscription subscription = delegate.subscribe(destination, messageType, type, handler);
             return new ObservableSubscription(accessId, destination, subscription);
         }
 

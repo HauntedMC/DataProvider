@@ -21,6 +21,7 @@ public interface DurableMessagingDataAccess extends DataAccess {
             String stream,
             String group,
             String consumer,
+            String messageType,
             Class<T> type,
             Consumer<DurableDelivery<T>> handler
     );

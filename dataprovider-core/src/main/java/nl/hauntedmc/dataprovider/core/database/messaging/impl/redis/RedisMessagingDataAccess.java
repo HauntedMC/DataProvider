@@ -186,10 +186,12 @@ final class RedisMessagingDataAccess implements MessagingDataAccess {
     @Override
     public <T extends EventMessage> Subscription subscribe(
             String destination,
+            String messageType,
             Class<T> type,
             Consumer<T> handler
     ) {
         String validatedDestination = validateDestination(destination);
+        String validatedMessageType = MessageRegistry.validateType(messageType);
         Objects.requireNonNull(type, "Type cannot be null");
         Objects.requireNonNull(handler, "Handler cannot be null");
         if (shuttingDown.get()) {
@@ -220,7 +222,7 @@ final class RedisMessagingDataAccess implements MessagingDataAccess {
                 channelSubscriptions.put(validatedDestination, channelSubscription);
                 created = true;
             }
-            subscription = channelSubscription.addHandler(type, handler);
+            subscription = channelSubscription.addHandler(validatedMessageType, type, handler);
         }
         if (created) {
             channelSubscription.start();
@@ -477,12 +479,16 @@ final class RedisMessagingDataAccess implements MessagingDataAccess {
             return generation.get() == attempt.generation && listenerAttempt.get() == attempt;
         }
 
-        private <T extends EventMessage> Subscription addHandler(Class<T> type, Consumer<T> handler) {
+        private <T extends EventMessage> Subscription addHandler(
+                String messageType,
+                Class<T> type,
+                Consumer<T> handler
+        ) {
             if (!acceptingHandlers()) {
                 throw StructuredFailures.closed(workers, "redis.messaging.subscribe");
             }
             long handlerId = handlerSequence.incrementAndGet();
-            HandlerRegistration<T> registration = new HandlerRegistration<>(handlerId, type, handler);
+            HandlerRegistration<T> registration = new HandlerRegistration<>(handlerId, messageType, type, handler);
             handlers.put(handlerId, registration);
             return new SubscriptionHandle(registration);
         }
@@ -693,6 +699,7 @@ final class RedisMessagingDataAccess implements MessagingDataAccess {
 
     private final class HandlerRegistration<T extends EventMessage> {
         private final long handlerId;
+        private final String messageType;
         private final Class<T> type;
         private final Consumer<T> handler;
         private final Object queueLock = new Object();
@@ -702,8 +709,9 @@ final class RedisMessagingDataAccess implements MessagingDataAccess {
         private final CompletableFuture<Void> completion = new CompletableFuture<>();
         private boolean workerScheduled;
 
-        private HandlerRegistration(long handlerId, Class<T> type, Consumer<T> handler) {
+        private HandlerRegistration(long handlerId, String messageType, Class<T> type, Consumer<T> handler) {
             this.handlerId = handlerId;
+            this.messageType = Objects.requireNonNull(messageType, "Message type cannot be null");
             this.type = Objects.requireNonNull(type, "Type cannot be null");
             this.handler = Objects.requireNonNull(handler, "Handler cannot be null");
         }
@@ -782,11 +790,7 @@ final class RedisMessagingDataAccess implements MessagingDataAccess {
 
         private void dispatch(String channel, String raw) {
             try {
-                T message = messageRegistry.fromJson(raw, type);
-                if (message == null) {
-                    logger.warn("Received null message while subscribing to channel " + channel);
-                    return;
-                }
+                T message = messageRegistry.fromJson(raw, type, messageType);
                 handler.accept(message);
             } catch (Exception failure) {
                 logger.error("Error while handling message from channel " + channel, failure);
@@ -818,6 +822,7 @@ final class RedisMessagingDataAccess implements MessagingDataAccess {
             return true;
         }
     }
+
 
     private void recordDropped(long count) {
         if (count > 0 && executionBudget != null) {

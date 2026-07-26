@@ -114,7 +114,8 @@ public final class PaperAcceptanceConsumer extends JavaPlugin {
                 DatabaseType.REDIS_MESSAGING, CONNECTION
         );
         CountDownLatch received = new CountDownLatch(1);
-        Subscription subscription = messaging.getDataAccess().subscribe(CHANNEL, AcceptanceMessage.class, message -> {
+        Subscription subscription = messaging.getDataAccess().subscribe(
+                CHANNEL, "dataprovider.platform.acceptance", AcceptanceMessage.class, message -> {
             if ("paper-message".equals(message.value())) {
                 received.countDown();
             }

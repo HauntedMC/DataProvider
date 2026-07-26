@@ -116,12 +116,12 @@ final class IdentityBoundDatabaseProvider {
                 DataProviderHandler handler,
                 PluginIdentity identity
         ) {
-            if (!method.getName().equals("consume") || arguments == null || arguments.length != 5
-                    || !(arguments[4] instanceof Consumer originalHandler)) {
+            if (!method.getName().equals("consume") || arguments == null || arguments.length != 6
+                    || !(arguments[5] instanceof Consumer originalHandler)) {
                 return arguments;
             }
             Object[] guarded = arguments.clone();
-            guarded[4] = (Consumer<DurableDelivery<?>>) delivery -> originalHandler.accept(
+            guarded[5] = (Consumer<DurableDelivery<?>>) delivery -> originalHandler.accept(
                     (DurableDelivery<?>) bindResult(DurableDelivery.class, delivery, handler, identity));
             return guarded;
         }

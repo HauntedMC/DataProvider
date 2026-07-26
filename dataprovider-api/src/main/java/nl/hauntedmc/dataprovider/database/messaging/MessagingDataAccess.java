@@ -26,6 +26,7 @@ public interface MessagingDataAccess extends DataAccess {
      */
     <T extends EventMessage> Subscription subscribe(
             String destination,
+            String messageType,
             Class<T> type,
             Consumer<T> handler
     );

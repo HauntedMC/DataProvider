@@ -146,11 +146,13 @@ final class RedisStreamsDurableMessagingDataAccess implements DurableMessagingDa
 
     @Override
     public <T extends EventMessage> DurableSubscription consume(
-            String stream, String group, String consumer, Class<T> type, Consumer<DurableDelivery<T>> handler
+            String stream, String group, String consumer, String messageType, Class<T> type,
+            Consumer<DurableDelivery<T>> handler
     ) {
         String streamName = name(stream, "stream");
         String groupName = name(group, "group");
         String consumerName = name(consumer, "consumer");
+        String expectedMessageType = MessageRegistry.validateType(messageType);
         Objects.requireNonNull(type, "type cannot be null");
         Objects.requireNonNull(handler, "handler cannot be null");
         if (shuttingDown.get()) {
@@ -162,7 +164,9 @@ final class RedisStreamsDurableMessagingDataAccess implements DurableMessagingDa
                     ExecutionRejectedException.Reason.SUBSCRIPTION_LIMIT, "Durable consumer limit reached."),
                     execution, "redis.streams.consume");
         }
-        ConsumerLoop<T> loop = new ConsumerLoop<>(id, streamName, groupName, consumerName, type, handler);
+        ConsumerLoop<T> loop = new ConsumerLoop<>(
+                id, streamName, groupName, consumerName, expectedMessageType, type, handler
+        );
         if (consumers.putIfAbsent(id, loop) != null) {
             execution.releaseSubscription();
             throw new IllegalStateException("A durable consumer already exists for " + id);
@@ -233,6 +237,7 @@ final class RedisStreamsDurableMessagingDataAccess implements DurableMessagingDa
         private final String stream;
         private final String group;
         private final String consumer;
+        private final String messageType;
         private final Class<T> type;
         private final Consumer<DurableDelivery<T>> handler;
         private final AtomicBoolean closing = new AtomicBoolean();
@@ -247,12 +252,20 @@ final class RedisStreamsDurableMessagingDataAccess implements DurableMessagingDa
         private volatile long pending;
         private volatile long lag;
 
-        private ConsumerLoop(String id, String stream, String group, String consumer, Class<T> type,
-                             Consumer<DurableDelivery<T>> handler) {
+        private ConsumerLoop(
+                String id,
+                String stream,
+                String group,
+                String consumer,
+                String messageType,
+                Class<T> type,
+                Consumer<DurableDelivery<T>> handler
+        ) {
             this.id = id;
             this.stream = stream;
             this.group = group;
             this.consumer = consumer;
+            this.messageType = messageType;
             this.type = type;
             this.handler = handler;
         }
@@ -330,8 +343,12 @@ final class RedisStreamsDurableMessagingDataAccess implements DurableMessagingDa
                 try {
                     String eventId = required(fields, "event_id");
                     String processingKey = required(fields, "processing_key");
-                    T payload = registry.fromJson(required(fields, "payload"), type);
-                    if (payload == null || !required(fields, "type").equals(payload.getType())) {
+                    String envelopeType = required(fields, "type");
+                    if (!messageType.equals(envelopeType)) {
+                        throw new IllegalArgumentException("Envelope type does not match the consumer contract");
+                    }
+                    T payload = registry.fromJson(required(fields, "payload"), type, messageType);
+                    if (!envelopeType.equals(payload.getType())) {
                         throw new IllegalArgumentException("Payload type does not match the durable event envelope");
                     }
                     event = new DurableEvent<>(eventId, processingKey, payload);

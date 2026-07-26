@@ -75,7 +75,7 @@ class RedisMessagingDataAccessTest {
         );
         CountDownLatch handled = new CountDownLatch(1);
         AtomicReference<TestEvent> received = new AtomicReference<>();
-        var subscription = access.subscribe("recover-test", TestEvent.class, event -> {
+        var subscription = access.subscribe("recover-test", "test.recovered", TestEvent.class, event -> {
             received.set(event);
             handled.countDown();
         });
@@ -130,7 +130,7 @@ class RedisMessagingDataAccessTest {
                 1
         );
 
-        var subscription = access.subscribe("terminal-test", TestEvent.class, ignored -> { });
+        var subscription = access.subscribe("terminal-test", "test.terminal", TestEvent.class, ignored -> { });
 
         assertThrows(CompletionException.class, subscription.completion()::join);
         assertTrue(subscription.snapshot().reconnectCount() >= 1);
@@ -159,7 +159,9 @@ class RedisMessagingDataAccessTest {
                 0.0D,
                 0
         );
-        var subscription = access.subscribe("shutdown-backoff", TestEvent.class, ignored -> { });
+        var subscription = access.subscribe(
+                "shutdown-backoff", "test.shutdown-backoff", TestEvent.class, ignored -> { }
+        );
         await(() -> subscription.state() == SubscriptionState.RECONNECTING);
 
         access.shutdown().get(2, TimeUnit.SECONDS);
@@ -194,7 +196,7 @@ class RedisMessagingDataAccessTest {
                 16,
                 8
         );
-        access.subscribe("shutdown-test", EventMessage.class, ignored -> { });
+        access.subscribe("shutdown-test", "test.shutdown", EventMessage.class, ignored -> { });
         assertTrue(listening.await(2, TimeUnit.SECONDS));
 
         var shutdown = access.shutdown();

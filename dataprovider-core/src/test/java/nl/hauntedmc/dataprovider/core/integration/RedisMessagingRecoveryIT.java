@@ -67,7 +67,9 @@ class RedisMessagingRecoveryIT {
                     api.registerDatabaseOrThrow(DatabaseType.REDIS_MESSAGING, "default");
             var access = messaging.getDataAccess();
             LinkedBlockingQueue<String> received = new LinkedBlockingQueue<>();
-            Subscription subscription = access.subscribe(CHANNEL, TestEvent.class, event -> received.add(event.value()));
+            Subscription subscription = access.subscribe(
+                    CHANNEL, "dataprovider.recovery", TestEvent.class, event -> received.add(event.value())
+            );
             String originalLogicalId = subscription.id();
 
             awaitState(subscription, SubscriptionState.ACTIVE);

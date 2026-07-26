@@ -17,7 +17,7 @@ public final class RedisDurableMessagingExample {
 
     void install(MessagingDatabaseProvider provider) {
         DurableMessagingDataAccess durable = provider.getDurableDataAccess();
-        durable.consume(VOTE_STREAM, GROUP, CONSUMER, VoteReceived.class, delivery -> {
+        durable.consume(VOTE_STREAM, GROUP, CONSUMER, "vote_received", VoteReceived.class, delivery -> {
             // In one database transaction: INSERT processing_key with a UNIQUE constraint, then apply the vote.
             // If the key already exists, the transaction makes this a no-op.
             applyVoteIdempotently(delivery.event().processingKey(), delivery.event().payload());

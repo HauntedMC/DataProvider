@@ -25,7 +25,7 @@ public final class RedisMessagingExample {
         );
         try {
             bus = provider.getDataAccess();
-            subscription = bus.subscribe(STAFF_CHAT_CHANNEL, StaffChatMessage.class,
+            subscription = bus.subscribe(STAFF_CHAT_CHANNEL, "staffchat", StaffChatMessage.class,
                     Objects.requireNonNull(messageHandler, "Message handler cannot be null."));
         } catch (RuntimeException exception) {
             bus = null;

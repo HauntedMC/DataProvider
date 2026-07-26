@@ -43,11 +43,7 @@ public final class MessageRegistry {
      * @throws IllegalStateException if the type is already registered with a different class
      */
     public void register(String type, Class<? extends EventMessage> cls) {
-        if (type == null || !TYPE_PATTERN.matcher(type).matches()) {
-            throw new IllegalArgumentException(
-                    "Message type contains unsupported characters or has an invalid length."
-            );
-        }
+        validateType(type);
         Objects.requireNonNull(cls, "Message class cannot be null.");
 
         Class<? extends EventMessage> existing = types.putIfAbsent(type, cls);
@@ -60,6 +56,7 @@ public final class MessageRegistry {
     /** Serialize any EventMessage to JSON. */
     public String toJson(EventMessage msg) {
         Objects.requireNonNull(msg, "Message cannot be null.");
+        validateType(msg.getType());
         validateObjectGraph(msg, new IdentityHashMap<>(), 0, new int[] {0});
         LimitedStringWriter writer = new LimitedStringWriter(MAX_JSON_CHARACTERS);
         gson.toJson(msg, msg.getClass(), writer);
@@ -74,6 +71,22 @@ public final class MessageRegistry {
         Objects.requireNonNull(cls, "Message class cannot be null.");
         validateJson(json);
         return gson.fromJson(json, cls);
+    }
+
+    /** Deserialize a known subclass and require its wire type to match the subscription contract. */
+    public <T extends EventMessage> T fromJson(String json, Class<T> cls, String expectedType) {
+        String validatedExpectedType = validateType(expectedType);
+        T message = fromJson(json, cls);
+        if (message == null) {
+            throw new JsonParseException("Message JSON resolved to null.");
+        }
+        String actualType = validateType(message.getType());
+        if (!validatedExpectedType.equals(actualType)) {
+            throw new JsonParseException(
+                    "Message type '" + actualType + "' does not match expected type '" + validatedExpectedType + "'."
+            );
+        }
+        return message;
     }
 
     /** Parse JSON, look up `type` field, and return correct subclass. */
@@ -169,6 +182,16 @@ public final class MessageRegistry {
         } catch (IOException | IllegalStateException failure) {
             throw new JsonParseException("Invalid message JSON.", failure);
         }
+    }
+
+    /** Validate and return a logical wire message type. */
+    public static String validateType(String type) {
+        if (type == null || !TYPE_PATTERN.matcher(type).matches()) {
+            throw new IllegalArgumentException(
+                    "Message type contains unsupported characters or has an invalid length."
+            );
+        }
+        return type;
     }
 
     private static void validateObjectGraph(

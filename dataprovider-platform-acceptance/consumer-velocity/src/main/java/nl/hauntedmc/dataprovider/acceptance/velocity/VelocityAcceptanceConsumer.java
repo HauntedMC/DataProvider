@@ -133,7 +133,8 @@ public final class VelocityAcceptanceConsumer {
                 DatabaseType.REDIS_MESSAGING, CONNECTION
         );
         CountDownLatch received = new CountDownLatch(1);
-        Subscription subscription = messaging.getDataAccess().subscribe(CHANNEL, AcceptanceMessage.class, message -> {
+        Subscription subscription = messaging.getDataAccess().subscribe(
+                CHANNEL, "dataprovider.platform.acceptance", AcceptanceMessage.class, message -> {
             if ("velocity-message".equals(message.value())) {
                 received.countDown();
             }

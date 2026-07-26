@@ -1,5 +1,6 @@
 package nl.hauntedmc.dataprovider.database.messaging.api;
 
+import com.google.gson.JsonParseException;
 import nl.hauntedmc.dataprovider.logging.LogLevel;
 import nl.hauntedmc.dataprovider.logging.LoggerAdapter;
 import org.junit.jupiter.api.Test;
@@ -50,10 +51,13 @@ class MessageRegistryTest {
 
         String json = registry.toJson(message);
         PingMessage fromJson = registry.fromJson(json, PingMessage.class);
+        PingMessage checked = registry.fromJson(json, PingMessage.class, "ping");
 
         assertNotNull(fromJson);
+        assertNotNull(checked);
         assertEquals("ping", fromJson.getType());
         assertEquals("hello", fromJson.content);
+        assertThrows(JsonParseException.class, () -> registry.fromJson(json, PingMessage.class, "other"));
     }
 
     @Test

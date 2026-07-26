@@ -97,7 +97,7 @@ class RedisDurableMessagingIT {
             CountDownLatch firstApplication = new CountDownLatch(1);
             crashedConsumer = provider();
             DurableMessagingDataAccess first = durable(crashedConsumer);
-            first.consume(STREAM, GROUP, "consumer-before-crash", VoteEvent.class, delivery -> {
+            first.consume(STREAM, GROUP, "consumer-before-crash", "vote.received", VoteEvent.class, delivery -> {
                 applyVoteTransactionally(delivery.event().processingKey(), delivery.event().payload());
                 firstApplication.countDown();
                 // Simulate a process crash after commit and before Redis acknowledgement.
@@ -109,7 +109,7 @@ class RedisDurableMessagingIT {
             CountDownLatch recovered = new CountDownLatch(1);
             recoveredConsumer = provider();
             DurableMessagingDataAccess second = durable(recoveredConsumer);
-            second.consume(STREAM, GROUP, "consumer-after-crash", VoteEvent.class, delivery -> {
+            second.consume(STREAM, GROUP, "consumer-after-crash", "vote.received", VoteEvent.class, delivery -> {
                 applyVoteTransactionally(delivery.event().processingKey(), delivery.event().payload());
                 delivery.acknowledge().join();
                 recovered.countDown();
