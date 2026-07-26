@@ -1,7 +1,6 @@
 package nl.hauntedmc.dataprovider.api.orm;
 
 import org.hibernate.Session;
-import org.hibernate.SessionFactory;
 
 /**
  * Public lifecycle contract for a plugin-owned Hibernate context.
@@ -10,8 +9,6 @@ import org.hibernate.SessionFactory;
  * the server-hosted DataProvider runtime supplies the implementation.</p>
  */
 public interface ORMContext extends AutoCloseable {
-
-    SessionFactory getSessionFactory();
 
     Session openSession();
 

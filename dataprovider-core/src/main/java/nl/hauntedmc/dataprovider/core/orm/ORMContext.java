@@ -148,13 +148,7 @@ public class ORMContext implements nl.hauntedmc.dataprovider.api.orm.ORMContext 
         return DEFAULT_SCHEMA_MODE;
     }
 
-    /**
-     * Returns the SessionFactory associated with this ORMContext.
-     *
-     * @return The SessionFactory.
-     * @throws IllegalStateException if the SessionFactory is not initialized.
-     */
-    public SessionFactory getSessionFactory() {
+    private SessionFactory requireSessionFactory() {
         if (sessionFactory == null) {
             throw new IllegalStateException("SessionFactory is not initialized for plugin: " + plugin);
         }
@@ -167,7 +161,7 @@ public class ORMContext implements nl.hauntedmc.dataprovider.api.orm.ORMContext 
      * @return A new Session.
      */
     public Session openSession() {
-        return getSessionFactory().openSession();
+        return requireSessionFactory().openSession();
     }
 
     /**
