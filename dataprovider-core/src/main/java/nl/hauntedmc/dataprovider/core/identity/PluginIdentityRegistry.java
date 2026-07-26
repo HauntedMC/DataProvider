@@ -14,6 +14,13 @@ public final class PluginIdentityRegistry {
     public synchronized PluginIdentity register(String pluginId, ClassLoader classLoader) {
         Objects.requireNonNull(classLoader, "Plugin class loader cannot be null.");
         PluginIdentity identity = new PluginIdentity(pluginId, classLoader);
+        PluginIdentity mapped = identitiesByLoader.get(classLoader);
+        if (mapped != null && !mapped.pluginId().equals(identity.pluginId())) {
+            throw new IllegalStateException(
+                    "Cannot securely distinguish plugins '" + mapped.pluginId() + "' and '"
+                            + identity.pluginId() + "' because they share one class loader."
+            );
+        }
         // Replacing either index invalidates the previous lifecycle generation.
         PluginIdentity previous = identitiesByLoader.put(classLoader, identity);
         if (previous != null) {

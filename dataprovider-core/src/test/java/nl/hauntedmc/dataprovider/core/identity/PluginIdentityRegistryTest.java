@@ -8,6 +8,7 @@ import java.util.concurrent.Executors;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotSame;
 import static org.junit.jupiter.api.Assertions.assertSame;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class PluginIdentityRegistryTest {
@@ -47,16 +48,16 @@ class PluginIdentityRegistryTest {
         PluginIdentityRegistry registry = new PluginIdentityRegistry();
         ClassLoader loader = new ClassLoader() {
         };
-        PluginIdentity initial = registry.register("initial", loader);
+        PluginIdentity initial = registry.register("replacement", loader);
         CountDownLatch start = new CountDownLatch(1);
         try (var executor = Executors.newFixedThreadPool(2)) {
             var first = executor.submit(() -> {
                 start.await();
-                return registry.register("first", loader);
+                return registry.register("replacement", loader);
             });
             var second = executor.submit(() -> {
                 start.await();
-                return registry.register("second", loader);
+                return registry.register("replacement", loader);
             });
             start.countDown();
             PluginIdentity firstIdentity = first.get();
@@ -66,5 +67,17 @@ class PluginIdentityRegistryTest {
             assertTrue(registry.isActive(firstIdentity) ^ registry.isActive(secondIdentity));
             assertSame(registry.find(loader), registry.isActive(firstIdentity) ? firstIdentity : secondIdentity);
         }
+    }
+
+    @Test
+    void rejectsDifferentPluginsThatShareAClassLoader() {
+        PluginIdentityRegistry registry = new PluginIdentityRegistry();
+        ClassLoader sharedLoader = new ClassLoader() {
+        };
+        PluginIdentity first = registry.register("first", sharedLoader);
+
+        assertThrows(IllegalStateException.class, () -> registry.register("second", sharedLoader));
+        assertTrue(registry.isActive(first));
+        assertSame(first, registry.find(sharedLoader));
     }
 }
