@@ -5,6 +5,7 @@ import org.junit.jupiter.api.Test;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 
 class DatabaseConnectionKeyTest {
 
@@ -31,5 +32,19 @@ class DatabaseConnectionKeyTest {
         assertTrue(text.contains("pluginName='plugin'"));
         assertTrue(text.contains("type=REDIS"));
         assertTrue(text.contains("connectionIdentifier='cache-main'"));
+    }
+
+    @Test
+    void rejectsInvalidComponents() {
+        assertThrows(NullPointerException.class,
+                () -> new DatabaseConnectionKey(null, DatabaseType.MYSQL, "default"));
+        assertThrows(NullPointerException.class,
+                () -> new DatabaseConnectionKey("plugin", null, "default"));
+        assertThrows(IllegalArgumentException.class,
+                () -> new DatabaseConnectionKey("plugin\nforged", DatabaseType.MYSQL, "default"));
+        assertThrows(IllegalArgumentException.class,
+                () -> new DatabaseConnectionKey("plugin", DatabaseType.MYSQL, "bad id"));
+        assertThrows(IllegalArgumentException.class,
+                () -> new DatabaseConnectionKey("x".repeat(129), DatabaseType.MYSQL, "default"));
     }
 }
