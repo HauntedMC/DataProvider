@@ -24,6 +24,16 @@ class MessageContractsTest {
     }
 
     @Test
+    void eventTimestampsDoNotMoveBackwardsWithinTheProcess() {
+        long previous = Long.MIN_VALUE;
+        for (int index = 0; index < 1_000; index++) {
+            long timestamp = new TestMessage("event.test").getTimestamp();
+            assertTrue(timestamp >= previous);
+            previous = timestamp;
+        }
+    }
+
+    @Test
     void abstractEventMessageRejectsUnsafeTypes() {
         assertThrows(IllegalArgumentException.class, () -> new TestMessage(null));
         assertThrows(IllegalArgumentException.class, () -> new TestMessage(""));
