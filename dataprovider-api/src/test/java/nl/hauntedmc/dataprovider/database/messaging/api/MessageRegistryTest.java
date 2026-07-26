@@ -9,6 +9,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -40,6 +41,21 @@ class MessageRegistryTest {
 
         assertTrue(conflict.getMessage().contains("already registered"));
         assertTrue(logger.infoMessages().stream().anyMatch(m -> m.contains("Registered message type 'ping'")));
+    }
+
+    @Test
+    void registrationsCanBeReleasedWithoutRemovingAReplacement() {
+        MessageRegistry registry = new MessageRegistry(new RecordingLogger());
+        registry.register("ping", PingMessage.class);
+
+        assertFalse(registry.unregister("ping", OtherMessage.class));
+        assertInstanceOf(PingMessage.class, registry.parse("{\"type\":\"ping\",\"content\":\"first\"}"));
+        assertTrue(registry.unregister("ping", PingMessage.class));
+        assertThrows(JsonParseException.class, () -> registry.parse("{\"type\":\"ping\"}"));
+
+        registry.register("ping", PingMessage.class);
+        registry.clear();
+        assertThrows(JsonParseException.class, () -> registry.parse("{\"type\":\"ping\"}"));
     }
 
     @Test

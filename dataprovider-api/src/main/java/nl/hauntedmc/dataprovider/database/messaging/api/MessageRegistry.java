@@ -53,6 +53,26 @@ public final class MessageRegistry {
         logger.info("Registered message type '" + type + "' for class " + cls.getName());
     }
 
+    /**
+     * Remove a registration only when it still belongs to the supplied class.
+     *
+     * @return whether the registration was removed
+     */
+    public boolean unregister(String type, Class<? extends EventMessage> cls) {
+        String validatedType = validateType(type);
+        Objects.requireNonNull(cls, "Message class cannot be null.");
+        boolean removed = types.remove(validatedType, cls);
+        if (removed) {
+            logger.info("Unregistered message type '" + validatedType + "'.");
+        }
+        return removed;
+    }
+
+    /** Remove all dynamic type registrations and release their class references. */
+    public void clear() {
+        types.clear();
+    }
+
     /** Serialize any EventMessage to JSON. */
     public String toJson(EventMessage msg) {
         Objects.requireNonNull(msg, "Message cannot be null.");
