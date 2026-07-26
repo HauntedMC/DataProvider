@@ -32,6 +32,7 @@ class DataProviderRegistry {
 
     private static final String SHUTDOWN_MESSAGE =
             "DataProvider is shut down. Obtain a fresh API instance after plugin enable.";
+    private static final int MAX_RETAINED_TERMINAL_SNAPSHOTS = 256;
 
     private final ConcurrentMap<RegistrationKey, ProviderSlot> activeDatabases = new ConcurrentHashMap<>();
     private final ConcurrentMap<RegistrationKey, ProviderLifecycleSnapshot> lifecycleSnapshots =
@@ -155,6 +156,7 @@ class DataProviderRegistry {
         } finally {
             readLock.unlock();
         }
+        trimLifecycleSnapshots();
     }
 
     protected DatabaseProvider getDatabase(String pluginName, DatabaseType databaseType, String connectionIdentifier) {
@@ -364,6 +366,22 @@ class DataProviderRegistry {
         Map<DatabaseConnectionKey, ProviderLifecycleSnapshot> snapshots = new HashMap<>();
         lifecycleSnapshots.forEach((key, snapshot) -> snapshots.put(key.toExternalKey(), snapshot));
         return Map.copyOf(snapshots);
+    }
+
+    private synchronized void trimLifecycleSnapshots() {
+        while (lifecycleSnapshots.size() > MAX_RETAINED_TERMINAL_SNAPSHOTS) {
+            Map.Entry<RegistrationKey, ProviderLifecycleSnapshot> oldestTerminal = lifecycleSnapshots.entrySet()
+                    .stream()
+                    .filter(entry -> !activeDatabases.containsKey(entry.getKey()))
+                    .min(Map.Entry.comparingByValue(
+                            java.util.Comparator.comparing(ProviderLifecycleSnapshot::changedAt)
+                    ))
+                    .orElse(null);
+            if (oldestTerminal == null
+                    || !lifecycleSnapshots.remove(oldestTerminal.getKey(), oldestTerminal.getValue())) {
+                return;
+            }
+        }
     }
 
     protected CompletableFuture<Void> probeRemoteHealthAsync() {
@@ -693,6 +711,7 @@ class DataProviderRegistry {
                             "providerLifecycle"
                     );
             lifecycleSnapshots.put(key, new ProviderLifecycleSnapshot(state.get(), snapshotFailure, changedAt));
+            trimLifecycleSnapshots();
         }
 
         private ProviderLifecycleState state() {

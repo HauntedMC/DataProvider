@@ -419,6 +419,29 @@ class DataProviderRegistryTest {
     }
 
     @Test
+    void terminalLifecycleHistoryIsBounded() {
+        DatabaseFactory factory = mock(DatabaseFactory.class);
+        ConfigHandler configHandler = mock(ConfigHandler.class);
+        when(configHandler.isDatabaseTypeEnabled(DatabaseType.MYSQL)).thenReturn(true);
+        DataProviderRegistry registry = new DataProviderRegistry(
+                factory, configHandler, new RecordingLoggerAdapter()
+        );
+
+        for (int index = 0; index < 300; index++) {
+            assertNull(registry.registerDatabase(
+                    "plugin", "feature", DatabaseType.MYSQL, "connection-" + index
+            ));
+        }
+
+        Map<DatabaseConnectionKey, ProviderLifecycleSnapshot> snapshots =
+                registry.getProviderLifecycleSnapshots();
+        assertTrue(snapshots.size() <= 256);
+        assertTrue(snapshots.containsKey(
+                new DatabaseConnectionKey("plugin", DatabaseType.MYSQL, "connection-299")
+        ));
+    }
+
+    @Test
     void getActiveSnapshotsExposeCurrentRegistryState() {
         DatabaseFactory factory = mock(DatabaseFactory.class);
         ConfigHandler configHandler = mock(ConfigHandler.class);
