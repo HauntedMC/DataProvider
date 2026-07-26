@@ -6,6 +6,7 @@ import nl.hauntedmc.dataprovider.logging.LoggerAdapter;
 import java.util.Map;
 import java.util.Objects;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.regex.Pattern;
 
 /**
  * Instance-scoped Gson + type registry for EventMessage classes.
@@ -15,6 +16,8 @@ import java.util.concurrent.ConcurrentHashMap;
  * Registration is only required when using {@link #parse(String)} for dynamic payload parsing.
  */
 public final class MessageRegistry {
+    private static final Pattern TYPE_PATTERN = Pattern.compile("[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}");
+
     private final Gson gson = new Gson();
     private final Map<String, Class<? extends EventMessage>> types = new ConcurrentHashMap<>();
     private final LoggerAdapter logger;
@@ -28,8 +31,10 @@ public final class MessageRegistry {
      * @throws IllegalStateException if the type is already registered with a different class
      */
     public void register(String type, Class<? extends EventMessage> cls) {
-        if (type == null || type.isBlank()) {
-            throw new IllegalArgumentException("Message type cannot be null or blank.");
+        if (type == null || !TYPE_PATTERN.matcher(type).matches()) {
+            throw new IllegalArgumentException(
+                    "Message type contains unsupported characters or has an invalid length."
+            );
         }
         Objects.requireNonNull(cls, "Message class cannot be null.");
 

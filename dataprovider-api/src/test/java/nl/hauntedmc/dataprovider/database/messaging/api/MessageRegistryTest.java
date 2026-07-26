@@ -27,6 +27,8 @@ class MessageRegistryTest {
         MessageRegistry registry = new MessageRegistry(logger);
 
         assertThrows(IllegalArgumentException.class, () -> registry.register(" ", PingMessage.class));
+        assertThrows(IllegalArgumentException.class, () -> registry.register("ping\nforged", PingMessage.class));
+        assertThrows(IllegalArgumentException.class, () -> registry.register("x".repeat(129), PingMessage.class));
         assertThrows(NullPointerException.class, () -> registry.register("ping", null));
 
         registry.register("ping", PingMessage.class);
