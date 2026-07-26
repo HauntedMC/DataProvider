@@ -223,7 +223,7 @@ class BackendIntegrationIT {
     void pluginLeasesShareOneMysqlPoolAndCloseItAfterTheLastLease() throws Exception {
         Files.createDirectories(dataDirectory.resolve("databases"));
         Files.writeString(dataDirectory.resolve("databases/mysql.yml"), """
-                default:
+                shared-pool:
                   access:
                     owner_plugin: first-plugin
                     shared_with:
@@ -263,22 +263,22 @@ class BackendIntegrationIT {
         try {
             var handler = provider.getDataProviderHandler();
             var first = (nl.hauntedmc.dataprovider.database.relational.RelationalDatabaseProvider)
-                    handler.registerDatabaseOrThrow(DatabaseType.MYSQL, "default");
+                    handler.registerDatabaseOrThrow(DatabaseType.MYSQL, "shared-pool");
             plugin.set("second-plugin");
             var second = (nl.hauntedmc.dataprovider.database.relational.RelationalDatabaseProvider)
-                    handler.registerDatabaseOrThrow(DatabaseType.MYSQL, "default");
+                    handler.registerDatabaseOrThrow(DatabaseType.MYSQL, "shared-pool");
 
             first.getDataAccess().executeUpdate("CREATE TABLE shared_pool_it (id INT PRIMARY KEY)").join();
             var firstConnection = first.getDataSource().getConnection();
 
             plugin.set("first-plugin");
-            handler.unregisterDatabase(DatabaseType.MYSQL, "default");
+            handler.unregisterDatabase(DatabaseType.MYSQL, "shared-pool");
             assertTrue(firstConnection.isClosed());
             plugin.set("second-plugin");
             second.getDataAccess().executeUpdate("INSERT INTO shared_pool_it VALUES (1)").join();
             assertEquals(1L, ((Number) second.getDataAccess()
                     .queryForSingleValue("SELECT COUNT(*) FROM shared_pool_it").join()).longValue());
-            handler.unregisterDatabase(DatabaseType.MYSQL, "default");
+            handler.unregisterDatabase(DatabaseType.MYSQL, "shared-pool");
             assertThrows(Exception.class, () -> second.getDataSource().getConnection());
         } finally {
             provider.shutdownAllDatabases();
@@ -296,20 +296,20 @@ class BackendIntegrationIT {
             var handler = provider.getDataProviderHandler();
             DataProviderAPI api = new DefaultDataProviderApi(handler).forPlugin(this);
             RelationalDatabaseProvider mysql = (RelationalDatabaseProvider)
-                    api.registerDatabaseOrThrow(DatabaseType.MYSQL, "default");
+                    api.registerDatabaseOrThrow(DatabaseType.MYSQL, "resilience");
             DocumentDatabaseProvider mongo = (DocumentDatabaseProvider)
-                    api.registerDatabaseOrThrow(DatabaseType.MONGODB, "default");
+                    api.registerDatabaseOrThrow(DatabaseType.MONGODB, "resilience");
             KeyValueDatabaseProvider redis = (KeyValueDatabaseProvider)
-                    api.registerDatabaseOrThrow(DatabaseType.REDIS, "default");
+                    api.registerDatabaseOrThrow(DatabaseType.REDIS, "resilience");
             assertFalse(mysql instanceof ManagedDatabaseProvider);
             assertFalse(mongo instanceof ManagedDatabaseProvider);
             assertFalse(redis instanceof ManagedDatabaseProvider);
             ManagedDatabaseProvider mysqlRecovery = (ManagedDatabaseProvider)
-                    handler.requireRegisteredDatabase(DatabaseType.MYSQL, "default");
+                    handler.requireRegisteredDatabase(DatabaseType.MYSQL, "resilience");
             ManagedDatabaseProvider mongoRecovery = (ManagedDatabaseProvider)
-                    handler.requireRegisteredDatabase(DatabaseType.MONGODB, "default");
+                    handler.requireRegisteredDatabase(DatabaseType.MONGODB, "resilience");
             ManagedDatabaseProvider redisRecovery = (ManagedDatabaseProvider)
-                    handler.requireRegisteredDatabase(DatabaseType.REDIS, "default");
+                    handler.requireRegisteredDatabase(DatabaseType.REDIS, "resilience");
 
             // Keep the original facade and access references: recovery must not require callers to reacquire either.
             var mysqlAccess = mysql.getDataAccess();
@@ -352,7 +352,7 @@ class BackendIntegrationIT {
     private void writeResilienceConnectionFiles() throws Exception {
         Files.createDirectories(dataDirectory.resolve("databases"));
         Files.writeString(dataDirectory.resolve("databases/mysql.yml"), """
-                default:
+                resilience:
                   access:
                     owner_plugin: resilience-it
                     shared_with: []
@@ -374,7 +374,7 @@ class BackendIntegrationIT {
                 """.formatted(MYSQL.getHost(), MYSQL.getMappedPort(3306), MYSQL.getDatabaseName(),
                 MYSQL.getUsername(), MYSQL.getPassword()));
         Files.writeString(dataDirectory.resolve("databases/mongodb.yml"), """
-                default:
+                resilience:
                   access:
                     owner_plugin: resilience-it
                     shared_with: []
@@ -388,7 +388,7 @@ class BackendIntegrationIT {
                   server_selection_timeout_ms: 1000
                 """.formatted(MONGODB.getHost(), MONGODB.getMappedPort(27017)));
         Files.writeString(dataDirectory.resolve("databases/redis.yml"), """
-                default:
+                resilience:
                   access:
                     owner_plugin: resilience-it
                     shared_with: []

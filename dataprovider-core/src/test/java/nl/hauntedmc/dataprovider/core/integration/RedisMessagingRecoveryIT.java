@@ -68,7 +68,7 @@ class RedisMessagingRecoveryIT {
         try {
             DataProviderAPI api = new DefaultDataProviderApi(provider.getDataProviderHandler()).forPlugin(this);
             MessagingDatabaseProvider messaging = (MessagingDatabaseProvider)
-                    api.registerDatabaseOrThrow(DatabaseType.REDIS_MESSAGING, "default");
+                    api.registerDatabaseOrThrow(DatabaseType.REDIS_MESSAGING, "messaging-recovery");
             var access = messaging.getDataAccess();
             LinkedBlockingQueue<String> received = new LinkedBlockingQueue<>();
             Subscription subscription = access.subscribe(
@@ -141,9 +141,9 @@ class RedisMessagingRecoveryIT {
         try {
             DataProviderAPI api = new DefaultDataProviderApi(provider.getDataProviderHandler()).forPlugin(this);
             MessagingDatabaseProvider messaging = (MessagingDatabaseProvider)
-                    api.registerDatabaseOrThrow(DatabaseType.REDIS_MESSAGING, "default");
+                    api.registerDatabaseOrThrow(DatabaseType.REDIS_MESSAGING, "messaging-recovery");
             ManagedDatabaseProvider recovery = (ManagedDatabaseProvider) provider.getDataProviderHandler()
-                    .requireRegisteredDatabase(DatabaseType.REDIS_MESSAGING, "default");
+                    .requireRegisteredDatabase(DatabaseType.REDIS_MESSAGING, "messaging-recovery");
             assertTrue(recovery instanceof ResilienceTargetAware,
                     "Registered Redis messaging provider must expose its shared physical resilience target.");
             ManagedDatabaseProvider physicalRecovery = ((ResilienceTargetAware) recovery).resilienceTarget();
@@ -235,7 +235,7 @@ class RedisMessagingRecoveryIT {
     private void writeMessagingConfiguration() throws Exception {
         Files.createDirectories(dataDirectory.resolve("databases"));
         Files.writeString(dataDirectory.resolve("databases/redis_messaging.yml"), """
-                default:
+                messaging-recovery:
                   access:
                     owner_plugin: messaging-recovery-it
                     shared_with: []

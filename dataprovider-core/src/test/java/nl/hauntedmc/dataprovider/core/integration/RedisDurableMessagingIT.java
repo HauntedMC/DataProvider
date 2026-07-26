@@ -170,14 +170,14 @@ class RedisDurableMessagingIT {
     private DurableMessagingDataAccess durable(DataProvider provider) {
         DataProviderAPI api = new DefaultDataProviderApi(provider.getDataProviderHandler()).forPlugin(this);
         MessagingDatabaseProvider messaging = (MessagingDatabaseProvider) api.registerDatabaseOrThrow(
-                DatabaseType.REDIS_MESSAGING, "default");
+                DatabaseType.REDIS_MESSAGING, "durable-messaging");
         return messaging.getDurableDataAccess();
     }
 
     private void writeConfiguration() throws Exception {
         Files.createDirectories(dataDirectory.resolve("databases"));
         Files.writeString(dataDirectory.resolve("databases/redis_messaging.yml"), """
-                default:
+                durable-messaging:
                   access:
                     owner_plugin: durable-messaging-it
                     shared_with: []
