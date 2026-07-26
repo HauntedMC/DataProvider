@@ -5,6 +5,7 @@ import nl.hauntedmc.dataprovider.core.resilience.ConnectionHealthSnapshot;
 import nl.hauntedmc.dataprovider.core.resilience.ResilienceRuntime;
 import nl.hauntedmc.dataprovider.core.resilience.ResilienceRuntimeConfig;
 import nl.hauntedmc.dataprovider.core.resilience.ResilienceTargetAware;
+import nl.hauntedmc.dataprovider.core.exception.DataProviderExceptionMapper;
 import nl.hauntedmc.dataprovider.database.DatabaseConnectionKey;
 import nl.hauntedmc.dataprovider.database.DatabaseProvider;
 import nl.hauntedmc.dataprovider.database.DatabaseType;
@@ -683,7 +684,15 @@ class DataProviderRegistry {
         }
 
         private void publishSnapshot() {
-            lifecycleSnapshots.put(key, new ProviderLifecycleSnapshot(state.get(), failure, changedAt));
+            Throwable snapshotFailure = failure == null
+                    ? null
+                    : DataProviderExceptionMapper.registrationFailure(
+                            failure,
+                            key.type(),
+                            key.connectionIdentifier().value(),
+                            "providerLifecycle"
+                    );
+            lifecycleSnapshots.put(key, new ProviderLifecycleSnapshot(state.get(), snapshotFailure, changedAt));
         }
 
         private ProviderLifecycleState state() {

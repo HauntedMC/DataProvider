@@ -6,6 +6,7 @@ import nl.hauntedmc.dataprovider.database.DataAccess;
 import nl.hauntedmc.dataprovider.database.DatabaseConnectionKey;
 import nl.hauntedmc.dataprovider.database.DatabaseProvider;
 import nl.hauntedmc.dataprovider.database.DatabaseType;
+import nl.hauntedmc.dataprovider.exception.DataProviderException;
 import org.junit.jupiter.api.Test;
 
 import javax.sql.DataSource;
@@ -23,6 +24,7 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
+import static org.junit.jupiter.api.Assertions.assertNotSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
@@ -120,7 +122,8 @@ class DataProviderRegistryConcurrencyTest {
         ProviderLifecycleSnapshot failedSnapshot = registry.getProviderLifecycleSnapshots().get(key);
         assertNotNull(failedSnapshot);
         assertEquals(ProviderLifecycleState.FAILED, failedSnapshot.state());
-        assertSame(failure, failedSnapshot.failure());
+        assertNotSame(failure, failedSnapshot.failure());
+        assertTrue(failedSnapshot.failure() instanceof DataProviderException);
 
         assertSame(replacement,
                 registry.registerDatabase("plugin", "scope", DatabaseType.MYSQL, "default"));
