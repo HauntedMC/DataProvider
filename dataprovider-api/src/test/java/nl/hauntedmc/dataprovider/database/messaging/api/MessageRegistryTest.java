@@ -57,6 +57,16 @@ class MessageRegistryTest {
     }
 
     @Test
+    void serializationRejectsMissingInputs() {
+        MessageRegistry registry = new MessageRegistry(new RecordingLogger());
+
+        assertThrows(NullPointerException.class, () -> registry.toJson(null));
+        assertThrows(IllegalArgumentException.class, () -> registry.fromJson("", PingMessage.class));
+        assertThrows(NullPointerException.class, () -> registry.fromJson("{}", null));
+        assertThrows(IllegalArgumentException.class, () -> registry.parse(" "));
+    }
+
+    @Test
     void parseHandlesMissingUnknownAndInvalidPayloads() {
         RecordingLogger logger = new RecordingLogger();
         MessageRegistry registry = new MessageRegistry(logger);

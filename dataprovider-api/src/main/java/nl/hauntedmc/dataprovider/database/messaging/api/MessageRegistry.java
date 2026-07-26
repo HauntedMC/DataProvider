@@ -47,16 +47,24 @@ public final class MessageRegistry {
 
     /** Serialize any EventMessage to JSON. */
     public String toJson(EventMessage msg) {
+        Objects.requireNonNull(msg, "Message cannot be null.");
         return gson.toJson(msg);
     }
 
     /** Deserialize a known subclass from JSON. */
     public <T extends EventMessage> T fromJson(String json, Class<T> cls) {
+        if (json == null || json.isBlank()) {
+            throw new IllegalArgumentException("Message JSON cannot be null or blank.");
+        }
+        Objects.requireNonNull(cls, "Message class cannot be null.");
         return gson.fromJson(json, cls);
     }
 
     /** Parse JSON, look up `type` field, and return correct subclass. */
     public EventMessage parse(String json) {
+        if (json == null || json.isBlank()) {
+            throw new IllegalArgumentException("Message JSON cannot be null or blank.");
+        }
         try {
             JsonObject obj = JsonParser.parseString(json).getAsJsonObject();
             if (!obj.has("type")) {
