@@ -5,10 +5,12 @@ import nl.hauntedmc.dataprovider.core.identity.CallerContextResolver;
 import nl.hauntedmc.dataprovider.core.identity.PluginIdentity;
 import nl.hauntedmc.dataprovider.core.identity.PluginIdentityRegistry;
 import nl.hauntedmc.dataprovider.logging.LoggerAdapter;
+import nl.hauntedmc.dataprovider.exception.ProviderClosedException;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
@@ -40,6 +42,25 @@ class DataProviderHandlerIdentityTest {
         DataProviderHandler handler = handler(resolver);
 
         assertDoesNotThrow(() -> handler.requireIdentity(identity));
+    }
+
+    @Test
+    void pluginIdentityLookupReportsItsOwnOperationWhenClosed() {
+        DataProviderRegistry registry = mock(DataProviderRegistry.class);
+        when(registry.isClosed()).thenReturn(true);
+        DataProviderHandler handler = new DataProviderHandler(
+                registry,
+                mock(CallerContextResolver.class),
+                mock(LoggerAdapter.class),
+                getClass().getClassLoader()
+        );
+        PluginIdentity identity =
+                new PluginIdentityRegistry().register("owner", new ClassLoader() {
+                });
+
+        ProviderClosedException failure =
+                assertThrows(ProviderClosedException.class, () -> handler.getPluginId(identity));
+        assertEquals("getPluginId", failure.operationName());
     }
 
     private DataProviderHandler handler(CallerContextResolver resolver) {

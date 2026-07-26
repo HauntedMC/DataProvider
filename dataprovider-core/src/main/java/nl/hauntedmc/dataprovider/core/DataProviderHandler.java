@@ -175,7 +175,7 @@ public class DataProviderHandler {
 
     /** Resolves the platform-derived identity for API features that need logging context. */
     public String getCurrentPluginId() {
-        requireOpen("createOrmContext");
+        requireOpen("getCurrentPluginId");
         return resolvePluginId().value();
     }
 
@@ -212,7 +212,7 @@ public class DataProviderHandler {
     }
 
     public String getPluginId(PluginIdentity identity) {
-        requireOpen("createOrmContext");
+        requireOpen("getPluginId");
         requireIdentity(identity);
         return identity.pluginId();
     }
