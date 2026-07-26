@@ -45,8 +45,14 @@ public final class DefaultDataProviderApi implements DataProviderAPI {
                     "ORMContext requires the scoped DataSource returned by a registered relational provider."
             );
         }
+        PluginIdentity boundIdentity = requireIdentity();
         return new nl.hauntedmc.dataprovider.core.orm.ORMContext(
-                pluginId(), dataSource, logger, schemaMode, entityClasses);
+                handler.getPluginId(boundIdentity),
+                dataSource,
+                logger,
+                handler.getConfiguredOrmSchemaMode(boundIdentity),
+                entityClasses
+        );
     }
 
     /** Package-visible for API-path regression tests. */
@@ -94,10 +100,6 @@ public final class DefaultDataProviderApi implements DataProviderAPI {
             DataProviderHandler handler, PluginIdentity identity, DatabaseProvider provider
     ) {
         return IdentityBoundDatabaseProvider.wrap(handler, identity, provider);
-    }
-
-    private String pluginId() {
-        return handler.getPluginId(requireIdentity());
     }
 
     private PluginIdentity requireIdentity() {

@@ -18,6 +18,10 @@ public interface DataProviderAPI {
         throw new UnsupportedOperationException("This DataProvider API does not support plugin binding.");
     }
 
+    /**
+     * Creates an ORM context. The platform administrator's configured schema mode is authoritative;
+     * the legacy {@code schemaMode} argument is retained for binary compatibility and is ignored.
+     */
     ORMContext createOrmContext(
             DataSource dataSource,
             LoggerAdapter logger,

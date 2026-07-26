@@ -375,6 +375,13 @@ public class DataProviderHandler {
         return registry.getOrmSchemaMode();
     }
 
+    /** Returns the administrator-controlled ORM schema mode for an active plugin identity. */
+    public String getConfiguredOrmSchemaMode(PluginIdentity identity) {
+        requireOpen("getConfiguredOrmSchemaMode");
+        requireIdentity(identity);
+        return registry.getOrmSchemaMode();
+    }
+
     public void reloadConfiguration() {
         requireOpen("reloadConfiguration");
         requireInternalCaller();

@@ -63,6 +63,25 @@ class DataProviderHandlerIdentityTest {
         assertEquals("getPluginId", failure.operationName());
     }
 
+    @Test
+    void pluginOrmSchemaModeComesFromTheManagedConfiguration() {
+        ClassLoader ownerLoader = new ClassLoader() {
+        };
+        PluginIdentity identity = new PluginIdentityRegistry().register("owner", ownerLoader);
+        CallerContextResolver resolver = mock(CallerContextResolver.class);
+        when(resolver.isIdentityActive(identity)).thenReturn(true);
+        DataProviderRegistry registry = mock(DataProviderRegistry.class);
+        when(registry.getOrmSchemaMode()).thenReturn("validate");
+        DataProviderHandler handler = new DataProviderHandler(
+                registry,
+                resolver,
+                mock(LoggerAdapter.class),
+                getClass().getClassLoader()
+        );
+
+        assertEquals("validate", handler.getConfiguredOrmSchemaMode(identity));
+    }
+
     private DataProviderHandler handler(CallerContextResolver resolver) {
         return new DataProviderHandler(
                 mock(DataProviderRegistry.class),
