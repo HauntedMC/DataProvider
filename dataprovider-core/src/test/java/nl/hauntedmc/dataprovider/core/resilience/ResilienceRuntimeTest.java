@@ -238,6 +238,26 @@ class ResilienceRuntimeTest {
         runtime.close();
     }
 
+    @Test
+    void nonfatalProbeErrorsAreContainedAndRecorded() {
+        ManualScheduler scheduler = new ManualScheduler();
+        ScriptedProvider provider = new ScriptedProvider(true) {
+            @Override
+            public boolean probeRemoteHealth() {
+                throw new AssertionError("probe failed");
+            }
+        };
+        ResilienceRuntime runtime = runtime(new DirectExecutorService(), scheduler, 3);
+
+        ResilienceRuntime.Control control = runtime.track(
+                "resource", provider, () -> ProviderLifecycleState.READY
+        );
+
+        assertEquals(ConnectionHealthSnapshot.RemoteHealth.ERROR, control.snapshot().remoteHealth());
+        assertEquals(1, control.snapshot().consecutiveFailures());
+        runtime.close();
+    }
+
     private static ResilienceRuntime runtime(
             java.util.concurrent.ExecutorService workers,
             ScheduledExecutorService scheduler,

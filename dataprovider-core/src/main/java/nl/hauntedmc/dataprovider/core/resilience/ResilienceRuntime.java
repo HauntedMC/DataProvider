@@ -281,7 +281,9 @@ public final class ResilienceRuntime implements AutoCloseable {
                 boolean probeError = false;
                 try {
                     healthy = kind == AttemptKind.RECOVERY ? provider.recover() : provider.probeRemoteHealth();
-                } catch (RuntimeException exception) {
+                } catch (VirtualMachineError fatal) {
+                    throw fatal;
+                } catch (Throwable exception) {
                     healthy = false;
                     probeError = true;
                 }
