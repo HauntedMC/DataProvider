@@ -10,8 +10,6 @@ import org.hibernate.Session;
  */
 public interface ORMContext extends AutoCloseable {
 
-    Session openSession();
-
     <T> T runInTransaction(TransactionCallback<T> callback);
 
     void shutdown();

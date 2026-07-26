@@ -155,12 +155,7 @@ public class ORMContext implements nl.hauntedmc.dataprovider.api.orm.ORMContext 
         return sessionFactory;
     }
 
-    /**
-     * Opens and returns a new Hibernate Session.
-     *
-     * @return A new Session.
-     */
-    public Session openSession() {
+    private Session openManagedSession() {
         return requireSessionFactory().openSession();
     }
 
@@ -174,7 +169,7 @@ public class ORMContext implements nl.hauntedmc.dataprovider.api.orm.ORMContext 
      */
     public <T> T runInTransaction(TransactionCallback<T> callback) {
         Objects.requireNonNull(callback, "Transaction callback cannot be null.");
-        try (Session session = openSession()) {
+        try (Session session = openManagedSession()) {
             Transaction tx = session.beginTransaction();
             TransactionalSession callbackSession = TransactionalSession.create(session);
             try {
