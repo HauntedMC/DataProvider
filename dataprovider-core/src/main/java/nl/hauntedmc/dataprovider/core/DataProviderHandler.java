@@ -203,6 +203,12 @@ public class DataProviderHandler {
             logger.error("Rejected DataProvider handle use for an inactive plugin identity.");
             throw new SecurityException("This DataProvider handle belongs to a disabled or replaced plugin.");
         }
+        CallerContext caller = callerContextResolver.resolveCallerIfPresent();
+        if (caller != null && (!identity.pluginId().equals(PluginId.of(caller.pluginId()).value())
+                || identity.classLoader() != caller.classLoader())) {
+            logger.error("Rejected DataProvider handle use by a different plugin.");
+            throw new SecurityException("This DataProvider handle belongs to a different plugin.");
+        }
     }
 
     public String getPluginId(PluginIdentity identity) {

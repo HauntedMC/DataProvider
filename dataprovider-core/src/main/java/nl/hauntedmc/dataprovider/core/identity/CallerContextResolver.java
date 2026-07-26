@@ -18,6 +18,18 @@ public interface CallerContextResolver {
     CallerContext resolveCaller();
 
     /**
+     * Resolves a plugin caller when one is present, or returns {@code null} for generic worker
+     * threads that contain no platform plugin frame.
+     */
+    default CallerContext resolveCallerIfPresent() {
+        try {
+            return resolveCaller();
+        } catch (SecurityException ignored) {
+            return null;
+        }
+    }
+
+    /**
      * Issues the identity for an explicitly supplied platform plugin object. This is called at
      * the API binding boundary, never while a database handle is being used.
      */

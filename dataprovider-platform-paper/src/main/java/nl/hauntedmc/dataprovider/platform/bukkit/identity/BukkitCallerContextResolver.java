@@ -47,6 +47,17 @@ public final class BukkitCallerContextResolver implements CallerContextResolver 
     }
 
     @Override
+    public CallerContext resolveCallerIfPresent() {
+        return PluginCallerChainResolver.findNearestMappedCaller(
+                callerChain.get(),
+                classLoader -> {
+                    PluginIdentity identity = identities.find(classLoader);
+                    return identity == null ? null : identity.pluginId();
+                }
+        );
+    }
+
+    @Override
     public boolean isKnownPlugin(String pluginId) {
         return identities.isKnownPlugin(pluginId);
     }

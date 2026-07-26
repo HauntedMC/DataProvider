@@ -17,9 +17,24 @@ public final class PluginCallerChainResolver {
             Function<ClassLoader, String> pluginIdResolver,
             String missingCallerMessage
     ) {
+        Objects.requireNonNull(missingCallerMessage, "Missing caller message cannot be null.");
+        CallerContext caller = findNearestMappedCaller(callerChain, pluginIdResolver);
+        if (caller != null) {
+            return caller;
+        }
+        throw new SecurityException(missingCallerMessage);
+    }
+
+    /**
+     * Returns the nearest mapped plugin caller, or {@code null} when no registered plugin class
+     * loader is present.
+     */
+    public static CallerContext findNearestMappedCaller(
+            List<ClassLoader> callerChain,
+            Function<ClassLoader, String> pluginIdResolver
+    ) {
         Objects.requireNonNull(callerChain, "Caller chain cannot be null.");
         Objects.requireNonNull(pluginIdResolver, "Plugin ID resolver cannot be null.");
-        Objects.requireNonNull(missingCallerMessage, "Missing caller message cannot be null.");
 
         for (ClassLoader callerLoader : callerChain) {
             if (callerLoader == null) {
@@ -33,6 +48,6 @@ public final class PluginCallerChainResolver {
             return new CallerContext(pluginId, callerLoader);
         }
 
-        throw new SecurityException(missingCallerMessage);
+        return null;
     }
 }
