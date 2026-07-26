@@ -13,6 +13,7 @@ import nl.hauntedmc.dataprovider.database.relational.RelationalDataAccess;
 import nl.hauntedmc.dataprovider.database.relational.RelationalDatabaseProvider;
 import nl.hauntedmc.dataprovider.exception.ProviderClosedException;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 
 import javax.sql.DataSource;
 import java.lang.reflect.Proxy;
@@ -22,6 +23,7 @@ import java.util.concurrent.CompletableFuture;
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNotSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -34,6 +36,7 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.when;
 import static org.mockito.Mockito.times;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 
 class CurrentApiTest {
 
@@ -60,11 +63,24 @@ class CurrentApiTest {
         when(handler.getPluginId(identity)).thenReturn("plugin");
         DatabaseProvider provider = mock(DatabaseProvider.class);
         OwnerScope ownerScope = OwnerScope.of("component.scope");
-        when(handler.registerDatabaseForScopeOrThrow(identity, ownerScope, DatabaseType.REDIS, "cache")).thenReturn(provider);
+        when(handler.registerDatabaseForScopeOrThrow(
+                eq(identity),
+                any(OwnerScope.class),
+                eq(DatabaseType.REDIS),
+                eq("cache")
+        )).thenReturn(provider);
         DataProviderScope scope = boundApi(handler, identity).scope(ownerScope);
 
         scope.registerDatabaseOrThrow(DatabaseType.REDIS, "cache");
-        verify(handler).registerDatabaseForScopeOrThrow(identity, ownerScope, DatabaseType.REDIS, "cache");
+        ArgumentCaptor<OwnerScope> registrationScope = ArgumentCaptor.forClass(OwnerScope.class);
+        verify(handler).registerDatabaseForScopeOrThrow(
+                eq(identity),
+                registrationScope.capture(),
+                eq(DatabaseType.REDIS),
+                eq("cache")
+        );
+        assertFalse(ownerScope.equals(registrationScope.getValue()));
+        assertEquals(ownerScope, scope.ownerScope());
     }
 
     @Test
@@ -190,14 +206,42 @@ class CurrentApiTest {
         when(handler.getPluginId(identity)).thenReturn("plugin");
         doThrow(new IllegalStateException("cleanup failed"))
                 .doNothing()
-                .when(handler).unregisterAllDatabasesForScope(identity, ownerScope);
+                .when(handler).unregisterAllDatabasesForScope(eq(identity), any(OwnerScope.class));
         DataProviderScope scope = boundApi(handler, identity).scope(ownerScope);
 
         assertThrows(IllegalStateException.class, scope::close);
         assertEquals(DataProviderScope.LifecycleState.OPEN, scope.lifecycleState());
         scope.close();
         assertEquals(DataProviderScope.LifecycleState.CLOSED, scope.lifecycleState());
-        verify(handler, times(2)).unregisterAllDatabasesForScope(identity, ownerScope);
+        verify(handler, times(2)).unregisterAllDatabasesForScope(eq(identity), any(OwnerScope.class));
+    }
+
+    @Test
+    void scopesWithTheSamePublicOwnerHaveIndependentRegistrations() {
+        DataProviderHandler handler = mock(DataProviderHandler.class);
+        PluginIdentity identity = identity("plugin");
+        OwnerScope ownerScope = OwnerScope.of("component.scope");
+        DatabaseProvider provider = mock(DatabaseProvider.class);
+        when(handler.registerDatabaseForScopeOrThrow(
+                eq(identity),
+                any(OwnerScope.class),
+                eq(DatabaseType.REDIS),
+                eq("cache")
+        )).thenReturn(provider);
+        DataProviderScope first = boundApi(handler, identity).scope(ownerScope);
+        DataProviderScope second = boundApi(handler, identity).scope(ownerScope);
+
+        first.registerDatabaseOrThrow(DatabaseType.REDIS, "cache");
+        second.registerDatabaseOrThrow(DatabaseType.REDIS, "cache");
+
+        ArgumentCaptor<OwnerScope> scopes = ArgumentCaptor.forClass(OwnerScope.class);
+        verify(handler, times(2)).registerDatabaseForScopeOrThrow(
+                eq(identity),
+                scopes.capture(),
+                eq(DatabaseType.REDIS),
+                eq("cache")
+        );
+        assertNotEquals(scopes.getAllValues().get(0), scopes.getAllValues().get(1));
     }
 
     @Test

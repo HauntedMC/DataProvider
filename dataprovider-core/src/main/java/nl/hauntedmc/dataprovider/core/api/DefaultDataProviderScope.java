@@ -13,6 +13,7 @@ import nl.hauntedmc.dataprovider.exception.RetryAdvice;
 
 import java.util.Map;
 import java.util.Objects;
+import java.util.UUID;
 
 /** Optional scoped lifecycle helper for independently managed plugin components. */
 public final class DefaultDataProviderScope implements DataProviderScope {
@@ -21,6 +22,7 @@ public final class DefaultDataProviderScope implements DataProviderScope {
 
     private final DataProviderHandler handler;
     private final OwnerScope ownerScope;
+    private final OwnerScope registrationScope;
     private final PluginIdentity identity;
     private final Object lifecycleMonitor = new Object();
     private volatile LifecycleState lifecycleState = LifecycleState.OPEN;
@@ -28,6 +30,7 @@ public final class DefaultDataProviderScope implements DataProviderScope {
     DefaultDataProviderScope(DataProviderHandler handler, OwnerScope ownerScope, PluginIdentity identity) {
         this.handler = Objects.requireNonNull(handler, "DataProviderHandler cannot be null.");
         this.ownerScope = Objects.requireNonNull(ownerScope, "Owner scope cannot be null.");
+        this.registrationScope = uniqueRegistrationScope(ownerScope);
         this.identity = Objects.requireNonNull(identity, "Plugin identity cannot be null.");
     }
 
@@ -48,7 +51,12 @@ public final class DefaultDataProviderScope implements DataProviderScope {
         synchronized (lifecycleMonitor) {
             requireStructuredOpen("scope.registerDatabase");
             return DefaultDataProviderApi.wrapProvider(handler, identity,
-                    handler.registerDatabaseForScopeOrThrow(identity, ownerScope, databaseType, connectionIdentifier)
+                    handler.registerDatabaseForScopeOrThrow(
+                            identity,
+                            registrationScope,
+                            databaseType,
+                            connectionIdentifier
+                    )
             );
         }
     }
@@ -57,7 +65,7 @@ public final class DefaultDataProviderScope implements DataProviderScope {
     public void unregisterDatabase(DatabaseType databaseType, String connectionIdentifier) {
         synchronized (lifecycleMonitor) {
             requireOpen("scope.unregisterDatabase");
-            handler.unregisterDatabaseForScope(identity, ownerScope, databaseType, connectionIdentifier);
+            handler.unregisterDatabaseForScope(identity, registrationScope, databaseType, connectionIdentifier);
         }
     }
 
@@ -65,7 +73,7 @@ public final class DefaultDataProviderScope implements DataProviderScope {
     public void unregisterAllDatabases() {
         synchronized (lifecycleMonitor) {
             requireOpen("scope.unregisterAllDatabases");
-            handler.unregisterAllDatabasesForScope(identity, ownerScope);
+            handler.unregisterAllDatabasesForScope(identity, registrationScope);
         }
     }
 
@@ -74,7 +82,12 @@ public final class DefaultDataProviderScope implements DataProviderScope {
         synchronized (lifecycleMonitor) {
             requireStructuredOpen("scope.requireRegisteredDatabase");
             return DefaultDataProviderApi.wrapProvider(handler, identity,
-                    handler.requireRegisteredDatabaseForScope(identity, ownerScope, databaseType, connectionIdentifier)
+                    handler.requireRegisteredDatabaseForScope(
+                            identity,
+                            registrationScope,
+                            databaseType,
+                            connectionIdentifier
+                    )
             );
         }
     }
@@ -88,7 +101,7 @@ public final class DefaultDataProviderScope implements DataProviderScope {
             }
             lifecycleState = LifecycleState.CLOSING;
             try {
-                handler.unregisterAllDatabasesForScope(identity, ownerScope);
+                handler.unregisterAllDatabasesForScope(identity, registrationScope);
                 lifecycleState = LifecycleState.CLOSED;
             } catch (RuntimeException | Error failure) {
                 lifecycleState = LifecycleState.OPEN;
@@ -120,5 +133,12 @@ public final class DefaultDataProviderScope implements DataProviderScope {
 
     private void requireOwner() {
         handler.requireIdentity(identity);
+    }
+
+    private static OwnerScope uniqueRegistrationScope(OwnerScope ownerScope) {
+        String suffix = "$" + UUID.randomUUID();
+        String owner = ownerScope.value();
+        int maximumPrefixLength = 256 - suffix.length();
+        return OwnerScope.of(owner.substring(0, Math.min(owner.length(), maximumPrefixLength)) + suffix);
     }
 }
