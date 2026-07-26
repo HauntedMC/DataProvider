@@ -3,8 +3,6 @@ package nl.hauntedmc.dataprovider.database.messaging.durable;
 import nl.hauntedmc.dataprovider.database.messaging.api.EventMessage;
 import org.junit.jupiter.api.Test;
 
-import java.util.concurrent.CompletableFuture;
-
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -28,24 +26,8 @@ class DurableEventTest {
     }
 
     @Test
-    void durableCloseDoesNotWaitForCleanup() {
-        DurableSubscription subscription = new DurableSubscription() {
-            @Override public String id() { return "durable"; }
-            @Override public DurableSubscriptionSnapshot snapshot() {
-                return new DurableSubscriptionSnapshot(
-                        "durable", "stream", "group", "consumer", false,
-                        0, 0, 0, 0, 0, 0, null
-                );
-            }
-            @Override public CompletableFuture<Void> closeAsync() {
-                return CompletableFuture.failedFuture(new IllegalStateException("close failed"));
-            }
-            @Override public CompletableFuture<Void> completion() {
-                return CompletableFuture.completedFuture(null);
-            }
-        };
-
-        subscription.close();
+    void durableSubscriptionIsNotAutoCloseable() {
+        assertTrue(!AutoCloseable.class.isAssignableFrom(DurableSubscription.class));
     }
 
     private record TestEvent(String type) implements EventMessage {

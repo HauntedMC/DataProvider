@@ -7,6 +7,9 @@ import nl.hauntedmc.dataprovider.database.messaging.api.Subscription;
 
 import java.util.Objects;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 import java.util.function.Consumer;
 
 /**
@@ -15,6 +18,7 @@ import java.util.function.Consumer;
 public final class RedisMessagingExample {
 
     private static final String STAFF_CHAT_CHANNEL = "proxy.staffchat.message";
+    private static final long SHUTDOWN_TIMEOUT_SECONDS = 10L;
 
     private MessagingDataAccess bus;
     private Subscription subscription;
@@ -44,7 +48,7 @@ public final class RedisMessagingExample {
         bus = null;
         try {
             if (current != null) {
-                current.unsubscribe();
+                awaitShutdown(current.unsubscribe());
             }
         } finally {
             api.unregisterDatabase(DatabaseType.REDIS_MESSAGING, "default");
@@ -56,6 +60,17 @@ public final class RedisMessagingExample {
             throw new IllegalStateException("Redis messaging is not registered.");
         }
         return bus;
+    }
+
+    private static void awaitShutdown(CompletableFuture<Void> shutdown) {
+        try {
+            shutdown.get(SHUTDOWN_TIMEOUT_SECONDS, TimeUnit.SECONDS);
+        } catch (InterruptedException interrupted) {
+            Thread.currentThread().interrupt();
+            throw new IllegalStateException("Interrupted while stopping Redis messaging.", interrupted);
+        } catch (ExecutionException | TimeoutException failure) {
+            throw new IllegalStateException("Redis messaging did not stop cleanly.", failure);
+        }
     }
 
     public static final class StaffChatMessage extends AbstractEventMessage {

@@ -2,9 +2,6 @@ package nl.hauntedmc.dataprovider.database.messaging.api;
 
 import org.junit.jupiter.api.Test;
 
-import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.atomic.AtomicBoolean;
-
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -41,24 +38,8 @@ class MessageContractsTest {
     }
 
     @Test
-    void subscriptionCloseDelegatesToUnsubscribe() {
-        AtomicBoolean unsubscribed = new AtomicBoolean(false);
-        Subscription subscription = () -> {
-            unsubscribed.set(true);
-            return CompletableFuture.completedFuture(null);
-        };
-
-        subscription.close();
-
-        assertTrue(unsubscribed.get());
-    }
-
-    @Test
-    void subscriptionCloseDoesNotWaitForCleanup() {
-        Subscription subscription = () ->
-                CompletableFuture.failedFuture(new IllegalStateException("unsubscribe failed"));
-
-        subscription.close();
+    void subscriptionIsNotAutoCloseable() {
+        assertTrue(!AutoCloseable.class.isAssignableFrom(Subscription.class));
     }
 
     private static final class TestMessage extends AbstractEventMessage {

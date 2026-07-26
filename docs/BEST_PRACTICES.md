@@ -26,6 +26,11 @@
 - Use one clear message class per channel contract.
 - Keep channels stable and namespaced (for example: `proxy.staffchat.message`).
 - Retain the returned `Subscription`; the same logical handle remains valid through Redis reconnects.
+- Subscriptions are intentionally not `AutoCloseable`. Call `unsubscribe()` (Pub/Sub) or `closeAsync()`
+  (durable consumers) and retain the returned future; await it with an application-level timeout whenever
+  subsequent work requires the handler to be stopped.
+- A handler may initiate its own asynchronous shutdown, but must not wait for it: durable consumers cannot
+  finish until the current delivery handler returns.
 - Inspect `Subscription.snapshot()` or `MessagingDataAccess.subscriptions()` for state, reconnect count, last failure and downtime.
 - Treat a normally completed subscription as explicitly closed and an exceptionally completed subscription as terminally failed.
 - Keep handlers fast and non-blocking; use `security.max_queued_messages_per_handler` to cap per-handler backlog.

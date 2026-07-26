@@ -8,8 +8,14 @@ import java.util.concurrent.CompletableFuture;
  * handle, its handler registration and its diagnostics remain valid.
  */
 @FunctionalInterface
-public interface Subscription extends AutoCloseable {
-    /** Stops this subscription. */
+public interface Subscription {
+    /**
+     * Starts shutdown and completes when this subscription can no longer receive callbacks.
+     *
+     * <p>This operation is deliberately asynchronous: it is safe to invoke from a handler, where
+     * waiting for termination can deadlock. Callers that need a termination barrier must await the
+     * returned future with their own application timeout.</p>
+     */
     CompletableFuture<Void> unsubscribe();
 
     /** Stable logical identity for diagnostics. Empty only for legacy implementations. */
@@ -31,17 +37,11 @@ public interface Subscription extends AutoCloseable {
     }
 
     /**
-     * Completes normally after an explicit close, or exceptionally when automatic recovery reaches a
+     * Completes normally after an explicit unsubscribe, or exceptionally when automatic recovery reaches a
      * terminal failure. Transient listener failures do not complete this future.
      */
     default CompletableFuture<Void> completion() {
         return CompletableFuture.completedFuture(null);
     }
 
-    @Override
-    default void close() {
-        // This can be called from the listener callback itself. Waiting here would prevent that
-        // callback from returning and can therefore deadlock listener termination.
-        unsubscribe();
-    }
 }

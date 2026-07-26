@@ -39,12 +39,31 @@ import java.util.function.Predicate;
 class DatabaseFactory {
 
     private static final ThreadLocal<PluginId> CREATION_PLUGIN = new ThreadLocal<>();
-
     private final DatabaseConfigMap configMap;
     private final LoggerAdapter logger;
     private final DataProviderExecutionRuntime executionRuntime;
     private final Predicate<String> knownPlugin;
     private final ConcurrentMap<ResourceKey, PhysicalResource> physicalResources = new ConcurrentHashMap<>();
+
+    /**
+     * Observes cleanup work that cannot be returned to the caller because construction has already
+     * failed. Normal lifecycle APIs always return their future to the caller instead.
+     */
+    private static void observeCleanupFailure(
+            LoggerAdapter logger,
+            java.util.function.Supplier<java.util.concurrent.CompletableFuture<Void>> cleanup,
+            String resource
+    ) {
+        try {
+            cleanup.get().whenComplete((unused, failure) -> {
+                if (failure != null) {
+                    logger.error("Failed to stop " + resource + ".", failure);
+                }
+            });
+        } catch (RuntimeException failure) {
+            logger.error("Failed to start shutdown for " + resource + ".", failure);
+        }
+    }
 
     protected DatabaseFactory(DatabaseConfigMap configMap, LoggerAdapter logger) {
         this(configMap, logger, null, pluginId -> true);
@@ -139,7 +158,8 @@ class DatabaseFactory {
                         key,
                         createPhysical(type, connectionConfig),
                         executionRuntime.admissionLimits(type),
-                        connectionFingerprint(connectionConfig)
+                        connectionFingerprint(connectionConfig),
+                        logger
                 );
             });
             return switch (type) {
@@ -388,6 +408,7 @@ class DatabaseFactory {
         private final ResourceKey key;
         private volatile ManagedDatabaseProvider provider;
         private final DataProviderExecutionRuntime.AdmissionLimits admissionLimits;
+        private final LoggerAdapter logger;
         private String configurationFingerprint;
         private int leases = 1;
         private boolean retired;
@@ -403,13 +424,17 @@ class DatabaseFactory {
                 ResourceKey key,
                 ManagedDatabaseProvider provider,
                 DataProviderExecutionRuntime.AdmissionLimits admissionLimits,
-                String configurationFingerprint
+                String configurationFingerprint,
+                LoggerAdapter logger
         ) {
             this.key = key;
             this.provider = provider;
             this.admissionLimits = admissionLimits;
             this.configurationFingerprint = configurationFingerprint;
+            this.logger = Objects.requireNonNull(logger, "Logger cannot be null.");
         }
+
+        private LoggerAdapter logger() { return logger; }
 
         private synchronized boolean hasFingerprint(String fingerprint) {
             return !retired && configurationFingerprint.equals(fingerprint);
@@ -666,6 +691,8 @@ class DatabaseFactory {
         private volatile Throwable failure;
         private volatile long scopedGeneration = -1;
 
+        final LoggerAdapter logger() { return resource.logger(); }
+
         private SharedProviderLease(
                 PhysicalResource resource,
                 ExecutionHandle execution,
@@ -814,12 +841,14 @@ class DatabaseFactory {
         ) {
             if (previousView instanceof MessagingDatabaseProvider messaging) {
                 try {
-                    messaging.getDataAccess().shutdown();
+                    observeCleanupFailure(resource.logger(), messaging.getDataAccess()::shutdown,
+                            "retired Redis messaging access");
                 } catch (RuntimeException ignored) {
                     // The replacement view is already attached; old listener cleanup is best effort.
                 }
                 try {
-                    messaging.getDurableDataAccess().shutdown();
+                    observeCleanupFailure(resource.logger(), messaging.getDurableDataAccess()::shutdown,
+                            "retired durable Redis messaging access");
                 } catch (RuntimeException ignored) {
                     // Durable entries remain reclaimable if an old consumer cannot stop immediately.
                 }
@@ -906,8 +935,9 @@ class DatabaseFactory {
 
         @Override
         protected void onLeaseDisconnecting() {
-            stableAccess.shutdown();
-            stableDurableAccess.shutdown();
+            observeCleanupFailure(logger(), stableAccess::shutdown, "logical Redis messaging access");
+            observeCleanupFailure(logger(), stableDurableAccess::shutdown,
+                    "logical durable Redis messaging access");
         }
     }
 
@@ -1022,7 +1052,8 @@ class DatabaseFactory {
                 LogicalSubscription<T> logical = new LogicalSubscription<>(
                         physical.id(), destination, messageType, type, handler, physical);
                 if (subscriptions.putIfAbsent(logical.id(), logical) != null) {
-                    physical.unsubscribe();
+                    observeCleanupFailure(lease().logger(), physical::unsubscribe,
+                            "duplicate Redis subscription " + physical.id());
                     throw new IllegalStateException("Duplicate logical Redis subscription id: " + logical.id());
                 }
                 return logical;
@@ -1165,7 +1196,8 @@ class DatabaseFactory {
                 LogicalDurableSubscription<T> logical = new LogicalDurableSubscription<>(
                         physical.id(), stream, group, consumer, messageType, type, handler, physical);
                 if (subscriptions.putIfAbsent(logical.id(), logical) != null) {
-                    physical.closeAsync();
+                    observeCleanupFailure(lease().logger(), physical::closeAsync,
+                            "duplicate durable Redis consumer " + physical.id());
                     throw new IllegalStateException("A durable consumer already exists for " + logical.id());
                 }
                 return logical;

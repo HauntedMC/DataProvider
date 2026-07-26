@@ -5,7 +5,7 @@ import nl.hauntedmc.dataprovider.database.messaging.api.SubscriptionState;
 import java.util.concurrent.CompletableFuture;
 
 /** A named consumer running in a durable consumer group. */
-public interface DurableSubscription extends AutoCloseable {
+public interface DurableSubscription {
     String id();
     DurableSubscriptionSnapshot snapshot();
 
@@ -14,13 +14,12 @@ public interface DurableSubscription extends AutoCloseable {
         return snapshot().state();
     }
 
+    /**
+     * Starts shutdown and completes when this consumer has stopped.
+     *
+     * <p>This operation is safe to invoke from a delivery handler. A handler must not wait for the
+     * returned future because the consumer cannot finish until that handler returns.</p>
+     */
     CompletableFuture<Void> closeAsync();
     CompletableFuture<Void> completion();
-
-    @Override
-    default void close() {
-        // A handler may close its own subscription. The consumer cannot complete until the
-        // handler returns, so callers that need to wait must use completion() outside the handler.
-        closeAsync();
-    }
 }
