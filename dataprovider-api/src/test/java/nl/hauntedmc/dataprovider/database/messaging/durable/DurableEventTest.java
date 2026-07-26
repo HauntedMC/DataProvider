@@ -4,7 +4,6 @@ import nl.hauntedmc.dataprovider.database.messaging.api.EventMessage;
 import org.junit.jupiter.api.Test;
 
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.CompletionException;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -29,7 +28,7 @@ class DurableEventTest {
     }
 
     @Test
-    void durableClosePropagatesCleanupFailure() {
+    void durableCloseDoesNotWaitForCleanup() {
         DurableSubscription subscription = new DurableSubscription() {
             @Override public String id() { return "durable"; }
             @Override public DurableSubscriptionSnapshot snapshot() {
@@ -46,7 +45,7 @@ class DurableEventTest {
             }
         };
 
-        assertThrows(CompletionException.class, subscription::close);
+        subscription.close();
     }
 
     private record TestEvent(String type) implements EventMessage {

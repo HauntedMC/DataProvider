@@ -11,6 +11,8 @@ public interface DurableSubscription extends AutoCloseable {
 
     @Override
     default void close() {
-        closeAsync().join();
+        // A handler may close its own subscription. The consumer cannot complete until the
+        // handler returns, so callers that need to wait must use completion() outside the handler.
+        closeAsync();
     }
 }

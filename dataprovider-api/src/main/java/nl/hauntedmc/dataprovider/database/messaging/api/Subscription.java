@@ -40,6 +40,8 @@ public interface Subscription extends AutoCloseable {
 
     @Override
     default void close() {
-        unsubscribe().join();
+        // This can be called from the listener callback itself. Waiting here would prevent that
+        // callback from returning and can therefore deadlock listener termination.
+        unsubscribe();
     }
 }

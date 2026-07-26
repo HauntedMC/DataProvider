@@ -3,12 +3,11 @@ package nl.hauntedmc.dataprovider.database.messaging.api;
 import org.junit.jupiter.api.Test;
 
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.CompletionException;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class MessageContractsTest {
 
@@ -55,11 +54,11 @@ class MessageContractsTest {
     }
 
     @Test
-    void subscriptionClosePropagatesCleanupFailure() {
+    void subscriptionCloseDoesNotWaitForCleanup() {
         Subscription subscription = () ->
                 CompletableFuture.failedFuture(new IllegalStateException("unsubscribe failed"));
 
-        assertThrows(CompletionException.class, subscription::close);
+        subscription.close();
     }
 
     private static final class TestMessage extends AbstractEventMessage {
