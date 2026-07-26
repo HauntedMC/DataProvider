@@ -435,6 +435,7 @@ class DataProviderRegistry {
         DatabaseConfigMap.DatabaseConfigSnapshot previousDatabaseSnapshot = null;
         boolean mainSnapshotApplied = false;
         boolean databaseSnapshotApplied = false;
+        ResilienceRuntime replacementRuntime = null;
         Lock writeLock = lifecycleLock.writeLock();
         writeLock.lock();
         try {
@@ -443,6 +444,7 @@ class DataProviderRegistry {
             previousDatabaseSnapshot = factory.currentConfigurationSnapshot();
             ConfigHandler.ConfigSnapshot mainSnapshot = configHandler.loadSnapshot();
             DatabaseConfigMap.DatabaseConfigSnapshot databaseSnapshot = factory.loadConfigurationSnapshot();
+            replacementRuntime = new ResilienceRuntime(ResilienceRuntimeConfig.from(mainSnapshot.root()));
             configHandler.applySnapshot(mainSnapshot);
             mainSnapshotApplied = true;
             factory.applyConfigurationSnapshot(databaseSnapshot);
@@ -456,13 +458,17 @@ class DataProviderRegistry {
             });
             ResilienceRuntime previousRuntime = resilienceRuntime;
             previousRuntime.close();
-            resilienceRuntime = new ResilienceRuntime(resilienceConfig());
+            resilienceRuntime = replacementRuntime;
+            replacementRuntime = null;
             activeDatabases.values().forEach(ProviderSlot::restartResilience);
             logger.info("Reloaded DataProvider configuration snapshot from disk: "
                     + describeMainConfigurationChanges(previousMainSnapshot, mainSnapshot)
                     + ", changed database files=" + previousDatabaseSnapshot.changedTypeCount(databaseSnapshot)
                     + ". Existing connections retain their previous settings until reconnected.");
         } catch (RuntimeException e) {
+            if (replacementRuntime != null) {
+                replacementRuntime.close();
+            }
             if (databaseSnapshotApplied) {
                 try {
                     factory.applyConfigurationSnapshot(previousDatabaseSnapshot);
