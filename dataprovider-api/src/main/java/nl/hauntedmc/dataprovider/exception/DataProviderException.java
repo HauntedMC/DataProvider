@@ -61,8 +61,8 @@ public abstract class DataProviderException extends RuntimeException {
         super(requireSafeText(safeMessage, "safeMessage"), safeCause);
         this.errorCode = Objects.requireNonNull(errorCode, "Error code cannot be null.");
         this.backendType = backendType;
-        this.connectionIdentifier = normalizeNullable(connectionIdentifier);
-        this.operationName = normalizeNullable(operationName);
+        this.connectionIdentifier = normalizeNullable(connectionIdentifier, "connectionIdentifier");
+        this.operationName = normalizeNullable(operationName, "operationName");
         this.retryAdvice = Objects.requireNonNull(retryAdvice, "Retry advice cannot be null.");
         this.executionOutcome = Objects.requireNonNull(executionOutcome, "Execution outcome cannot be null.");
         this.diagnostics = sanitizeDiagnostics(diagnostics);
@@ -150,13 +150,15 @@ public abstract class DataProviderException extends RuntimeException {
             throw new IllegalArgumentException(field + " cannot be null or blank.");
         }
         String normalized = value.trim();
-        if (normalized.indexOf('\0') >= 0) {
-            throw new IllegalArgumentException(field + " cannot contain null characters.");
+        for (int index = 0; index < value.length(); index++) {
+            if (Character.isISOControl(value.charAt(index))) {
+                throw new IllegalArgumentException(field + " cannot contain control characters.");
+            }
         }
         return normalized;
     }
 
-    private static String normalizeNullable(String value) {
-        return value == null || value.isBlank() ? null : value.trim();
+    private static String normalizeNullable(String value, String field) {
+        return value == null || value.isBlank() ? null : requireSafeText(value, field);
     }
 }

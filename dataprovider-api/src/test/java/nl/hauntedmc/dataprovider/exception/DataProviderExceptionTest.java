@@ -56,6 +56,29 @@ class DataProviderExceptionTest {
                 () -> new DataProviderRegistrationException("Safe message.", context, null));
     }
 
+    @Test
+    void controlCharactersAreRejectedAcrossThePublicFailureBoundary() {
+        assertThrows(IllegalArgumentException.class, () ->
+                new DataProviderRegistrationException(
+                        "Forged\nmessage", context(Map.of(), null), null
+                ));
+        assertThrows(IllegalArgumentException.class, () ->
+                new DataProviderRegistrationException(
+                        "Safe message.", context(Map.of("detail", "forged\rvalue"), null), null
+                ));
+        DataProviderFailureContext forgedOperation = new DataProviderFailureContext(
+                DatabaseType.REDIS,
+                "cache",
+                "redis.getKey\tforged",
+                RetryAdvice.NEVER,
+                ExecutionOutcome.NOT_STARTED,
+                Map.of(),
+                null
+        );
+        assertThrows(IllegalArgumentException.class, () ->
+                new DataProviderRegistrationException("Safe message.", forgedOperation, null));
+    }
+
     private static DataProviderFailureContext context(Map<String, String> diagnostics, String diagnosticId) {
         return new DataProviderFailureContext(
                 DatabaseType.REDIS,
