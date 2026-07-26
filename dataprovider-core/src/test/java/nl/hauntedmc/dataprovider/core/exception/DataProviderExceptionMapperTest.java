@@ -40,6 +40,23 @@ class DataProviderExceptionMapperTest {
     }
 
     @Test
+    void classificationUsesKnownCauseTypesInsteadOfClassNames() {
+        DataProviderException namedLikeTimeout = DataProviderExceptionMapper.translate(
+                new PretendTimeoutException(),
+                execution,
+                "mysql.executeUpdate"
+        );
+        assertInstanceOf(DataProviderOperationException.class, namedLikeTimeout);
+
+        DataProviderException wrappedTimeout = DataProviderExceptionMapper.translate(
+                new IllegalStateException("wrapper", new SQLTimeoutException("timeout")),
+                execution,
+                "mysql.queryForList"
+        );
+        assertInstanceOf(DataProviderTimeoutException.class, wrappedTimeout);
+    }
+
+    @Test
     void queueRejectionIsSafeAndRetryable() {
         DataProviderException mapped = DataProviderExceptionMapper.translate(
                 new ExecutionRejectedException(
@@ -178,5 +195,9 @@ class DataProviderExceptionMapperTest {
         assertEquals(ExecutionOutcome.NOT_STARTED, denied.executionOutcome());
         assertFalse(denied.getMessage().contains("ServerFeatures"));
         assertFalse(denied.diagnostics().containsValue("ServerFeatures"));
+    }
+
+    private static final class PretendTimeoutException extends RuntimeException {
+        private static final long serialVersionUID = 1L;
     }
 }

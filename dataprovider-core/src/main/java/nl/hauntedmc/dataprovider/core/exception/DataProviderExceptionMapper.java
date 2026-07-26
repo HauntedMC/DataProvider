@@ -1,5 +1,6 @@
 package nl.hauntedmc.dataprovider.core.exception;
 
+import com.google.gson.JsonParseException;
 import com.mongodb.MongoSecurityException;
 import com.mongodb.MongoSocketException;
 import com.mongodb.MongoTimeoutException;
@@ -31,10 +32,13 @@ import org.bson.codecs.configuration.CodecConfigurationException;
 import redis.clients.jedis.exceptions.JedisAccessControlException;
 import redis.clients.jedis.exceptions.JedisConnectionException;
 
+import java.net.ConnectException;
+import java.net.SocketException;
 import java.net.SocketTimeoutException;
 import java.sql.SQLIntegrityConstraintViolationException;
 import java.sql.SQLException;
 import java.sql.SQLTimeoutException;
+import java.util.IdentityHashMap;
 import java.util.LinkedHashMap;
 import java.util.Locale;
 import java.util.Map;
@@ -43,6 +47,7 @@ import java.util.concurrent.CompletionException;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Executor;
 import java.util.concurrent.TimeoutException;
+import java.util.function.Predicate;
 
 /** Internal classification and redaction boundary for public DataProvider failures. */
 public final class DataProviderExceptionMapper {
@@ -267,43 +272,57 @@ public final class DataProviderExceptionMapper {
     }
 
     private static boolean isConflict(Throwable failure) {
-        return failure instanceof SQLIntegrityConstraintViolationException
-                || sqlStateStartsWith(failure, "23")
-                || failure instanceof MongoWriteException write && write.getError().getCode() == 11000;
+        return hasCause(failure, candidate ->
+                candidate instanceof SQLIntegrityConstraintViolationException
+                        || sqlStateStartsWith(candidate, "23")
+                        || candidate instanceof MongoWriteException write && write.getError().getCode() == 11000
+        );
     }
 
     private static boolean isAuthenticationFailure(Throwable failure) {
-        if (failure instanceof MongoSecurityException || failure instanceof JedisAccessControlException) {
-            return true;
-        }
-        if (failure instanceof SQLException sql) {
-            return startsWith(sql.getSQLState(), "28") || sql.getErrorCode() == 1045;
-        }
-        String name = failure.getClass().getName();
-        return name.contains("Authentication") || name.contains("AuthException");
+        return hasCause(failure, candidate ->
+                candidate instanceof MongoSecurityException
+                        || candidate instanceof JedisAccessControlException
+                        || candidate instanceof SQLException sql
+                        && (startsWith(sql.getSQLState(), "28") || sql.getErrorCode() == 1045)
+        );
     }
 
     private static boolean isTimeout(Throwable failure) {
-        return failure instanceof SQLTimeoutException || failure instanceof MongoTimeoutException
-                || failure instanceof SocketTimeoutException || failure instanceof TimeoutException
-                || failure.getClass().getSimpleName().contains("Timeout");
+        return hasCause(failure, candidate ->
+                candidate instanceof SQLTimeoutException
+                        || candidate instanceof MongoTimeoutException
+                        || candidate instanceof SocketTimeoutException
+                        || candidate instanceof TimeoutException
+        );
     }
 
     private static boolean isSerializationFailure(Throwable failure) {
-        String name = failure.getClass().getName();
-        return failure instanceof CodecConfigurationException || name.startsWith("com.google.gson.")
-                || name.contains("JsonProcessingException") || name.contains("SerializationException");
+        return hasCause(failure, candidate ->
+                candidate instanceof CodecConfigurationException || candidate instanceof JsonParseException
+        );
     }
 
     private static boolean isUnavailable(Throwable failure) {
-        if (failure instanceof MongoSocketException || failure instanceof JedisConnectionException) {
-            return true;
+        return hasCause(failure, candidate ->
+                candidate instanceof MongoSocketException
+                        || candidate instanceof JedisConnectionException
+                        || candidate instanceof ConnectException
+                        || candidate instanceof SocketException
+                        || candidate instanceof SQLException sql && startsWith(sql.getSQLState(), "08")
+        );
+    }
+
+    private static boolean hasCause(Throwable failure, Predicate<Throwable> predicate) {
+        IdentityHashMap<Throwable, Boolean> seen = new IdentityHashMap<>();
+        Throwable current = failure;
+        while (current != null && seen.put(current, Boolean.TRUE) == null) {
+            if (predicate.test(current)) {
+                return true;
+            }
+            current = current.getCause();
         }
-        if (failure instanceof SQLException sql) {
-            return startsWith(sql.getSQLState(), "08");
-        }
-        String name = failure.getClass().getSimpleName();
-        return name.contains("Connection") || name.contains("Socket") || name.contains("ServerSelection");
+        return false;
     }
 
     private static boolean sqlStateStartsWith(Throwable failure, String prefix) {
