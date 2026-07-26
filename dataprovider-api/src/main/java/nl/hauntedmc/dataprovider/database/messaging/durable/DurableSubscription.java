@@ -1,11 +1,19 @@
 package nl.hauntedmc.dataprovider.database.messaging.durable;
 
+import nl.hauntedmc.dataprovider.database.messaging.api.SubscriptionState;
+
 import java.util.concurrent.CompletableFuture;
 
 /** A named consumer running in a durable consumer group. */
 public interface DurableSubscription extends AutoCloseable {
     String id();
     DurableSubscriptionSnapshot snapshot();
+
+    /** Current logical lifecycle state. */
+    default SubscriptionState state() {
+        return snapshot().state();
+    }
+
     CompletableFuture<Void> closeAsync();
     CompletableFuture<Void> completion();
 

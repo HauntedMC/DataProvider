@@ -429,8 +429,7 @@ final class RedisMessagingDataAccess implements MessagingDataAccess {
         }
 
         private boolean isTerminalFailure(Throwable failure) {
-            String failureType = failure.getClass().getName();
-            if (failureType.endsWith("JedisAccessControlException")) {
+            if (RedisRetryClassifier.isTerminal(failure)) {
                 return true;
             }
             return maxReconnectAttempts > 0 && reconnectCount.get() >= maxReconnectAttempts;

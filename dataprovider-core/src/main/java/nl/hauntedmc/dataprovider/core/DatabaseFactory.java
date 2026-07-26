@@ -1240,12 +1240,22 @@ class DatabaseFactory {
             }
 
             @Override public String id() { return id; }
+            @Override public nl.hauntedmc.dataprovider.database.messaging.api.SubscriptionState state() {
+                return closed.get() ? nl.hauntedmc.dataprovider.database.messaging.api.SubscriptionState.CLOSED
+                        : completion.isCompletedExceptionally()
+                        ? nl.hauntedmc.dataprovider.database.messaging.api.SubscriptionState.FAILED
+                        : physical.get().state();
+            }
             @Override public nl.hauntedmc.dataprovider.database.messaging.durable.DurableSubscriptionSnapshot snapshot() {
                 nl.hauntedmc.dataprovider.database.messaging.durable.DurableSubscriptionSnapshot snapshot = physical.get().snapshot();
+                nl.hauntedmc.dataprovider.database.messaging.api.SubscriptionState currentState = state();
                 return new nl.hauntedmc.dataprovider.database.messaging.durable.DurableSubscriptionSnapshot(
-                        id, stream, group, consumer, !closed.get() && snapshot.active(), snapshot.pendingCount(), snapshot.lag(),
+                        id, stream, group, consumer,
+                        currentState == nl.hauntedmc.dataprovider.database.messaging.api.SubscriptionState.ACTIVE,
+                        snapshot.pendingCount(), snapshot.lag(),
                         snapshot.deliveredCount(), snapshot.acknowledgedCount(), snapshot.reclaimedCount(),
-                        snapshot.deadLetteredCount(), snapshot.lastFailure());
+                        snapshot.deadLetteredCount(), snapshot.lastFailure(), currentState, snapshot.reconnectCount(),
+                        snapshot.lastFailureAt(), snapshot.currentDowntime(), snapshot.totalDowntime());
             }
             @Override public java.util.concurrent.CompletableFuture<Void> closeAsync() {
                 if (!closed.compareAndSet(false, true)) return completion;

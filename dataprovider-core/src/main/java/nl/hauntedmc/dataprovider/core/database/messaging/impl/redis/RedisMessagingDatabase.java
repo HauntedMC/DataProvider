@@ -402,7 +402,11 @@ public final class RedisMessagingDatabase implements MessagingDatabaseProvider, 
                 durableRetentionMaxEntries,
                 durableDeduplicationTtlSeconds,
                 durableDeadLetterMaxEntries,
-                durableRetentionTrimIntervalMs
+                durableRetentionTrimIntervalMs,
+                reconnectInitialBackoffMs,
+                reconnectMaxBackoffMs,
+                reconnectJitter,
+                reconnectMaxAttempts
         );
     }
 

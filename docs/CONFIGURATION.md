@@ -207,10 +207,10 @@ Jedis connection-pool settings remain connection-specific. Worker and queue capa
 - `pool.test_while_idle`
 - `pool.max_subscriptions`: local provider subscription cap
 - `pool.handler_batch_size`: messages processed before a hot handler yields shared capacity
-- `reconnect.initial_backoff_ms`: delay before the first physical listener replacement
+- `reconnect.initial_backoff_ms`: delay before the first Pub/Sub or durable-consumer reconnect
 - `reconnect.max_backoff_ms`: upper bound for exponential reconnect delay
 - `reconnect.jitter`: random proportional variation from `0.0` through `1.0`
-- `reconnect.max_attempts`: terminal retry limit; `0` retries until close or scope shutdown
+- `reconnect.max_attempts`: terminal connection retry limit; `0` retries until close or scope shutdown
 - `connection_timeout_ms`
 - `socket_timeout_ms`
 - `security.max_payload_chars`
@@ -228,6 +228,8 @@ Use a consumer name that is unique among simultaneous process instances in a con
 Redis 6.2 or newer is required. Per-group dead letters are stored in `<stream>:durable:dead:<group>` and retain the source entry ID, event ID, processing key, payload, attempt and failure reason.
 
 Each logical Redis subscription owns at most one long-lived physical listener connection. DataProvider adds subscription capacity on top of `pool.connections`, so subscriptions cannot consume command connections reserved for publishing and shutdown. Listener failures retain the original logical subscription and handler registrations, then reconnect with bounded exponential backoff and jitter. Pool recreation by the resilience layer does not replace the logical subscription handle.
+
+Durable consumers use the same lifecycle (`CONNECTING`, `ACTIVE`, `RECONNECTING`, `CLOSING`, `CLOSED`, `FAILED`) and reconnect policy. Authentication, ACL, invalid command, unsupported capability, and incompatible key-layout failures are terminal and complete the durable handle exceptionally. Transient outage warnings are rate-limited; `DurableSubscriptionSnapshot` reports reconnect count, downtime, and the most recent failure.
 
 ## Operational Notes
 

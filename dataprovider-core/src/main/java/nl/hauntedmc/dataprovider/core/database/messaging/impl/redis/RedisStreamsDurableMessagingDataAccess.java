@@ -7,6 +7,7 @@ import nl.hauntedmc.dataprovider.core.exception.DataProviderExceptionMapper;
 import nl.hauntedmc.dataprovider.core.exception.StructuredFailures;
 import nl.hauntedmc.dataprovider.database.messaging.api.EventMessage;
 import nl.hauntedmc.dataprovider.database.messaging.api.MessageRegistry;
+import nl.hauntedmc.dataprovider.database.messaging.api.SubscriptionState;
 import nl.hauntedmc.dataprovider.database.messaging.durable.DurableDelivery;
 import nl.hauntedmc.dataprovider.database.messaging.durable.DurableEvent;
 import nl.hauntedmc.dataprovider.database.messaging.durable.DurableMessagingDataAccess;
@@ -25,15 +26,18 @@ import redis.clients.jedis.resps.StreamEntry;
 import redis.clients.jedis.resps.StreamGroupInfo;
 import redis.clients.jedis.resps.StreamPendingSummary;
 
-import java.util.List;
-import java.util.Map;
-import java.util.Objects;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
+import java.time.Duration;
+import java.time.Instant;
 import java.util.HexFormat;
+import java.util.List;
+import java.util.Map;
+import java.util.Objects;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
@@ -75,6 +79,10 @@ final class RedisStreamsDurableMessagingDataAccess implements DurableMessagingDa
     private final long deduplicationTtlSeconds;
     private final long deadLetterMaxEntries;
     private final long retentionTrimIntervalMs;
+    private final long reconnectInitialBackoffMs;
+    private final long reconnectMaxBackoffMs;
+    private final double reconnectJitter;
+    private final int reconnectMaxAttempts;
     private final Map<String, ConsumerLoop<?>> consumers = new ConcurrentHashMap<>();
     private final Map<String, AtomicLong> nextTrimAtMillis = new ConcurrentHashMap<>();
     private final AtomicBoolean shuttingDown = new AtomicBoolean();
@@ -93,7 +101,11 @@ final class RedisStreamsDurableMessagingDataAccess implements DurableMessagingDa
             long retentionMaxEntries,
             long deduplicationTtlSeconds,
             long deadLetterMaxEntries,
-            long retentionTrimIntervalMs
+            long retentionTrimIntervalMs,
+            long reconnectInitialBackoffMs,
+            long reconnectMaxBackoffMs,
+            double reconnectJitter,
+            int reconnectMaxAttempts
     ) {
         this.poolSupplier = Objects.requireNonNull(poolSupplier, "Pool supplier cannot be null");
         this.execution = Objects.requireNonNull(execution, "Execution cannot be null");
@@ -109,6 +121,14 @@ final class RedisStreamsDurableMessagingDataAccess implements DurableMessagingDa
         this.deduplicationTtlSeconds = positive(deduplicationTtlSeconds, "deduplicationTtlSeconds");
         this.deadLetterMaxEntries = positive(deadLetterMaxEntries, "deadLetterMaxEntries");
         this.retentionTrimIntervalMs = positive(retentionTrimIntervalMs, "retentionTrimIntervalMs");
+        this.reconnectInitialBackoffMs = nonNegative(reconnectInitialBackoffMs, "reconnectInitialBackoffMs");
+        this.reconnectMaxBackoffMs = atLeast(reconnectMaxBackoffMs, this.reconnectInitialBackoffMs,
+                "reconnectMaxBackoffMs");
+        if (reconnectJitter < 0.0D || reconnectJitter > 1.0D || !Double.isFinite(reconnectJitter)) {
+            throw new IllegalArgumentException("reconnectJitter must be between zero and one");
+        }
+        this.reconnectJitter = reconnectJitter;
+        this.reconnectMaxAttempts = nonNegative(reconnectMaxAttempts, "reconnectMaxAttempts");
     }
 
     @Override
@@ -208,6 +228,21 @@ final class RedisStreamsDurableMessagingDataAccess implements DurableMessagingDa
         return value;
     }
 
+    private static long nonNegative(long value, String name) {
+        if (value < 0) throw new IllegalArgumentException(name + " cannot be negative");
+        return value;
+    }
+
+    private static long atLeast(long value, long minimum, String name) {
+        if (value < minimum) throw new IllegalArgumentException(name + " must be at least " + minimum);
+        return value;
+    }
+
+    private static int nonNegative(int value, String name) {
+        if (value < 0) throw new IllegalArgumentException(name + " cannot be negative");
+        return value;
+    }
+
     private static String name(String value, String label) {
         if (value == null || !NAME_PATTERN.matcher(value).matches()) {
             throw new IllegalArgumentException(label + " must match " + NAME_PATTERN.pattern());
@@ -243,11 +278,19 @@ final class RedisStreamsDurableMessagingDataAccess implements DurableMessagingDa
         private final AtomicBoolean closing = new AtomicBoolean();
         private final AtomicBoolean released = new AtomicBoolean();
         private final CompletableFuture<Void> completion = new CompletableFuture<>();
+        private final AtomicReference<SubscriptionState> state = new AtomicReference<>(SubscriptionState.CONNECTING);
+        private final AtomicReference<Throwable> terminalFailure = new AtomicReference<>();
         private final AtomicReference<String> lastFailure = new AtomicReference<>();
+        private final AtomicReference<Instant> lastFailureAt = new AtomicReference<>();
         private final AtomicLong delivered = new AtomicLong();
         private final AtomicLong acknowledged = new AtomicLong();
         private final AtomicLong reclaimed = new AtomicLong();
         private final AtomicLong deadLettered = new AtomicLong();
+        private final AtomicLong reconnectCount = new AtomicLong();
+        private final AtomicLong downtimeStartedNanos = new AtomicLong(-1L);
+        private final AtomicLong totalDowntimeNanos = new AtomicLong();
+        private final AtomicLong nextOutageLogNanos = new AtomicLong();
+        private final Object backoffMonitor = new Object();
         private boolean groupReady;
         private volatile long pending;
         private volatile long lag;
@@ -277,9 +320,22 @@ final class RedisStreamsDurableMessagingDataAccess implements DurableMessagingDa
         }
 
         private void run() {
+            int consecutiveFailures = 0;
+            boolean recoveryPending = false;
             try {
                 StreamEntryID cursor = new StreamEntryID(0, 0);
                 while (!closing.get() && !shuttingDown.get()) {
+                    if (recoveryPending) {
+                        reconnectCount.incrementAndGet();
+                        setRecovering();
+                        if (!awaitBackoff(consecutiveFailures)) {
+                            break;
+                        }
+                        recoveryPending = false;
+                    }
+                    if (closing.get() || shuttingDown.get()) {
+                        break;
+                    }
                     try (Jedis jedis = pool().getResource()) {
                         ensureGroup(jedis);
                         Map.Entry<StreamEntryID, List<StreamEntry>> claims = jedis.xautoclaim(stream, group, consumer,
@@ -297,22 +353,150 @@ final class RedisStreamsDurableMessagingDataAccess implements DurableMessagingDa
                             for (Map.Entry<String, List<StreamEntry>> entry : entries) deliver(jedis, entry.getValue());
                         }
                         refreshDiagnostics(jedis);
+                        setActive();
+                        consecutiveFailures = 0;
                     } catch (Exception failure) {
                         groupReady = false;
                         if (!closing.get() && !shuttingDown.get()) {
-                            lastFailure.set(compact(failure));
-                            logger.warn("[RedisStreams] Durable consumer " + id + " will retry: " + compact(failure));
-                            sleepQuietly(Math.min(readBlockMs, 1_000));
+                            consecutiveFailures = state.get() == SubscriptionState.ACTIVE
+                                    ? 1 : consecutiveFailures + 1;
+                            boolean terminal = isTerminalFailure(failure);
+                            recordFailure(failure, !terminal);
+                            beginDowntime();
+                            if (terminal) {
+                                failTerminal(failure);
+                                return;
+                            }
+                            recoveryPending = true;
                         }
                     }
                 }
-                completion.complete(null);
             } catch (Throwable failure) {
-                lastFailure.set(compact(failure));
-                completion.completeExceptionally(failure);
+                recordFailure(failure);
+                failTerminal(failure);
             } finally {
                 consumers.remove(id, this);
                 if (released.compareAndSet(false, true)) execution.releaseSubscription();
+                if (state.get() == SubscriptionState.FAILED) {
+                    completion.completeExceptionally(terminalFailure.get());
+                } else {
+                    finishClosed();
+                }
+            }
+        }
+
+        private boolean awaitBackoff(int consecutiveFailures) {
+            long delay = reconnectDelayMillis(Math.max(1, consecutiveFailures));
+            if (delay == 0L) {
+                return !closing.get() && !shuttingDown.get();
+            }
+            try {
+                synchronized (backoffMonitor) {
+                    if (!closing.get() && !shuttingDown.get()) {
+                        backoffMonitor.wait(delay);
+                    }
+                }
+                return !closing.get() && !shuttingDown.get();
+            } catch (InterruptedException interrupted) {
+                if (!closing.get() && !shuttingDown.get()) {
+                    Thread.currentThread().interrupt();
+                }
+                return false;
+            }
+        }
+
+        private long reconnectDelayMillis(int consecutiveFailures) {
+            int shift = Math.min(30, Math.max(0, consecutiveFailures - 1));
+            long exponential;
+            try {
+                exponential = Math.multiplyExact(reconnectInitialBackoffMs, 1L << shift);
+            } catch (ArithmeticException overflow) {
+                exponential = reconnectMaxBackoffMs;
+            }
+            long capped = Math.min(reconnectMaxBackoffMs, exponential);
+            if (capped == 0L || reconnectJitter == 0.0D) {
+                return capped;
+            }
+            double factor = ThreadLocalRandom.current().nextDouble(
+                    Math.max(0.0D, 1.0D - reconnectJitter), 1.0D + reconnectJitter);
+            return Math.max(0L, Math.min(reconnectMaxBackoffMs, Math.round(capped * factor)));
+        }
+
+        private boolean isTerminalFailure(Throwable failure) {
+            return RedisRetryClassifier.isTerminal(failure)
+                    || reconnectMaxAttempts > 0 && reconnectCount.get() >= reconnectMaxAttempts;
+        }
+
+        private void recordFailure(Throwable failure) {
+            recordFailure(failure, false);
+        }
+
+        private void recordFailure(Throwable failure, boolean logOutage) {
+            lastFailure.set(compact(failure));
+            lastFailureAt.set(Instant.now());
+            if (!logOutage) {
+                return;
+            }
+            long now = System.nanoTime();
+            long next = nextOutageLogNanos.get();
+            if (now < next || !nextOutageLogNanos.compareAndSet(next, now + Duration.ofSeconds(30).toNanos())) {
+                return;
+            }
+            logger.warn("[RedisStreams] Durable consumer " + id + " is unavailable; automatic reconnect is active.",
+                    failure);
+        }
+
+        private void beginDowntime() {
+            downtimeStartedNanos.compareAndSet(-1L, System.nanoTime());
+            setRecovering();
+        }
+
+        private void endDowntime() {
+            long startedAt = downtimeStartedNanos.getAndSet(-1L);
+            if (startedAt >= 0L) {
+                totalDowntimeNanos.addAndGet(Math.max(0L, System.nanoTime() - startedAt));
+            }
+        }
+
+        private void setRecovering() {
+            state.updateAndGet(current -> switch (current) {
+                case CONNECTING, ACTIVE, RECONNECTING -> SubscriptionState.RECONNECTING;
+                case CLOSING, CLOSED, FAILED -> current;
+            });
+        }
+
+        private void setActive() {
+            if (!closing.get() && !shuttingDown.get()) {
+                long startedAt = downtimeStartedNanos.get();
+                endDowntime();
+                if (startedAt >= 0L) {
+                    logger.info("[RedisStreams] Durable consumer " + id + " recovered after "
+                            + Duration.ofNanos(Math.max(0L, System.nanoTime() - startedAt)).toMillis()
+                            + "ms and " + reconnectCount.get() + " reconnect attempts.");
+                }
+                state.updateAndGet(current -> switch (current) {
+                    case CONNECTING, RECONNECTING -> SubscriptionState.ACTIVE;
+                    case ACTIVE, CLOSING, CLOSED, FAILED -> current;
+                });
+            }
+        }
+
+        private void failTerminal(Throwable failure) {
+            if (closing.get() || shuttingDown.get()) {
+                return;
+            }
+            if (terminalFailure.compareAndSet(null, failure)) {
+                state.set(SubscriptionState.FAILED);
+                logger.error("[RedisStreams] Durable consumer " + id
+                        + " reached a terminal failure and will not reconnect.", failure);
+            }
+        }
+
+        private void finishClosed() {
+            if (state.get() != SubscriptionState.FAILED) {
+                state.set(SubscriptionState.CLOSED);
+                endDowntime();
+                completion.complete(null);
             }
         }
 
@@ -353,7 +537,7 @@ final class RedisStreamsDurableMessagingDataAccess implements DurableMessagingDa
                     }
                     event = new DurableEvent<>(eventId, processingKey, payload);
                 } catch (Exception failure) {
-                    lastFailure.set(compact(failure));
+                    recordFailure(failure);
                     deadLetter(jedis, entry, "Unprocessable event: " + compact(failure));
                     continue;
                 }
@@ -361,7 +545,7 @@ final class RedisStreamsDurableMessagingDataAccess implements DurableMessagingDa
                     AsyncTaskSupport.runAsync(execution, "redis.streams.handle", () ->
                             handler.accept(new Delivery(entry.getID(), event, attempt))).join();
                 } catch (Exception failure) {
-                    lastFailure.set(compact(failure));
+                    recordFailure(failure);
                     logger.warn("[RedisStreams] Durable event " + entryId + " failed on " + id
                             + " and remains pending: " + compact(failure));
                 }
@@ -390,15 +574,31 @@ final class RedisStreamsDurableMessagingDataAccess implements DurableMessagingDa
 
         @Override public String id() { return id; }
 
+        @Override public SubscriptionState state() { return state.get(); }
+
         @Override public DurableSubscriptionSnapshot snapshot() {
-            return new DurableSubscriptionSnapshot(id, stream, group, consumer, !closing.get() && !completion.isDone(),
-                    pending, lag, delivered.get(), acknowledged.get(), reclaimed.get(), deadLettered.get(), lastFailure.get());
+            long currentDowntime = currentDowntimeNanos();
+            SubscriptionState currentState = state.get();
+            return new DurableSubscriptionSnapshot(id, stream, group, consumer, currentState == SubscriptionState.ACTIVE,
+                    pending, lag, delivered.get(), acknowledged.get(), reclaimed.get(), deadLettered.get(), lastFailure.get(),
+                    currentState, reconnectCount.get(), lastFailureAt.get(), Duration.ofNanos(currentDowntime),
+                    Duration.ofNanos(totalDowntimeNanos.get() + currentDowntime));
+        }
+
+        private long currentDowntimeNanos() {
+            long startedAt = downtimeStartedNanos.get();
+            return startedAt < 0L ? 0L : Math.max(0L, System.nanoTime() - startedAt);
         }
 
         @Override public CompletableFuture<Void> closeAsync() {
             // Do not interrupt a user handler: it may be between committing an idempotent effect and ACK.
             // The bounded XREAD block observes this flag promptly, and any unacknowledged entry stays reclaimable.
-            closing.set(true);
+            if (closing.compareAndSet(false, true)) {
+                state.updateAndGet(current -> current == SubscriptionState.FAILED ? current : SubscriptionState.CLOSING);
+                synchronized (backoffMonitor) {
+                    backoffMonitor.notifyAll();
+                }
+            }
             return completion;
         }
 
