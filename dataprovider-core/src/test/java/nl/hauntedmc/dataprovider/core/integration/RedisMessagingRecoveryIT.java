@@ -160,7 +160,9 @@ class RedisMessagingRecoveryIT {
                     jitter: 0.10
                     max_attempts: 0
                   connection_timeout_ms: 500
-                  socket_timeout_ms: 500
+                  # The durable API shares this connection, whose default blocking read is 500 ms.
+                  # Leave enough headroom for the response to reach the client.
+                  socket_timeout_ms: 1000
                   security:
                     max_payload_chars: 4096
                     max_queued_messages_per_handler: 64

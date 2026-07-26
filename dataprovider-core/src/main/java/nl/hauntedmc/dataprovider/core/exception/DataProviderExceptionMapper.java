@@ -161,6 +161,14 @@ public final class DataProviderExceptionMapper {
                     safeCause(root)
             );
         }
+        if (root instanceof IllegalArgumentException) {
+            return new DataProviderConfigurationException(
+                    DataProviderErrorCode.CONFIGURATION_INVALID,
+                    "The requested database connection has an invalid configuration.",
+                    context(backend, connectionIdentifier, operationName, RetryAdvice.NEVER,
+                            ExecutionOutcome.NOT_STARTED, diagnosticsFor(root)), safeCause(root)
+            );
+        }
         DataProviderException mapped = translate(
                 root, new RegistrationExecutionHandle(backend, connectionIdentifier), operationName);
         if (mapped instanceof DataProviderOperationException) {

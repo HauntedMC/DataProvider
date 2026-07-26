@@ -9,6 +9,7 @@ import nl.hauntedmc.dataprovider.exception.BackendAuthenticationException;
 import nl.hauntedmc.dataprovider.exception.BackendUnavailableException;
 import nl.hauntedmc.dataprovider.exception.DataConflictException;
 import nl.hauntedmc.dataprovider.exception.DataProviderAccessDeniedException;
+import nl.hauntedmc.dataprovider.exception.DataProviderConfigurationException;
 import nl.hauntedmc.dataprovider.exception.DataProviderException;
 import nl.hauntedmc.dataprovider.exception.DataProviderOperationException;
 import nl.hauntedmc.dataprovider.exception.DataProviderTimeoutException;
@@ -210,6 +211,25 @@ class DataProviderExceptionMapperTest {
         assertEquals(ExecutionOutcome.NOT_STARTED, denied.executionOutcome());
         assertFalse(denied.getMessage().contains("ServerFeatures"));
         assertFalse(denied.diagnostics().containsValue("ServerFeatures"));
+    }
+
+    @Test
+    void registrationConfigurationValidationFailureIsStructuredAndSafe() {
+        DataProviderConfigurationException invalid = assertInstanceOf(
+                DataProviderConfigurationException.class,
+                DataProviderExceptionMapper.registrationFailure(
+                        new IllegalArgumentException("socket_timeout_ms must exceed durable.read_block_ms"),
+                        DatabaseType.REDIS_MESSAGING,
+                        "default",
+                        "registerDatabase"
+                )
+        );
+
+        assertEquals(RetryAdvice.NEVER, invalid.retryAdvice());
+        assertEquals(ExecutionOutcome.NOT_STARTED, invalid.executionOutcome());
+        assertEquals("java.lang.IllegalArgumentException", invalid.diagnostics().get("causeType"));
+        assertFalse(invalid.getMessage().contains("socket_timeout_ms"));
+        assertFalse(invalid.getCause().getMessage().contains("socket_timeout_ms"));
     }
 
     private static final class PretendTimeoutException extends RuntimeException {
