@@ -281,7 +281,7 @@ public final class ResilienceRuntime implements AutoCloseable {
                 boolean probeError = false;
                 try {
                     healthy = kind == AttemptKind.RECOVERY ? provider.recover() : provider.probeRemoteHealth();
-                } catch (VirtualMachineError fatal) {
+                } catch (VirtualMachineError | ThreadDeath fatal) {
                     throw fatal;
                 } catch (Throwable exception) {
                     healthy = false;
@@ -427,7 +427,7 @@ public final class ResilienceRuntime implements AutoCloseable {
         private boolean locallyConnected() {
             try {
                 return provider.isLocallyConnected();
-            } catch (VirtualMachineError fatal) {
+            } catch (VirtualMachineError | ThreadDeath fatal) {
                 throw fatal;
             } catch (Throwable ignored) {
                 return false;
@@ -438,7 +438,7 @@ public final class ResilienceRuntime implements AutoCloseable {
             try {
                 ProviderLifecycleState state = lifecycleState.get();
                 return state == null ? ProviderLifecycleState.FAILED : state;
-            } catch (VirtualMachineError fatal) {
+            } catch (VirtualMachineError | ThreadDeath fatal) {
                 throw fatal;
             } catch (Throwable ignored) {
                 return ProviderLifecycleState.FAILED;

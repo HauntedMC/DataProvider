@@ -259,6 +259,22 @@ class ResilienceRuntimeTest {
     }
 
     @Test
+    void threadTerminationIsNeverConsumedAsAProbeFailure() {
+        ManualScheduler scheduler = new ManualScheduler();
+        ScriptedProvider provider = new ScriptedProvider(true) {
+            @Override
+            public boolean probeRemoteHealth() {
+                throw new ThreadDeath();
+            }
+        };
+        ResilienceRuntime runtime = runtime(new DirectExecutorService(), scheduler, 3);
+
+        assertThrows(ThreadDeath.class, () ->
+                runtime.track("resource", provider, () -> ProviderLifecycleState.READY));
+        runtime.close();
+    }
+
+    @Test
     void statusCallbackFailuresDegradeDiagnosticsWithoutStoppingMonitoring() {
         ManualScheduler scheduler = new ManualScheduler();
         ScriptedProvider provider = new ScriptedProvider(false) {
