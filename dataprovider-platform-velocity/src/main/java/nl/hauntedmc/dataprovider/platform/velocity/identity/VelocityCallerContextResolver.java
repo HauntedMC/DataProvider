@@ -75,8 +75,15 @@ public final class VelocityCallerContextResolver implements CallerContextResolve
     /** Called while Velocity initializes the provider, before plugin work is scheduled. */
     public void synchronizePlugins() {
         proxyServer.getPluginManager().getPlugins().forEach(container -> container.getInstance().ifPresent(instance -> {
-            PluginIdentity identity =
-                    identities.register(container.getDescription().getId(), instance.getClass().getClassLoader());
+            String pluginId = container.getDescription().getId();
+            ClassLoader classLoader = instance.getClass().getClassLoader();
+            PluginIdentity existing = identities.find(classLoader);
+            PluginIdentity identity = existing != null ? existing : identities.register(pluginId, classLoader);
+            if (!identity.pluginId().equals(pluginId.trim().toLowerCase(java.util.Locale.ROOT))) {
+                throw new IllegalStateException(
+                        "Cannot securely distinguish Velocity plugins that share one class loader."
+                );
+            }
             identitiesByInstance.put(instance, identity);
         }));
     }

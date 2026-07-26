@@ -72,6 +72,26 @@ class VelocityCallerContextResolverTest {
     }
 
     @Test
+    void repeatedSynchronizationPreservesIssuedIdentities() {
+        ClassLoader pluginLoader = new ClassLoader() {
+        };
+        Object plugin = createPluginInstance(pluginLoader);
+        ProxyServer proxy = createProxyServer(createPluginContainer("example", plugin));
+        VelocityCallerContextResolver resolver = new VelocityCallerContextResolver(
+                proxy,
+                getClass().getClassLoader(),
+                () -> List.of(pluginLoader)
+        );
+
+        resolver.synchronizePlugins();
+        PluginIdentity issued = resolver.issueIdentity(plugin);
+        resolver.synchronizePlugins();
+
+        assertSame(issued, resolver.issueIdentity(plugin));
+        assertTrue(resolver.isIdentityActive(issued));
+    }
+
+    @Test
     void rejectsBindingAnotherPluginsInstance() {
         ClassLoader ownerLoader = new ClassLoader() {
         };
