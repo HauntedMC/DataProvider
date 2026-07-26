@@ -40,6 +40,6 @@ public interface Subscription extends AutoCloseable {
 
     @Override
     default void close() {
-        unsubscribe();
+        unsubscribe().join();
     }
 }
