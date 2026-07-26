@@ -108,6 +108,18 @@ class MongoDBDataAccessTest {
         dataAccess.deleteMany("profiles", DocumentQuery.all()).join();
     }
 
+    @Test
+    void rejectsEmptyDocumentUpdatesBeforeScheduling() {
+        MongoDBDataAccess dataAccess = createDataAccess(mockCollection());
+
+        assertThrows(IllegalArgumentException.class, () -> dataAccess.updateOne(
+                "profiles",
+                new DocumentQuery().eq("_id", "player"),
+                new DocumentUpdate(),
+                new DocumentUpdateOptions()
+        ));
+    }
+
     @SuppressWarnings("unchecked")
     private static MongoCollection<Document> mockCollection() {
         return mock(MongoCollection.class);

@@ -57,7 +57,11 @@ public class MongoDBDataAccess implements DocumentDataAccess {
     }
 
     private Bson toBsonUpdate(DocumentUpdate update) {
-        return toMongoDocument(update.toMap());
+        Map<String, Object> snapshot = update.toMap();
+        if (snapshot.isEmpty()) {
+            throw new IllegalArgumentException("Document updates must contain at least one operation.");
+        }
+        return toMongoDocument(snapshot);
     }
 
     private Bson toWriteBsonQuery(DocumentQuery query) {
