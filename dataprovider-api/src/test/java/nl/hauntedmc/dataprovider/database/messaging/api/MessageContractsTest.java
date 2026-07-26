@@ -24,6 +24,14 @@ class MessageContractsTest {
     }
 
     @Test
+    void abstractEventMessageRejectsUnsafeTypes() {
+        assertThrows(IllegalArgumentException.class, () -> new TestMessage(null));
+        assertThrows(IllegalArgumentException.class, () -> new TestMessage(""));
+        assertThrows(IllegalArgumentException.class, () -> new TestMessage("event\nforged"));
+        assertThrows(IllegalArgumentException.class, () -> new TestMessage("x".repeat(129)));
+    }
+
+    @Test
     void subscriptionCloseDelegatesToUnsubscribe() {
         AtomicBoolean unsubscribed = new AtomicBoolean(false);
         Subscription subscription = () -> {
