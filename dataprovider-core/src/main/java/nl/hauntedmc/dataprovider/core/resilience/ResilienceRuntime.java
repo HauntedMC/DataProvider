@@ -81,7 +81,12 @@ public final class ResilienceRuntime implements AutoCloseable {
                 return existing;
             }
             Control created = new Control(provider, lifecycleState);
-            created.start();
+            try {
+                created.start();
+            } catch (RuntimeException | Error startupFailure) {
+                created.close();
+                throw startupFailure;
+            }
             return created;
         });
     }

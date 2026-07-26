@@ -28,6 +28,7 @@ import java.util.concurrent.atomic.AtomicReference;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertSame;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class ResilienceRuntimeTest {
@@ -208,6 +209,19 @@ class ResilienceRuntimeTest {
         assertEquals(1, provider.gateClearCalls);
     }
 
+    @Test
+    void failedControllerStartupDetachesItsPartialState() {
+        ManualScheduler scheduler = new ManualScheduler();
+        GateProvider provider = new GateProvider(true);
+        ResilienceRuntime runtime = runtime(new ExplodingExecutor(), scheduler, 3);
+
+        assertThrows(IllegalStateException.class, () ->
+                runtime.track("resource", provider, () -> ProviderLifecycleState.READY));
+
+        assertEquals(1, provider.gateClearCalls);
+        runtime.close();
+    }
+
     private static ResilienceRuntime runtime(
             java.util.concurrent.ExecutorService workers,
             ScheduledExecutorService scheduler,
@@ -297,6 +311,17 @@ class ResilienceRuntimeTest {
         @Override public void execute(Runnable command) { if (shutdown) throw new IllegalStateException("shutdown"); tasks.add(command); }
         private int queuedTaskCount() { return tasks.size(); }
         private void runNext() { tasks.removeFirst().run(); }
+    }
+
+    private static final class ExplodingExecutor extends AbstractExecutorService {
+        @Override public void shutdown() { }
+        @Override public List<Runnable> shutdownNow() { return List.of(); }
+        @Override public boolean isShutdown() { return false; }
+        @Override public boolean isTerminated() { return false; }
+        @Override public boolean awaitTermination(long timeout, TimeUnit unit) { return false; }
+        @Override public void execute(Runnable command) {
+            throw new IllegalStateException("executor failed");
+        }
     }
 
     private static final class ManualScheduler extends AbstractExecutorService implements ScheduledExecutorService {
