@@ -2,12 +2,16 @@ package nl.hauntedmc.dataprovider.platform.bukkit.identity;
 
 import nl.hauntedmc.dataprovider.core.identity.CallerContext;
 import nl.hauntedmc.dataprovider.core.identity.CallerContextResolver;
+import nl.hauntedmc.dataprovider.core.identity.PluginCallerChainResolver;
 import nl.hauntedmc.dataprovider.core.identity.PluginIdentity;
 import nl.hauntedmc.dataprovider.core.identity.PluginIdentityRegistry;
+import nl.hauntedmc.dataprovider.core.identity.StackCallerClassLoaderResolver;
 import org.bukkit.Bukkit;
 import org.bukkit.plugin.Plugin;
 
+import java.util.List;
 import java.util.Objects;
+import java.util.function.Supplier;
 
 /**
  * Bukkit-specific caller identity resolver.
@@ -16,14 +20,30 @@ public final class BukkitCallerContextResolver implements CallerContextResolver 
 
     private final ClassLoader ownClassLoader;
     private final PluginIdentityRegistry identities = new PluginIdentityRegistry();
+    private final Supplier<List<ClassLoader>> callerChain;
 
     public BukkitCallerContextResolver(ClassLoader ownClassLoader) {
+        this(
+                ownClassLoader,
+                () -> StackCallerClassLoaderResolver.resolveExternalCallerChain(ownClassLoader)
+        );
+    }
+
+    BukkitCallerContextResolver(ClassLoader ownClassLoader, Supplier<List<ClassLoader>> callerChain) {
         this.ownClassLoader = Objects.requireNonNull(ownClassLoader, "Own class loader cannot be null.");
+        this.callerChain = Objects.requireNonNull(callerChain, "Caller chain cannot be null.");
     }
 
     @Override
     public CallerContext resolveCaller() {
-        throw new SecurityException("Use DataProviderAPI.forPlugin(plugin) to obtain a bound API facade.");
+        return PluginCallerChainResolver.resolveNearestMappedCaller(
+                callerChain.get(),
+                classLoader -> {
+                    PluginIdentity identity = identities.find(classLoader);
+                    return identity == null ? null : identity.pluginId();
+                },
+                "Could not resolve the calling Bukkit plugin."
+        );
     }
 
     @Override
@@ -75,11 +95,19 @@ public final class BukkitCallerContextResolver implements CallerContextResolver 
         if (identity == null || !identity.pluginId().equals(plugin.getName().trim().toLowerCase(java.util.Locale.ROOT))) {
             throw new SecurityException("Bukkit plugin is not active in DataProvider's identity registry.");
         }
+        requireBindingCaller(identity);
         return identity;
     }
 
     @Override
     public boolean isIdentityActive(PluginIdentity identity) {
         return identities.isActive(identity);
+    }
+
+    private void requireBindingCaller(PluginIdentity identity) {
+        CallerContext caller = resolveCaller();
+        if (!identity.pluginId().equals(caller.pluginId()) || identity.classLoader() != caller.classLoader()) {
+            throw new SecurityException("A Bukkit plugin can bind DataProvider only to its own plugin instance.");
+        }
     }
 }

@@ -4,6 +4,8 @@ import nl.hauntedmc.dataprovider.core.identity.PluginIdentity;
 import org.bukkit.plugin.Plugin;
 import org.junit.jupiter.api.Test;
 
+import java.util.List;
+
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -17,8 +19,8 @@ class BukkitCallerContextResolverTest {
 
     @Test
     void issuesAndInvalidatesLifecycleIdentityWithoutBukkitAccessDuringUse() {
-        BukkitCallerContextResolver resolver = new BukkitCallerContextResolver(getClass().getClassLoader());
         Plugin plugin = mock(Plugin.class);
+        BukkitCallerContextResolver resolver = resolverFor(plugin.getClass().getClassLoader());
         when(plugin.getName()).thenReturn("Example");
         when(plugin.isEnabled()).thenReturn(true);
         resolver.register(plugin);
@@ -38,8 +40,8 @@ class BukkitCallerContextResolverTest {
 
     @Test
     void issuesAnIdentityDuringPluginEnableBeforeTheLifecycleEventIsFired() {
-        BukkitCallerContextResolver resolver = new BukkitCallerContextResolver(getClass().getClassLoader());
         Plugin plugin = mock(Plugin.class);
+        BukkitCallerContextResolver resolver = resolverFor(plugin.getClass().getClassLoader());
         when(plugin.getName()).thenReturn("Example");
         when(plugin.isEnabled()).thenReturn(true);
 
@@ -51,7 +53,47 @@ class BukkitCallerContextResolverTest {
 
     @Test
     void rejectsObjectsThatAreNotBukkitPlugins() {
-        BukkitCallerContextResolver resolver = new BukkitCallerContextResolver(getClass().getClassLoader());
+        BukkitCallerContextResolver resolver = resolverFor(getClass().getClassLoader());
         assertThrows(SecurityException.class, () -> resolver.issueIdentity(new Object()));
+    }
+
+    @Test
+    void rejectsBindingAnotherPluginsInstance() {
+        Plugin owner = mock(Plugin.class);
+        Plugin attacker = mock(Plugin.class);
+        when(owner.getName()).thenReturn("Owner");
+        when(owner.isEnabled()).thenReturn(true);
+        when(attacker.getName()).thenReturn("Attacker");
+        when(attacker.isEnabled()).thenReturn(true);
+        ClassLoader ownerLoader = new ClassLoader() {
+        };
+        ClassLoader attackerLoader = new ClassLoader() {
+        };
+        owner = pluginWithLoader(owner, ownerLoader);
+        attacker = pluginWithLoader(attacker, attackerLoader);
+        BukkitCallerContextResolver resolver = new BukkitCallerContextResolver(
+                getClass().getClassLoader(),
+                () -> List.of(attackerLoader)
+        );
+        resolver.register(owner);
+        resolver.register(attacker);
+
+        Plugin victim = owner;
+        assertThrows(SecurityException.class, () -> resolver.issueIdentity(victim));
+    }
+
+    private BukkitCallerContextResolver resolverFor(ClassLoader callerLoader) {
+        return new BukkitCallerContextResolver(
+                getClass().getClassLoader(),
+                () -> List.of(callerLoader)
+        );
+    }
+
+    private static Plugin pluginWithLoader(Plugin delegate, ClassLoader classLoader) {
+        return (Plugin) java.lang.reflect.Proxy.newProxyInstance(
+                classLoader,
+                new Class<?>[] {Plugin.class},
+                (proxy, method, arguments) -> method.invoke(delegate, arguments)
+        );
     }
 }

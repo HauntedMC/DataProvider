@@ -15,6 +15,7 @@ import java.util.concurrent.CompletableFuture;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.clearInvocations;
 import static org.mockito.Mockito.mock;
@@ -34,7 +35,11 @@ class VelocityCallerContextResolverTest {
                         createPluginContainer("proxyfeatures", createPluginInstance(nearestLoader)),
                         createPluginContainer("wrapperplugin", createPluginInstance(outerLoader))
                 );
-        VelocityCallerContextResolver resolver = new VelocityCallerContextResolver(proxy, getClass().getClassLoader());
+        VelocityCallerContextResolver resolver = new VelocityCallerContextResolver(
+                proxy,
+                getClass().getClassLoader(),
+                () -> List.of(nearestLoader)
+        );
         resolver.synchronizePlugins();
         clearInvocations(proxy);
 
@@ -48,6 +53,28 @@ class VelocityCallerContextResolverTest {
         verifyNoInteractions(proxy);
         resolver.invalidateAll();
         assertFalse(resolver.isIdentityActive(identity));
+    }
+
+    @Test
+    void rejectsBindingAnotherPluginsInstance() {
+        ClassLoader ownerLoader = new ClassLoader() {
+        };
+        ClassLoader attackerLoader = new ClassLoader() {
+        };
+        Object owner = createPluginInstance(ownerLoader);
+        Object attacker = createPluginInstance(attackerLoader);
+        ProxyServer proxy = createProxyServer(
+                createPluginContainer("owner", owner),
+                createPluginContainer("attacker", attacker)
+        );
+        VelocityCallerContextResolver resolver = new VelocityCallerContextResolver(
+                proxy,
+                getClass().getClassLoader(),
+                () -> List.of(attackerLoader)
+        );
+        resolver.synchronizePlugins();
+
+        assertThrows(SecurityException.class, () -> resolver.issueIdentity(owner));
     }
 
     private static ProxyServer createProxyServer(PluginContainer... pluginContainers) {
