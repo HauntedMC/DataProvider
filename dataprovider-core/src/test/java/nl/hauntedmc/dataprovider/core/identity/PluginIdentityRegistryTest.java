@@ -80,4 +80,16 @@ class PluginIdentityRegistryTest {
         assertTrue(registry.isActive(first));
         assertSame(first, registry.find(sharedLoader));
     }
+
+    @Test
+    void rejectsUnsafePluginIdentifiersAtRegistration() {
+        PluginIdentityRegistry registry = new PluginIdentityRegistry();
+
+        assertThrows(IllegalArgumentException.class,
+                () -> registry.register("plugin\nforged", new ClassLoader() {
+                }));
+        assertThrows(IllegalArgumentException.class,
+                () -> registry.register("x".repeat(129), new ClassLoader() {
+                }));
+    }
 }
