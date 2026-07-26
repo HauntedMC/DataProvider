@@ -266,9 +266,7 @@ public final class ResilienceRuntime implements AutoCloseable {
                 workers.execute(() -> runAttempt(kind, completion));
             } catch (RejectedExecutionException exception) {
                 activeAttempt = null;
-                if (kind == AttemptKind.RECOVERY) {
-                    recordFailure(true);
-                }
+                recordFailure(true);
                 completion.complete(null);
             }
             return completion;

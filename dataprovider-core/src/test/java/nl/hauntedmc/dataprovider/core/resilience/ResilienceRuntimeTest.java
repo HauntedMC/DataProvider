@@ -23,6 +23,7 @@ import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.atomic.AtomicReference;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -222,6 +223,21 @@ class ResilienceRuntimeTest {
         runtime.close();
     }
 
+    @Test
+    void rejectedProbeCapacityIsRecordedAsAHealthFailure() {
+        ManualScheduler scheduler = new ManualScheduler();
+        ScriptedProvider provider = new ScriptedProvider(true);
+        ResilienceRuntime runtime = runtime(new RejectingExecutor(), scheduler, 3);
+
+        ResilienceRuntime.Control control = runtime.track(
+                "resource", provider, () -> ProviderLifecycleState.READY
+        );
+
+        assertEquals(ConnectionHealthSnapshot.RemoteHealth.ERROR, control.snapshot().remoteHealth());
+        assertEquals(1, control.snapshot().consecutiveFailures());
+        runtime.close();
+    }
+
     private static ResilienceRuntime runtime(
             java.util.concurrent.ExecutorService workers,
             ScheduledExecutorService scheduler,
@@ -321,6 +337,17 @@ class ResilienceRuntimeTest {
         @Override public boolean awaitTermination(long timeout, TimeUnit unit) { return false; }
         @Override public void execute(Runnable command) {
             throw new IllegalStateException("executor failed");
+        }
+    }
+
+    private static final class RejectingExecutor extends AbstractExecutorService {
+        @Override public void shutdown() { }
+        @Override public List<Runnable> shutdownNow() { return List.of(); }
+        @Override public boolean isShutdown() { return false; }
+        @Override public boolean isTerminated() { return false; }
+        @Override public boolean awaitTermination(long timeout, TimeUnit unit) { return false; }
+        @Override public void execute(Runnable command) {
+            throw new RejectedExecutionException("capacity exhausted");
         }
     }
 
