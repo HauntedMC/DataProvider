@@ -35,6 +35,12 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 class ResilienceRuntimeTest {
 
     @Test
+    void resilienceCountersSaturateInsteadOfOverflowing() {
+        assertEquals(Integer.MAX_VALUE, ResilienceRuntime.saturatedIncrement(Integer.MAX_VALUE));
+        assertEquals(42, ResilienceRuntime.saturatedIncrement(41));
+    }
+
+    @Test
     void transitionsClosedOpenHalfOpenClosedWithoutTimingSleep() {
         ManualScheduler scheduler = new ManualScheduler();
         ScriptedProvider provider = new ScriptedProvider(false, false, true);

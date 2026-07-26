@@ -175,6 +175,10 @@ public final class ResilienceRuntime implements AutoCloseable {
         return increment > 0 && value > Long.MAX_VALUE - increment ? Long.MAX_VALUE : value + increment;
     }
 
+    static int saturatedIncrement(int value) {
+        return value == Integer.MAX_VALUE ? Integer.MAX_VALUE : value + 1;
+    }
+
     public final class Control implements AutoCloseable {
 
         private final Object lock = new Object();
@@ -309,9 +313,9 @@ public final class ResilienceRuntime implements AutoCloseable {
         private void recordSuccess(AttemptKind kind) {
             ConnectionHealthSnapshot previous = snapshot;
             int recoveries = kind == AttemptKind.RECOVERY
-                    ? previous.consecutiveRecoveries() + 1
+                    ? saturatedIncrement(previous.consecutiveRecoveries())
                     : previous.circuit() == ConnectionHealthSnapshot.Circuit.HALF_OPEN
-                            ? previous.consecutiveRecoveries() + 1
+                            ? saturatedIncrement(previous.consecutiveRecoveries())
                             : 0;
             boolean restored = previous.circuit() != ConnectionHealthSnapshot.Circuit.CLOSED
                     && recoveries >= config.recoveryThreshold();
@@ -338,7 +342,7 @@ public final class ResilienceRuntime implements AutoCloseable {
 
         private void recordFailure(boolean probeError) {
             ConnectionHealthSnapshot previous = snapshot;
-            int failures = previous.consecutiveFailures() + 1;
+            int failures = saturatedIncrement(previous.consecutiveFailures());
             boolean locallyConnected = locallyConnected();
             boolean open = !locallyConnected
                     || previous.circuit() == ConnectionHealthSnapshot.Circuit.HALF_OPEN
@@ -398,7 +402,7 @@ public final class ResilienceRuntime implements AutoCloseable {
                         0,
                         previous.lastFailureSummary(),
                         previous.degradedSince(),
-                        previous.reconnectAttempts() + 1,
+                        saturatedIncrement(previous.reconnectAttempts()),
                         previous.currentBackoff(),
                         null
                 );
