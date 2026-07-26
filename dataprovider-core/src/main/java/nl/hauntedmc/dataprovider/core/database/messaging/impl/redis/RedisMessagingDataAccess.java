@@ -792,7 +792,10 @@ final class RedisMessagingDataAccess implements MessagingDataAccess {
             try {
                 T message = messageRegistry.fromJson(raw, type, messageType);
                 handler.accept(message);
-            } catch (Exception failure) {
+            } catch (VirtualMachineError fatal) {
+                closeExceptionally(fatal);
+                throw fatal;
+            } catch (Throwable failure) {
                 logger.error("Error while handling message from channel " + channel, failure);
             }
         }

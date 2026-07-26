@@ -205,6 +205,49 @@ class RedisMessagingDataAccessTest {
         releaseListener.countDown();
     }
 
+    @Test
+    void handlerAssertionErrorDoesNotWedgeLaterDispatch() throws Exception {
+        JedisPool pool = mock(JedisPool.class);
+        Jedis jedis = mock(Jedis.class);
+        AtomicReference<JedisPubSub> listener = new AtomicReference<>();
+        CountDownLatch listening = new CountDownLatch(1);
+        CountDownLatch releaseListener = new CountDownLatch(1);
+        when(pool.getResource()).thenReturn(jedis);
+        doAnswer(invocation -> {
+            JedisPubSub pubSub = invocation.getArgument(0);
+            listener.set(pubSub);
+            pubSub.onSubscribe("error-test", 1);
+            listening.countDown();
+            releaseListener.await(2, TimeUnit.SECONDS);
+            return null;
+        }).when(jedis).subscribe(any(JedisPubSub.class), any(String[].class));
+
+        RecordingLoggerAdapter logger = new RecordingLoggerAdapter();
+        MessageRegistry registry = new MessageRegistry(logger);
+        RedisMessagingDataAccess access = new RedisMessagingDataAccess(
+                pool, new CountingExecution(), logger, registry, 1, 1_024, 16, 8
+        );
+        AtomicInteger attempts = new AtomicInteger();
+        CountDownLatch handledSecondMessage = new CountDownLatch(1);
+        access.subscribe("error-test", "test.error", TestEvent.class, ignored -> {
+            if (attempts.incrementAndGet() == 1) {
+                throw new AssertionError("simulated plugin failure");
+            }
+            handledSecondMessage.countDown();
+        });
+        assertTrue(listening.await(2, TimeUnit.SECONDS));
+
+        String payload = registry.toJson(new TestEvent("test.error", "payload"));
+        listener.get().onMessage("error-test", payload);
+        listener.get().onMessage("error-test", payload);
+
+        assertTrue(handledSecondMessage.await(2, TimeUnit.SECONDS));
+        assertEquals(2, attempts.get());
+        assertTrue(logger.errorMessages().stream().anyMatch(message -> message.contains("AssertionError")));
+        access.shutdown().get(2, TimeUnit.SECONDS);
+        releaseListener.countDown();
+    }
+
     private static void await(CheckedCondition condition) throws Exception {
         long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(2);
         while (!condition.evaluate() && System.nanoTime() < deadline) {
