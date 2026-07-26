@@ -211,13 +211,26 @@ class RedisMessagingRecoveryIT {
                     api.registerDatabaseOrThrow(DatabaseType.REDIS_MESSAGING, "messaging-recovery");
             String suffix = Long.toUnsignedString(System.nanoTime(), 36);
             String channel = "dataprovider.reload." + suffix;
+            String stream = "dataprovider.reload." + suffix;
             String type = "dataprovider.reload";
+            String group = "reload-group-" + suffix;
+            String consumer = "reload-consumer-" + suffix;
             LinkedBlockingQueue<String> received = new LinkedBlockingQueue<>();
+            LinkedBlockingQueue<String> durableReceived = new LinkedBlockingQueue<>();
             Subscription subscription = messaging.getDataAccess().subscribe(channel, type, TestEvent.class,
                     event -> received.add(event.value()));
+            DurableSubscription durableSubscription = messaging.getDurableDataAccess().consume(
+                    stream, group, consumer, type, TestEvent.class, delivery -> {
+                        durableReceived.add(delivery.event().payload().value());
+                        delivery.acknowledge().join();
+                    }
+            );
             String logicalId = subscription.id();
+            String durableLogicalId = durableSubscription.id();
             awaitState(subscription, SubscriptionState.ACTIVE);
+            awaitCondition(() -> durableSubscription.snapshot().active(), "Durable consumer did not become active.");
             assertPubSubDelivery(messaging.getDataAccess(), channel, type, received, "before-reload");
+            assertDurableDelivery(messaging.getDurableDataAccess(), stream, type, durableReceived, "before-reload");
 
             // This is a pool-setting-only change: it must still create a new physical client
             // generation while preserving the existing logical subscription handle.
@@ -226,12 +239,58 @@ class RedisMessagingRecoveryIT {
 
             awaitState(subscription, SubscriptionState.ACTIVE);
             assertEquals(logicalId, subscription.id());
+            assertEquals(durableLogicalId, durableSubscription.id());
             assertTrue(!subscription.completion().isDone(), "Reload closed the logical subscription handle.");
+            assertTrue(!durableSubscription.completion().isDone(), "Reload closed the durable consumer handle.");
             awaitCondition(() -> subscriberCount(channel) == 1L,
                     "Reload did not retain exactly one subscriber for the logical subscription.");
+            awaitCondition(() -> durableSubscription.snapshot().active(),
+                    "Reload did not reactivate the original durable consumer.");
             assertPubSubDelivery(messaging.getDataAccess(), channel, type, received, "after-reload");
+            assertDurableDelivery(messaging.getDurableDataAccess(), stream, type, durableReceived, "after-reload");
+            subscription.unsubscribe().get(5, TimeUnit.SECONDS);
+            durableSubscription.closeAsync().get(5, TimeUnit.SECONDS);
+        } finally {
+            provider.shutdownAllDatabases();
+        }
+    }
+
+    @Test
+    void credentialRotationReloadsThePhysicalClientAndKeepsTheOriginalSubscriptionUsable() throws Exception {
+        String rotatedPassword = "messaging-recovery-rotated";
+        writeMessagingConfiguration(2, REDIS_PASSWORD);
+        DataProvider provider = new DataProvider(
+                new RecordingLoggerAdapter(), dataDirectory, getClass().getClassLoader(), callerResolver()
+        );
+        try {
+            DataProviderAPI api = new DefaultDataProviderApi(provider.getDataProviderHandler()).forPlugin(this);
+            MessagingDatabaseProvider messaging = (MessagingDatabaseProvider)
+                    api.registerDatabaseOrThrow(DatabaseType.REDIS_MESSAGING, "messaging-recovery");
+            String suffix = Long.toUnsignedString(System.nanoTime(), 36);
+            String channel = "dataprovider.credential-rotation." + suffix;
+            String type = "dataprovider.credential-rotation";
+            LinkedBlockingQueue<String> received = new LinkedBlockingQueue<>();
+            Subscription subscription = messaging.getDataAccess().subscribe(channel, type, TestEvent.class,
+                    event -> received.add(event.value()));
+            String logicalId = subscription.id();
+            awaitState(subscription, SubscriptionState.ACTIVE);
+            assertPubSubDelivery(messaging.getDataAccess(), channel, type, received, "before-rotation");
+
+            try (JedisPool pool = new JedisPool(REDIS.getHost(), REDIS.getMappedPort(6379));
+                 Jedis admin = pool.getResource()) {
+                admin.auth(REDIS_PASSWORD);
+                admin.configSet("requirepass", rotatedPassword);
+            }
+            writeMessagingConfiguration(2, rotatedPassword);
+            provider.getDataProviderHandler().reloadConfiguration();
+
+            awaitState(subscription, SubscriptionState.ACTIVE);
+            assertEquals(logicalId, subscription.id());
+            assertTrue(!subscription.completion().isDone(), "Credential rotation closed the logical handle.");
+            assertPubSubDelivery(messaging.getDataAccess(), channel, type, received, "after-rotation");
             subscription.unsubscribe().get(5, TimeUnit.SECONDS);
         } finally {
+            resetRedisPassword(rotatedPassword);
             provider.shutdownAllDatabases();
         }
     }
@@ -274,6 +333,10 @@ class RedisMessagingRecoveryIT {
     }
 
     private void writeMessagingConfiguration(int connections) throws Exception {
+        writeMessagingConfiguration(connections, REDIS_PASSWORD);
+    }
+
+    private void writeMessagingConfiguration(int connections, String password) throws Exception {
         Files.createDirectories(dataDirectory.resolve("databases"));
         Files.writeString(dataDirectory.resolve("databases/redis_messaging.yml"), """
                 messaging-recovery:
@@ -302,7 +365,7 @@ class RedisMessagingRecoveryIT {
                   security:
                     max_payload_chars: 4096
                     max_queued_messages_per_handler: 64
-                """.formatted(REDIS.getHost(), REDIS.getMappedPort(6379), REDIS_PASSWORD, connections));
+                """.formatted(REDIS.getHost(), REDIS.getMappedPort(6379), password, connections));
     }
 
     private static void pause(AtomicBoolean paused) {
@@ -335,6 +398,14 @@ class RedisMessagingRecoveryIT {
             return "PONG".equalsIgnoreCase(jedis.ping());
         } catch (RuntimeException unavailable) {
             return false;
+        }
+    }
+
+    private static void resetRedisPassword(String currentPassword) {
+        try (JedisPool pool = new JedisPool(REDIS.getHost(), REDIS.getMappedPort(6379));
+             Jedis admin = pool.getResource()) {
+            admin.auth(currentPassword);
+            admin.configSet("requirepass", REDIS_PASSWORD);
         }
     }
 

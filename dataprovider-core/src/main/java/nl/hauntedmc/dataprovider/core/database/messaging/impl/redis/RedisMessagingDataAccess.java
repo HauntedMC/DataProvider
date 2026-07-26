@@ -239,25 +239,41 @@ final class RedisMessagingDataAccess implements MessagingDataAccess {
 
     @Override
     public CompletableFuture<Void> shutdown() {
-        CompletableFuture<Void> existing = shutdownFuture.get();
-        if (existing != null) {
-            return existing;
-        }
-        if (!shuttingDown.compareAndSet(false, true)) {
-            existing = shutdownFuture.get();
-            return existing == null ? CompletableFuture.completedFuture(null) : existing;
+        CompletableFuture<Void> created;
+        synchronized (shutdownFuture) {
+            CompletableFuture<Void> existing = shutdownFuture.get();
+            if (existing != null) {
+                return existing;
+            }
+            shuttingDown.set(true);
+            // Publish the shared future before beginning any asynchronous listener teardown.
+            // A concurrent caller must observe this same lifecycle operation, rather than an
+            // already-completed placeholder while shutdown is still releasing subscriptions.
+            created = new CompletableFuture<>();
+            shutdownFuture.set(created);
         }
         ChannelSubscription[] active;
         synchronized (subscriptionLock) {
             active = channelSubscriptions.values().toArray(ChannelSubscription[]::new);
         }
         CompletableFuture<?>[] futures = new CompletableFuture<?>[active.length];
-        for (int index = 0; index < active.length; index++) {
-            futures[index] = active[index].unsubscribeChannel();
+        try {
+            for (int index = 0; index < active.length; index++) {
+                futures[index] = active[index].unsubscribeChannel();
+            }
+        } catch (Throwable failure) {
+            channelSubscriptions.clear();
+            created.completeExceptionally(failure);
+            return created;
         }
-        CompletableFuture<Void> created = CompletableFuture.allOf(futures)
-                .whenComplete((unused, throwable) -> channelSubscriptions.clear());
-        shutdownFuture.set(created);
+        CompletableFuture.allOf(futures).whenComplete((unused, throwable) -> {
+            channelSubscriptions.clear();
+            if (throwable == null) {
+                created.complete(null);
+            } else {
+                created.completeExceptionally(throwable);
+            }
+        });
         return created;
     }
 

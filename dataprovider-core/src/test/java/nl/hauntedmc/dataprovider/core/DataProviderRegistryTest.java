@@ -574,6 +574,39 @@ class DataProviderRegistryTest {
     }
 
     @Test
+    void reloadFailureAfterAnActiveRegistrationLeavesThePublishedLeaseAndSnapshotsUntouched() {
+        DatabaseFactory factory = mock(DatabaseFactory.class);
+        ConfigHandler configHandler = mock(ConfigHandler.class);
+        when(configHandler.isDatabaseTypeEnabled(DatabaseType.MYSQL)).thenReturn(true);
+        ConfigHandler.ConfigSnapshot activeMainSnapshot = configSnapshot("validate");
+        ConfigHandler.ConfigSnapshot candidateMainSnapshot = configSnapshot("update");
+        DatabaseConfigMap.DatabaseConfigSnapshot activeDatabaseSnapshot = databaseSnapshot();
+        DatabaseConfigMap.DatabaseConfigSnapshot candidateDatabaseSnapshot = databaseSnapshot();
+        when(configHandler.currentSnapshot()).thenReturn(activeMainSnapshot);
+        when(configHandler.loadSnapshot()).thenReturn(candidateMainSnapshot);
+        when(factory.currentConfigurationSnapshot()).thenReturn(activeDatabaseSnapshot);
+        when(factory.loadConfigurationSnapshot()).thenReturn(candidateDatabaseSnapshot);
+        when(factory.prepareConfigurationReload(candidateDatabaseSnapshot))
+                .thenThrow(new IllegalStateException("rotated credentials rejected"));
+        RecordingProvider provider = new RecordingProvider(true);
+        when(factory.createDatabaseProvider(DatabaseType.MYSQL, ConnectionIdentifier.of("default")))
+                .thenReturn(provider);
+        DataProviderRegistry registry = new DataProviderRegistry(factory, configHandler, new RecordingLoggerAdapter());
+        DatabaseConnectionKey key = new DatabaseConnectionKey("plugin", DatabaseType.MYSQL, "default");
+
+        assertSame(provider, registry.registerDatabase("plugin", "feature", DatabaseType.MYSQL, "default"));
+        assertThrows(IllegalStateException.class, registry::reloadConfiguration);
+
+        assertSame(provider, registry.getDatabase("plugin", DatabaseType.MYSQL, "default"));
+        assertEquals(1, registry.getActiveDatabaseReferenceCounts().get(key));
+        assertEquals(0, provider.disconnectCalls);
+        assertEquals(ProviderLifecycleState.READY, registry.getProviderLifecycleSnapshots().get(key).state());
+        verify(configHandler, org.mockito.Mockito.never()).applySnapshot(candidateMainSnapshot);
+        verify(factory, org.mockito.Mockito.never()).applyConfigurationSnapshot(candidateDatabaseSnapshot);
+        registry.shutdownAllDatabases();
+    }
+
+    @Test
     void reloadRollsBackMainSnapshotWhenDatabaseSnapshotApplyFails() {
         DatabaseFactory factory = mock(DatabaseFactory.class);
         ConfigHandler configHandler = mock(ConfigHandler.class);

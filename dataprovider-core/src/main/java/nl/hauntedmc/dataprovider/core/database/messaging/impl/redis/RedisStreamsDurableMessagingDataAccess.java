@@ -86,6 +86,7 @@ final class RedisStreamsDurableMessagingDataAccess implements DurableMessagingDa
     private final Map<String, ConsumerLoop<?>> consumers = new ConcurrentHashMap<>();
     private final Map<String, AtomicLong> nextTrimAtMillis = new ConcurrentHashMap<>();
     private final AtomicBoolean shuttingDown = new AtomicBoolean();
+    private final AtomicReference<CompletableFuture<Void>> shutdownFuture = new AtomicReference<>();
 
     RedisStreamsDurableMessagingDataAccess(
             Supplier<JedisPool> poolSupplier,
@@ -202,12 +203,32 @@ final class RedisStreamsDurableMessagingDataAccess implements DurableMessagingDa
 
     @Override
     public CompletableFuture<Void> shutdown() {
-        if (!shuttingDown.compareAndSet(false, true)) {
-            return CompletableFuture.completedFuture(null);
+        CompletableFuture<Void> created;
+        synchronized (shutdownFuture) {
+            CompletableFuture<Void> existing = shutdownFuture.get();
+            if (existing != null) {
+                return existing;
+            }
+            shuttingDown.set(true);
+            created = new CompletableFuture<>();
+            shutdownFuture.set(created);
         }
-        CompletableFuture<?>[] closes = consumers.values().stream().map(ConsumerLoop::closeAsync)
-                .toArray(CompletableFuture[]::new);
-        return CompletableFuture.allOf(closes).whenComplete((unused, failure) -> consumers.clear());
+        try {
+            CompletableFuture<?>[] closes = consumers.values().stream().map(ConsumerLoop::closeAsync)
+                    .toArray(CompletableFuture[]::new);
+            CompletableFuture.allOf(closes).whenComplete((unused, failure) -> {
+                consumers.clear();
+                if (failure == null) {
+                    created.complete(null);
+                } else {
+                    created.completeExceptionally(failure);
+                }
+            });
+        } catch (Throwable failure) {
+            consumers.clear();
+            created.completeExceptionally(failure);
+        }
+        return created;
     }
 
     private JedisPool pool() {

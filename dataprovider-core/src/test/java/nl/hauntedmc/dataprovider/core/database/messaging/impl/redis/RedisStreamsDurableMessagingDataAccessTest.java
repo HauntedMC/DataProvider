@@ -14,6 +14,10 @@ import redis.clients.jedis.exceptions.JedisDataException;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.CompletionException;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 
@@ -122,6 +126,43 @@ class RedisStreamsDurableMessagingDataAccessTest {
         assertEquals(1, execution.releasedSubscriptions.get());
     }
 
+    @Test
+    void repeatedConcurrentShutdownSharesTheDurableTeardownOperation() throws Exception {
+        JedisPool pool = mock(JedisPool.class);
+        when(pool.getResource()).thenThrow(new IllegalStateException("Redis durable messaging pool is temporarily unavailable."));
+        CountingExecution execution = new CountingExecution();
+        RedisStreamsDurableMessagingDataAccess access = access(
+                pool, execution, new RecordingLoggerAdapter(), TimeUnit.MINUTES.toMillis(1L),
+                TimeUnit.MINUTES.toMillis(1L), 0.0D, 0
+        );
+        var subscription = access.consume("concurrent-close", "close-group", "close-consumer",
+                "test.close", TestEvent.class, ignored -> { });
+        await(() -> subscription.state() == SubscriptionState.RECONNECTING);
+
+        ExecutorService callers = Executors.newFixedThreadPool(16);
+        try {
+            CountDownLatch start = new CountDownLatch(1);
+            List<CompletableFuture<CompletableFuture<Void>>> calls = new ArrayList<>();
+            for (int index = 0; index < 32; index++) {
+                calls.add(CompletableFuture.supplyAsync(() -> {
+                    awaitLatch(start);
+                    return access.shutdown();
+                }, callers));
+            }
+            start.countDown();
+            CompletableFuture<Void> shutdown = calls.getFirst().get(2, TimeUnit.SECONDS);
+            for (CompletableFuture<CompletableFuture<Void>> call : calls) {
+                assertTrue(call.get(2, TimeUnit.SECONDS) == shutdown,
+                        "Every caller must receive the durable shutdown operation.");
+            }
+            shutdown.get(2, TimeUnit.SECONDS);
+            assertEquals(SubscriptionState.CLOSED, subscription.state());
+            assertEquals(1, execution.releasedSubscriptions.get());
+        } finally {
+            callers.shutdownNow();
+        }
+    }
+
     private static RedisStreamsDurableMessagingDataAccess access(
             JedisPool pool, ExecutionHandle execution, RecordingLoggerAdapter logger,
             long initialBackoffMs, long maxBackoffMs, double jitter, int maxAttempts
@@ -139,6 +180,17 @@ class RedisStreamsDurableMessagingDataAccessTest {
             TimeUnit.MILLISECONDS.sleep(5L);
         }
         assertTrue(condition.evaluate());
+    }
+
+    private static void awaitLatch(CountDownLatch latch) {
+        try {
+            if (!latch.await(2, TimeUnit.SECONDS)) {
+                throw new AssertionError("Timed out waiting for concurrent test start.");
+            }
+        } catch (InterruptedException interrupted) {
+            Thread.currentThread().interrupt();
+            throw new AssertionError(interrupted);
+        }
     }
 
     private static final class CountingExecution implements ExecutionHandle {

@@ -13,6 +13,11 @@ import redis.clients.jedis.JedisPubSub;
 
 import java.util.concurrent.CompletionException;
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.CompletableFuture;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
@@ -206,6 +211,56 @@ class RedisMessagingDataAccessTest {
     }
 
     @Test
+    void repeatedConcurrentShutdownSharesOneIncompleteOperationAndReleasesTheListenerOnce() throws Exception {
+        JedisPool pool = mock(JedisPool.class);
+        Jedis jedis = mock(Jedis.class);
+        CountDownLatch listening = new CountDownLatch(1);
+        CountDownLatch releaseListener = new CountDownLatch(1);
+        when(pool.getResource()).thenReturn(jedis);
+        doAnswer(invocation -> {
+            JedisPubSub listener = invocation.getArgument(0);
+            listener.onSubscribe("concurrent-shutdown", 1);
+            listening.countDown();
+            releaseListener.await(2, TimeUnit.SECONDS);
+            return null;
+        }).when(jedis).subscribe(any(JedisPubSub.class), any(String[].class));
+
+        CountingExecution execution = new CountingExecution();
+        RedisMessagingDataAccess access = new RedisMessagingDataAccess(
+                pool, execution, new RecordingLoggerAdapter(), new MessageRegistry(new RecordingLoggerAdapter()),
+                1, 1_024, 16, 8
+        );
+        var subscription = access.subscribe("concurrent-shutdown", "test.shutdown", EventMessage.class,
+                ignored -> { });
+        assertTrue(listening.await(2, TimeUnit.SECONDS));
+
+        ExecutorService callers = Executors.newFixedThreadPool(16);
+        try {
+            CountDownLatch start = new CountDownLatch(1);
+            List<CompletableFuture<CompletableFuture<Void>>> calls = new ArrayList<>();
+            for (int index = 0; index < 32; index++) {
+                calls.add(CompletableFuture.supplyAsync(() -> {
+                    awaitLatch(start);
+                    return access.shutdown();
+                }, callers));
+            }
+            start.countDown();
+            CompletableFuture<Void> shutdown = calls.getFirst().get(2, TimeUnit.SECONDS);
+            for (CompletableFuture<CompletableFuture<Void>> call : calls) {
+                assertTrue(call.get(2, TimeUnit.SECONDS) == shutdown,
+                        "Every caller must await the same shutdown operation.");
+            }
+            releaseListener.countDown();
+            shutdown.get(2, TimeUnit.SECONDS);
+            assertEquals(SubscriptionState.CLOSED, subscription.state());
+            assertEquals(1, execution.releasedSubscriptions.get());
+        } finally {
+            releaseListener.countDown();
+            callers.shutdownNow();
+        }
+    }
+
+    @Test
     void handlerAssertionErrorDoesNotWedgeLaterDispatch() throws Exception {
         JedisPool pool = mock(JedisPool.class);
         Jedis jedis = mock(Jedis.class);
@@ -254,6 +309,17 @@ class RedisMessagingDataAccessTest {
             TimeUnit.MILLISECONDS.sleep(10L);
         }
         assertTrue(condition.evaluate());
+    }
+
+    private static void awaitLatch(CountDownLatch latch) {
+        try {
+            if (!latch.await(2, TimeUnit.SECONDS)) {
+                throw new AssertionError("Timed out waiting for concurrent test start.");
+            }
+        } catch (InterruptedException interrupted) {
+            Thread.currentThread().interrupt();
+            throw new AssertionError(interrupted);
+        }
     }
 
     private static ExecutionHandle rejectingExecution() {
