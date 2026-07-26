@@ -3,6 +3,7 @@ package nl.hauntedmc.dataprovider.database;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -25,13 +26,14 @@ class DatabaseConnectionKeyTest {
     }
 
     @Test
-    void toStringContainsAllFields() {
+    void toStringDoesNotExposeIdentifiers() {
         DatabaseConnectionKey key = new DatabaseConnectionKey("plugin", DatabaseType.REDIS, "cache-main");
         String text = key.toString();
 
-        assertTrue(text.contains("pluginName='plugin'"));
         assertTrue(text.contains("type=REDIS"));
-        assertTrue(text.contains("connectionIdentifier='cache-main'"));
+        assertTrue(text.contains("identifiers=<redacted>"));
+        assertFalse(text.contains("plugin"));
+        assertFalse(text.contains("cache-main"));
     }
 
     @Test

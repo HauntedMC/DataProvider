@@ -33,9 +33,8 @@ public record DatabaseConnectionKey(String pluginName, DatabaseType type, String
     @Override
     public @NotNull String toString() {
         return "DatabaseConnectionKey{" +
-                "pluginName='" + pluginName + '\'' +
-                ", type=" + type +
-                ", connectionIdentifier='" + connectionIdentifier + '\'' +
+                "type=" + type +
+                ", identifiers=<redacted>" +
                 '}';
     }
 
