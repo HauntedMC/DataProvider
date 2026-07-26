@@ -7,6 +7,7 @@ import org.jspecify.annotations.Nullable;
 
 import java.io.IOException;
 import java.io.InputStream;
+import java.io.UncheckedIOException;
 import java.net.URL;
 import java.net.URLConnection;
 import java.nio.file.Path;
@@ -77,8 +78,8 @@ public class DataProvider {
             URLConnection connection = url.openConnection();
             connection.setUseCaches(false);
             return connection.getInputStream();
-        } catch (IOException ignored) {
-            return null;
+        } catch (IOException failure) {
+            throw new UncheckedIOException("Unable to open the requested classpath resource.", failure);
         }
     }
 

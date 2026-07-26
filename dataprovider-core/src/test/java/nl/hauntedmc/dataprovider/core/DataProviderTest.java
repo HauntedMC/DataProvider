@@ -14,7 +14,11 @@ import org.junit.jupiter.api.io.TempDir;
 
 import java.io.IOException;
 import java.io.InputStream;
+import java.io.UncheckedIOException;
+import java.net.URL;
 import java.net.URLClassLoader;
+import java.net.URLConnection;
+import java.net.URLStreamHandler;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -99,6 +103,49 @@ class DataProviderTest {
                 () -> freshApi.requireRegisteredDatabase(DatabaseType.MYSQL, "default")
         );
         secondProvider.shutdownAllDatabases();
+    }
+
+    @Test
+    void resourceReadFailuresAreNotReportedAsMissing() throws Exception {
+        try (URLClassLoader failingLoader = new URLClassLoader(
+                new URL[0],
+                getClass().getClassLoader()
+        ) {
+            @Override
+            public URL getResource(String name) {
+                if (!name.equals("broken-resource.txt")) {
+                    return super.getResource(name);
+                }
+                try {
+                    return new URL(null, "test:broken", new URLStreamHandler() {
+                        @Override
+                        protected URLConnection openConnection(URL url) {
+                            return new URLConnection(url) {
+                                @Override
+                                public void connect() {
+                                }
+
+                                @Override
+                                public InputStream getInputStream() throws IOException {
+                                    throw new IOException("simulated resource failure");
+                                }
+                            };
+                        }
+                    });
+                } catch (java.net.MalformedURLException impossible) {
+                    throw new AssertionError(impossible);
+                }
+            }
+        }) {
+            DataProvider provider = new DataProvider(
+                    new RecordingLoggerAdapter(),
+                    tempDir.resolve("broken-resource-data"),
+                    failingLoader,
+                    resolver(failingLoader)
+            );
+
+            assertThrows(UncheckedIOException.class, () -> provider.getResource("broken-resource.txt"));
+        }
     }
 
     private static CallerContextResolver resolver(ClassLoader classLoader) {
