@@ -11,7 +11,6 @@ import java.util.List;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
-import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -82,18 +81,14 @@ class MessageRegistryTest {
     }
 
     @Test
-    void parseHandlesMissingUnknownAndInvalidPayloads() {
-        RecordingLogger logger = new RecordingLogger();
-        MessageRegistry registry = new MessageRegistry(logger);
+    void parseRejectsMissingUnknownAndInvalidPayloads() {
+        MessageRegistry registry = new MessageRegistry(new RecordingLogger());
         registry.register("ping", PingMessage.class);
 
-        assertNull(registry.parse("{\"payload\":\"x\"}"));
-        assertNull(registry.parse("{\"type\":\"unknown\"}"));
-        assertNull(registry.parse("{not-json"));
-
-        assertTrue(logger.warnMessages().stream().anyMatch(m -> m.contains("without a 'type' field")));
-        assertTrue(logger.warnMessages().stream().anyMatch(m -> m.contains("Unknown message type unknown")));
-        assertTrue(logger.warnMessages().stream().anyMatch(m -> m.contains("Failed to parse message payload")));
+        assertThrows(JsonParseException.class, () -> registry.parse("{\"payload\":\"x\"}"));
+        assertThrows(JsonParseException.class, () -> registry.parse("{\"type\":\"unknown\"}"));
+        assertThrows(JsonParseException.class, () -> registry.parse("{not-json"));
+        assertThrows(JsonParseException.class, () -> registry.parse("[]"));
     }
 
     @Test

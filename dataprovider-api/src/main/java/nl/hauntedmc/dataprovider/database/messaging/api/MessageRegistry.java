@@ -94,24 +94,23 @@ public final class MessageRegistry {
         if (json == null || json.isBlank()) {
             throw new IllegalArgumentException("Message JSON cannot be null or blank.");
         }
-        try {
-            validateJson(json);
-            JsonObject obj = JsonParser.parseString(json).getAsJsonObject();
-            if (!obj.has("type")) {
-                logger.warn("Encountered message without a 'type' field during parse.");
-                return null;
-            }
-            String type = obj.get("type").getAsString();
-            Class<? extends EventMessage> cls = types.get(type);
-            if (cls == null) {
-                logger.warn("Unknown message type " + type + " encountered during parse");
-                return null;
-            }
-            return gson.fromJson(obj, cls);
-        } catch (Exception e) {
-            logger.warn("Failed to parse message payload: " + e.getMessage());
-            return null;
+        validateJson(json);
+        JsonElement parsed = JsonParser.parseString(json);
+        if (!parsed.isJsonObject()) {
+            throw new JsonParseException("Message JSON must contain an object.");
         }
+        JsonObject object = parsed.getAsJsonObject();
+        JsonElement typeElement = object.get("type");
+        if (typeElement == null || !typeElement.isJsonPrimitive()
+                || !typeElement.getAsJsonPrimitive().isString()) {
+            throw new JsonParseException("Message JSON must contain a string 'type' field.");
+        }
+        String type = validateType(typeElement.getAsString());
+        Class<? extends EventMessage> messageClass = types.get(type);
+        if (messageClass == null) {
+            throw new JsonParseException("Message type '" + type + "' is not registered.");
+        }
+        return fromJson(json, messageClass, type);
     }
 
     private static void validateJson(String json) {
