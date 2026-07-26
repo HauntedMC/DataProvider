@@ -8,7 +8,10 @@ import nl.hauntedmc.dataprovider.core.identity.PluginIdentity;
 import nl.hauntedmc.dataprovider.core.identity.PluginIdentityRegistry;
 import nl.hauntedmc.dataprovider.core.identity.StackCallerClassLoaderResolver;
 
+import java.util.Collections;
+import java.util.IdentityHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.function.Supplier;
 
@@ -20,6 +23,8 @@ public final class VelocityCallerContextResolver implements CallerContextResolve
     private final ProxyServer proxyServer;
     private final ClassLoader ownClassLoader;
     private final PluginIdentityRegistry identities = new PluginIdentityRegistry();
+    private final Map<Object, PluginIdentity> identitiesByInstance =
+            Collections.synchronizedMap(new IdentityHashMap<>());
     private final Supplier<List<ClassLoader>> callerChain;
 
     public VelocityCallerContextResolver(ProxyServer proxyServer, ClassLoader ownClassLoader) {
@@ -70,21 +75,24 @@ public final class VelocityCallerContextResolver implements CallerContextResolve
 
     /** Called while Velocity initializes the provider, before plugin work is scheduled. */
     public void synchronizePlugins() {
-        proxyServer.getPluginManager().getPlugins().forEach(container -> container.getInstance().ifPresent(instance ->
-                identities.register(container.getDescription().getId(), instance.getClass().getClassLoader())
-        ));
+        proxyServer.getPluginManager().getPlugins().forEach(container -> container.getInstance().ifPresent(instance -> {
+            PluginIdentity identity =
+                    identities.register(container.getDescription().getId(), instance.getClass().getClassLoader());
+            identitiesByInstance.put(instance, identity);
+        }));
     }
 
     public void invalidateAll() {
+        identitiesByInstance.clear();
         identities.invalidateAll();
     }
 
     @Override
     public PluginIdentity issueIdentity(Object platformPlugin) {
         Objects.requireNonNull(platformPlugin, "Platform plugin cannot be null.");
-        PluginIdentity identity = identities.find(platformPlugin.getClass().getClassLoader());
+        PluginIdentity identity = identitiesByInstance.get(platformPlugin);
         if (identity == null) {
-            throw new SecurityException("Velocity plugin is not active in DataProvider's identity registry.");
+            throw new SecurityException("Object is not the active Velocity plugin instance registered with DataProvider.");
         }
         CallerContext caller = resolveCaller();
         if (!identity.pluginId().equals(caller.pluginId()) || identity.classLoader() != caller.classLoader()) {

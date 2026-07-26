@@ -31,8 +31,9 @@ class VelocityCallerContextResolverTest {
         ClassLoader outerLoader = new ClassLoader() {
         };
 
+        Object plugin = createPluginInstance(nearestLoader);
         ProxyServer proxy = createProxyServer(
-                        createPluginContainer("proxyfeatures", createPluginInstance(nearestLoader)),
+                        createPluginContainer("proxyfeatures", plugin),
                         createPluginContainer("wrapperplugin", createPluginInstance(outerLoader))
                 );
         VelocityCallerContextResolver resolver = new VelocityCallerContextResolver(
@@ -43,8 +44,6 @@ class VelocityCallerContextResolverTest {
         resolver.synchronizePlugins();
         clearInvocations(proxy);
 
-        Object plugin = createPluginInstance(nearestLoader);
-        // The registry maps class loaders; the bound instance can be a framework proxy.
         PluginIdentity identity = resolver.issueIdentity(plugin);
         CompletableFuture.runAsync(() -> assertTrue(resolver.isIdentityActive(identity))).join();
 
@@ -53,6 +52,23 @@ class VelocityCallerContextResolverTest {
         verifyNoInteractions(proxy);
         resolver.invalidateAll();
         assertFalse(resolver.isIdentityActive(identity));
+    }
+
+    @Test
+    void rejectsAnUnregisteredInstanceFromTheRegisteredClassLoader() {
+        ClassLoader pluginLoader = new ClassLoader() {
+        };
+        Object registered = createPluginInstance(pluginLoader);
+        ProxyServer proxy = createProxyServer(createPluginContainer("example", registered));
+        VelocityCallerContextResolver resolver = new VelocityCallerContextResolver(
+                proxy,
+                getClass().getClassLoader(),
+                () -> List.of(pluginLoader)
+        );
+        resolver.synchronizePlugins();
+
+        Object lookalike = createPluginInstance(pluginLoader);
+        assertThrows(SecurityException.class, () -> resolver.issueIdentity(lookalike));
     }
 
     @Test
