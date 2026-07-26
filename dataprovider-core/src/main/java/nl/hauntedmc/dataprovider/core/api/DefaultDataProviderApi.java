@@ -10,6 +10,7 @@ import nl.hauntedmc.dataprovider.database.DatabaseProvider;
 import nl.hauntedmc.dataprovider.database.DatabaseType;
 
 import javax.sql.DataSource;
+import java.util.Arrays;
 import java.util.Objects;
 
 /** Public read-only facade for plugin-scoped DataProvider access. */
@@ -46,18 +47,46 @@ public final class DefaultDataProviderApi implements DataProviderAPI {
             );
         }
         PluginIdentity boundIdentity = requireIdentity();
+        Class<?>[] validatedEntities = validateEntityClasses(boundIdentity, entityClasses);
         return new nl.hauntedmc.dataprovider.core.orm.ORMContext(
                 handler.getPluginId(boundIdentity),
                 dataSource,
                 logger,
                 handler.getConfiguredOrmSchemaMode(boundIdentity),
-                entityClasses
+                validatedEntities
         );
     }
 
     /** Package-visible for API-path regression tests. */
     static boolean isManagedDataSource(DataSource dataSource) {
         return IdentityBoundDatabaseProvider.isBoundDataSource(dataSource);
+    }
+
+    static Class<?>[] validateEntityClasses(PluginIdentity identity, Class<?>[] entityClasses) {
+        Objects.requireNonNull(identity, "Plugin identity cannot be null.");
+        if (entityClasses == null || entityClasses.length == 0) {
+            throw new IllegalArgumentException("At least one entity class must be provided.");
+        }
+        Class<?>[] validated = Arrays.copyOf(entityClasses, entityClasses.length);
+        for (Class<?> entityClass : validated) {
+            Objects.requireNonNull(entityClass, "Entity classes cannot contain null.");
+            if (!isOwnedOrSharedClass(identity.classLoader(), entityClass.getClassLoader())) {
+                throw new SecurityException("ORM entity classes must belong to the bound plugin or a parent class loader.");
+            }
+        }
+        return validated;
+    }
+
+    private static boolean isOwnedOrSharedClass(ClassLoader pluginLoader, ClassLoader entityLoader) {
+        if (entityLoader == null) {
+            return true;
+        }
+        for (ClassLoader current = pluginLoader; current != null; current = current.getParent()) {
+            if (current == entityLoader) {
+                return true;
+            }
+        }
+        return false;
     }
 
     @Override

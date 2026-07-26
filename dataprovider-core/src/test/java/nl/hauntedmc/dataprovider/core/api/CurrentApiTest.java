@@ -15,11 +15,13 @@ import nl.hauntedmc.dataprovider.exception.ProviderClosedException;
 import org.junit.jupiter.api.Test;
 
 import javax.sql.DataSource;
+import java.lang.reflect.Proxy;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.CompletableFuture;
 
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.doAnswer;
@@ -195,6 +197,26 @@ class CurrentApiTest {
         RelationalDatabaseProvider boundProvider = (RelationalDatabaseProvider)
                 IdentityBoundDatabaseProvider.wrap(handler, identity, provider);
         assertTrue(DefaultDataProviderApi.isManagedDataSource(boundProvider.getDataSource()));
+    }
+
+    @Test
+    void ormRejectsForeignOrNullEntityClasses() {
+        PluginIdentity identity = identity("owner");
+        ClassLoader foreignLoader = new ClassLoader() {
+        };
+        Class<?> foreignClass = Proxy.newProxyInstance(
+                foreignLoader,
+                new Class<?>[] {Runnable.class},
+                (proxy, method, arguments) -> null
+        ).getClass();
+
+        assertThrows(SecurityException.class,
+                () -> DefaultDataProviderApi.validateEntityClasses(identity, new Class<?>[] {foreignClass}));
+        assertThrows(NullPointerException.class,
+                () -> DefaultDataProviderApi.validateEntityClasses(identity, new Class<?>[] {null}));
+        Class<?>[] input = {CurrentApiTest.class, String.class};
+        Class<?>[] validated = DefaultDataProviderApi.validateEntityClasses(identity, input);
+        assertNotSame(input, validated);
     }
 
     private PluginIdentity identity(String pluginId) {
