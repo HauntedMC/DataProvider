@@ -19,6 +19,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.CompletableFuture;
 
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.doAnswer;
@@ -176,7 +177,7 @@ class CurrentApiTest {
     }
 
     @Test
-    void ormRequiresAManagedDataSourceAndUsesResolvedIdentity() {
+    void ormRequiresAnIdentityBoundManagedDataSource() {
         DataProviderHandler handler = mock(DataProviderHandler.class);
         PluginIdentity identity = identity("resolved-plugin");
         when(handler.getPluginId(identity)).thenReturn("resolved-plugin");
@@ -188,8 +189,12 @@ class CurrentApiTest {
         assertThrows(IllegalArgumentException.class, () -> api.createOrmContext(
                 mock(ScopedDataSource.class), mock(nl.hauntedmc.dataprovider.logging.LoggerAdapter.class), "none"
         ));
-        assertTrue(DefaultDataProviderApi.isManagedDataSource(mock(ScopedDataSource.class)));
-        verify(handler).getPluginId(identity);
+        assertFalse(DefaultDataProviderApi.isManagedDataSource(mock(ScopedDataSource.class)));
+        RelationalDatabaseProvider provider = mock(RelationalDatabaseProvider.class);
+        when(provider.getDataSource()).thenReturn(mock(ScopedDataSource.class));
+        RelationalDatabaseProvider boundProvider = (RelationalDatabaseProvider)
+                IdentityBoundDatabaseProvider.wrap(handler, identity, provider);
+        assertTrue(DefaultDataProviderApi.isManagedDataSource(boundProvider.getDataSource()));
     }
 
     private PluginIdentity identity(String pluginId) {

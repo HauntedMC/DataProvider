@@ -6,7 +6,6 @@ import nl.hauntedmc.dataprovider.api.OwnerScope;
 import nl.hauntedmc.dataprovider.api.orm.ORMContext;
 import nl.hauntedmc.dataprovider.core.DataProviderHandler;
 import nl.hauntedmc.dataprovider.core.identity.PluginIdentity;
-import nl.hauntedmc.dataprovider.core.concurrent.ScopedDataSource;
 import nl.hauntedmc.dataprovider.database.DatabaseProvider;
 import nl.hauntedmc.dataprovider.database.DatabaseType;
 
@@ -52,7 +51,7 @@ public final class DefaultDataProviderApi implements DataProviderAPI {
 
     /** Package-visible for API-path regression tests. */
     static boolean isManagedDataSource(DataSource dataSource) {
-        return dataSource instanceof ScopedDataSource;
+        return IdentityBoundDatabaseProvider.isBoundDataSource(dataSource);
     }
 
     @Override

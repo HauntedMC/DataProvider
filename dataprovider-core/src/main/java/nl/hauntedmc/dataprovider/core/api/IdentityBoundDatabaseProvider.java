@@ -44,6 +44,10 @@ final class IdentityBoundDatabaseProvider {
         return (DatabaseProvider) proxy(provider, handler, identity, providerInterfaces(provider));
     }
 
+    static boolean isBoundDataSource(DataSource dataSource) {
+        return dataSource instanceof GuardedDataSource;
+    }
+
     private static Class<?>[] providerInterfaces(DatabaseProvider provider) {
         if (provider instanceof RelationalDatabaseProvider) {
             return new Class<?>[] {RelationalDatabaseProvider.class};
