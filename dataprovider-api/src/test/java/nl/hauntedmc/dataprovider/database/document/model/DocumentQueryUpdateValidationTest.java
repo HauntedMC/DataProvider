@@ -3,8 +3,11 @@ package nl.hauntedmc.dataprovider.database.document.model;
 import org.junit.jupiter.api.Test;
 
 import java.util.Map;
+import java.util.ArrayList;
+import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -72,5 +75,25 @@ class DocumentQueryUpdateValidationTest {
 
         assertThrows(UnsupportedOperationException.class, () -> queryMap.put("x", "y"));
         assertThrows(UnsupportedOperationException.class, () -> updateMap.put("x", "y"));
+    }
+
+    @Test
+    void nestedValuesAndReturnedMapsAreDefensiveSnapshots() {
+        List<String> tags = new ArrayList<>(List.of("first"));
+        Map<String, Object> nested = new java.util.LinkedHashMap<>();
+        nested.put("tags", tags);
+        DocumentQuery query = new DocumentQuery().eq("profile", nested);
+        tags.add("second");
+        nested.put("role", "admin");
+
+        Map<String, Object> snapshot = query.toMap();
+        @SuppressWarnings("unchecked")
+        Map<String, Object> profile = (Map<String, Object>) snapshot.get("profile");
+        assertEquals(List.of("first"), profile.get("tags"));
+        assertFalse(profile.containsKey("role"));
+        assertThrows(UnsupportedOperationException.class, () -> profile.put("role", "admin"));
+        @SuppressWarnings("unchecked")
+        List<String> snapshotTags = (List<String>) profile.get("tags");
+        assertThrows(UnsupportedOperationException.class, () -> snapshotTags.add("third"));
     }
 }

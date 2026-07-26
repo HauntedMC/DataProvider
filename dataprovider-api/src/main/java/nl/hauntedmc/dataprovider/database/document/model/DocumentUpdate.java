@@ -1,6 +1,5 @@
 package nl.hauntedmc.dataprovider.database.document.model;
 
-import java.util.Collections;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Objects;
@@ -25,7 +24,7 @@ public class DocumentUpdate {
         operations.computeIfAbsent("$set", k -> new HashMap<String, Object>());
         @SuppressWarnings("unchecked")
         Map<String, Object> setMap = (Map<String, Object>) operations.get("$set");
-        setMap.put(validatedField, value);
+        setMap.put(validatedField, DocumentValueSnapshot.value(value));
         return this;
     }
 
@@ -42,17 +41,17 @@ public class DocumentUpdate {
         operations.computeIfAbsent("$inc", k -> new HashMap<String, Object>());
         @SuppressWarnings("unchecked")
         Map<String, Object> incMap = (Map<String, Object>) operations.get("$inc");
-        incMap.put(validatedField, amount);
+        incMap.put(validatedField, DocumentValueSnapshot.value(amount));
         return this;
     }
 
     /**
-     * Returns an unmodifiable view of the update operations.
+     * Returns a deeply immutable snapshot of the update operations.
      *
      * @return a map representing the update operations
      */
     public Map<String, Object> toMap() {
-        return Collections.unmodifiableMap(operations);
+        return DocumentValueSnapshot.map(operations);
     }
 
     private static String requireFieldName(String field) {

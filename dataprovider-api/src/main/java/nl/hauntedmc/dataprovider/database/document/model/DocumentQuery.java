@@ -1,6 +1,5 @@
 package nl.hauntedmc.dataprovider.database.document.model;
 
-import java.util.Collections;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Objects;
@@ -23,7 +22,7 @@ public class DocumentQuery {
      */
     public DocumentQuery eq(String field, Object value) {
         String validatedField = requireFieldName(field);
-        criteria.put(validatedField, value);
+        criteria.put(validatedField, DocumentValueSnapshot.value(value));
         return this;
     }
 
@@ -38,7 +37,7 @@ public class DocumentQuery {
         String validatedField = requireFieldName(field);
         Objects.requireNonNull(value, "Greater-than-or-equal value cannot be null.");
         Map<String, Object> op = new HashMap<>();
-        op.put("$gte", value);
+        op.put("$gte", DocumentValueSnapshot.value(value));
         criteria.put(validatedField, op);
         return this;
     }
@@ -53,17 +52,17 @@ public class DocumentQuery {
     public DocumentQuery raw(String field, Object expression) {
         String validatedField = requireFieldName(field);
         Objects.requireNonNull(expression, "Raw expression cannot be null.");
-        criteria.put(validatedField, expression);
+        criteria.put(validatedField, DocumentValueSnapshot.value(expression));
         return this;
     }
 
     /**
-     * Returns an unmodifiable view of the query criteria.
+     * Returns a deeply immutable snapshot of the query criteria.
      *
      * @return a map representing the query criteria
      */
     public Map<String, Object> toMap() {
-        return Collections.unmodifiableMap(criteria);
+        return DocumentValueSnapshot.map(criteria);
     }
 
     private static String requireFieldName(String field) {
