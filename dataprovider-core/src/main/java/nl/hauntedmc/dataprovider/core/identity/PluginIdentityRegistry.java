@@ -11,7 +11,7 @@ public final class PluginIdentityRegistry {
     private final Map<ClassLoader, PluginIdentity> identitiesByLoader = new ConcurrentHashMap<>();
     private final Map<UUID, PluginIdentity> identitiesByToken = new ConcurrentHashMap<>();
 
-    public PluginIdentity register(String pluginId, ClassLoader classLoader) {
+    public synchronized PluginIdentity register(String pluginId, ClassLoader classLoader) {
         Objects.requireNonNull(classLoader, "Plugin class loader cannot be null.");
         PluginIdentity identity = new PluginIdentity(pluginId, classLoader);
         // Replacing either index invalidates the previous lifecycle generation.
@@ -23,29 +23,29 @@ public final class PluginIdentityRegistry {
         return identity;
     }
 
-    public PluginIdentity find(ClassLoader classLoader) {
+    public synchronized PluginIdentity find(ClassLoader classLoader) {
         return identitiesByLoader.get(classLoader);
     }
 
-    public void invalidate(ClassLoader classLoader) {
+    public synchronized void invalidate(ClassLoader classLoader) {
         PluginIdentity identity = identitiesByLoader.remove(classLoader);
         if (identity != null) {
             identitiesByToken.remove(identity.token(), identity);
         }
     }
 
-    public void invalidateAll() {
+    public synchronized void invalidateAll() {
         identitiesByLoader.clear();
         identitiesByToken.clear();
     }
 
-    public boolean isActive(PluginIdentity identity) {
+    public synchronized boolean isActive(PluginIdentity identity) {
         return identity != null
                 && identitiesByLoader.get(identity.classLoader()) == identity
                 && identitiesByToken.get(identity.token()) == identity;
     }
 
-    public boolean isKnownPlugin(String pluginId) {
+    public synchronized boolean isKnownPlugin(String pluginId) {
         if (pluginId == null) {
             return false;
         }
