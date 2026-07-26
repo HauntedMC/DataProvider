@@ -3,8 +3,13 @@ package nl.hauntedmc.dataprovider.core.database.document.impl.mongodb;
 import com.mongodb.client.MongoClient;
 import com.mongodb.client.MongoCollection;
 import com.mongodb.client.MongoDatabase;
+import com.mongodb.client.model.UpdateOptions;
 import nl.hauntedmc.dataprovider.core.testutil.DirectExecutorService;
+import nl.hauntedmc.dataprovider.database.document.model.DocumentQuery;
+import nl.hauntedmc.dataprovider.database.document.model.DocumentUpdate;
+import nl.hauntedmc.dataprovider.database.document.model.DocumentUpdateOptions;
 import org.bson.Document;
+import org.bson.conversions.Bson;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 
@@ -12,6 +17,7 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.Executor;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
@@ -62,16 +68,48 @@ class MongoDBDataAccessTest {
         assertTrue(exception.getMessage().contains("document.profile[0]"));
     }
 
+    @Test
+    void updateSnapshotsMutableInputsBeforeScheduling() {
+        MongoCollection<Document> collection = mockCollection();
+        List<Runnable> queued = new ArrayList<>();
+        MongoDBDataAccess dataAccess = createDataAccess(collection, queued::add);
+        DocumentQuery query = new DocumentQuery().eq("status", "pending");
+        DocumentUpdate update = new DocumentUpdate().set("attempt", 1);
+        DocumentUpdateOptions options = new DocumentUpdateOptions().setUpsert(false);
+
+        var completion = dataAccess.updateOne("profiles", query, update, options);
+        query.eq("status", "changed");
+        update.set("attempt", 2);
+        options.setUpsert(true);
+        queued.getFirst().run();
+        completion.join();
+
+        ArgumentCaptor<Bson> queryCapture = ArgumentCaptor.forClass(Bson.class);
+        ArgumentCaptor<Bson> updateCapture = ArgumentCaptor.forClass(Bson.class);
+        ArgumentCaptor<UpdateOptions> optionsCapture = ArgumentCaptor.forClass(UpdateOptions.class);
+        verify(collection).updateOne(queryCapture.capture(), updateCapture.capture(), optionsCapture.capture());
+        assertEquals("pending", ((Document) queryCapture.getValue()).getString("status"));
+        assertEquals(1, ((Document) updateCapture.getValue()).get("$set", Document.class).getInteger("attempt"));
+        assertEquals(false, optionsCapture.getValue().isUpsert());
+    }
+
     @SuppressWarnings("unchecked")
     private static MongoCollection<Document> mockCollection() {
         return mock(MongoCollection.class);
     }
 
     private static MongoDBDataAccess createDataAccess(MongoCollection<Document> collection) {
+        return createDataAccess(collection, new DirectExecutorService());
+    }
+
+    private static MongoDBDataAccess createDataAccess(
+            MongoCollection<Document> collection,
+            Executor executor
+    ) {
         MongoClient client = mock(MongoClient.class);
         MongoDatabase database = mock(MongoDatabase.class);
         when(client.getDatabase("test")).thenReturn(database);
         when(database.getCollection("profiles")).thenReturn(collection);
-        return new MongoDBDataAccess(client, "test", new DirectExecutorService());
+        return new MongoDBDataAccess(client, "test", executor);
     }
 }

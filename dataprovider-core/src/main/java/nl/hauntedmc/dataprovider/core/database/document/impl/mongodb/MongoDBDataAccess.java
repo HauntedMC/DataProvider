@@ -60,10 +60,6 @@ public class MongoDBDataAccess implements DocumentDataAccess {
         return toMongoDocument(update.toMap());
     }
 
-    private UpdateOptions toMongoUpdateOptions(DocumentUpdateOptions options) {
-        return new UpdateOptions().upsert(options.isUpsert());
-    }
-
     private Document toMongoDocument(Map<?, ?> document) {
         return copyDocument(document, "document");
     }
@@ -83,8 +79,9 @@ public class MongoDBDataAccess implements DocumentDataAccess {
     @Override
     public CompletableFuture<Map<String, Object>> findOne(String collection, DocumentQuery query) {
         Objects.requireNonNull(query, "Document query cannot be null.");
+        Bson safeQuery = toBsonQuery(query);
         return AsyncTaskSupport.supplyAsync(executor, "mongodb.findOne", () -> {
-            Document found = getCollection(collection).find(toBsonQuery(query)).first();
+            Document found = getCollection(collection).find(safeQuery).first();
             return found == null ? null : documentToMap(found);
         });
     }
@@ -92,9 +89,10 @@ public class MongoDBDataAccess implements DocumentDataAccess {
     @Override
     public CompletableFuture<List<Map<String, Object>>> findMany(String collection, DocumentQuery query) {
         Objects.requireNonNull(query, "Document query cannot be null.");
+        Bson safeQuery = toBsonQuery(query);
         return AsyncTaskSupport.supplyAsync(executor, "mongodb.findMany", () -> {
             List<Map<String, Object>> results = new ArrayList<>();
-            for (Document document : getCollection(collection).find(toBsonQuery(query))) {
+            for (Document document : getCollection(collection).find(safeQuery)) {
                 results.add(documentToMap(document));
             }
             return results;
@@ -111,8 +109,11 @@ public class MongoDBDataAccess implements DocumentDataAccess {
         Objects.requireNonNull(query, "Document query cannot be null.");
         Objects.requireNonNull(update, "Document update cannot be null.");
         Objects.requireNonNull(options, "Document update options cannot be null.");
+        Bson safeQuery = toBsonQuery(query);
+        Bson safeUpdate = toBsonUpdate(update);
+        UpdateOptions safeOptions = new UpdateOptions().upsert(options.isUpsert());
         return AsyncTaskSupport.runAsync(executor, "mongodb.updateOne", () -> getCollection(collection)
-                .updateOne(toBsonQuery(query), toBsonUpdate(update), toMongoUpdateOptions(options)));
+                .updateOne(safeQuery, safeUpdate, safeOptions));
     }
 
     @Override
@@ -125,22 +126,27 @@ public class MongoDBDataAccess implements DocumentDataAccess {
         Objects.requireNonNull(query, "Document query cannot be null.");
         Objects.requireNonNull(update, "Document update cannot be null.");
         Objects.requireNonNull(options, "Document update options cannot be null.");
+        Bson safeQuery = toBsonQuery(query);
+        Bson safeUpdate = toBsonUpdate(update);
+        UpdateOptions safeOptions = new UpdateOptions().upsert(options.isUpsert());
         return AsyncTaskSupport.runAsync(executor, "mongodb.updateMany", () -> getCollection(collection)
-                .updateMany(toBsonQuery(query), toBsonUpdate(update), toMongoUpdateOptions(options)));
+                .updateMany(safeQuery, safeUpdate, safeOptions));
     }
 
     @Override
     public CompletableFuture<Void> deleteOne(String collection, DocumentQuery query) {
         Objects.requireNonNull(query, "Document query cannot be null.");
+        Bson safeQuery = toBsonQuery(query);
         return AsyncTaskSupport.runAsync(executor, "mongodb.deleteOne",
-                () -> getCollection(collection).deleteOne(toBsonQuery(query)));
+                () -> getCollection(collection).deleteOne(safeQuery));
     }
 
     @Override
     public CompletableFuture<Void> deleteMany(String collection, DocumentQuery query) {
         Objects.requireNonNull(query, "Document query cannot be null.");
+        Bson safeQuery = toBsonQuery(query);
         return AsyncTaskSupport.runAsync(executor, "mongodb.deleteMany",
-                () -> getCollection(collection).deleteMany(toBsonQuery(query)));
+                () -> getCollection(collection).deleteMany(safeQuery));
     }
 
     @Override
