@@ -43,6 +43,7 @@ import java.util.LinkedHashMap;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 import java.util.concurrent.CompletionException;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Executor;
@@ -51,6 +52,19 @@ import java.util.function.Predicate;
 
 /** Internal classification and redaction boundary for public DataProvider failures. */
 public final class DataProviderExceptionMapper {
+    private static final Set<String> READ_OPERATIONS = Set.of(
+            "mongodb.findMany",
+            "mongodb.findOne",
+            "mysql.queryForList",
+            "mysql.queryForSingle",
+            "mysql.queryForSingleValue",
+            "mysql.schema.tableExists",
+            "redis.getKey",
+            "redis.hgetAll",
+            "redis.queryByPattern",
+            "redis.smembers",
+            "redis.zrangeByScore"
+    );
 
     private DataProviderExceptionMapper() {
     }
@@ -365,9 +379,7 @@ public final class DataProviderExceptionMapper {
         if (operationName == null) {
             return false;
         }
-        String lower = operationName.toLowerCase(Locale.ROOT);
-        return lower.contains("get") || lower.contains("find") || lower.contains("query")
-                || lower.contains("scan") || lower.contains("range") || lower.contains("health");
+        return READ_OPERATIONS.contains(operationName) || operationName.endsWith(".health");
     }
 
     private static DatabaseType inferBackend(String operationName) {

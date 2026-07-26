@@ -163,6 +163,21 @@ class DataProviderExceptionMapperTest {
     }
 
     @Test
+    void writeOutcomeIsNotInferredFromOperationNameFragments() {
+        DataProviderTimeoutException timeout = assertInstanceOf(
+                DataProviderTimeoutException.class,
+                DataProviderExceptionMapper.translate(
+                        new SQLTimeoutException("timed out", "HYT00"),
+                        execution,
+                        "mysql.target"
+                )
+        );
+
+        assertEquals(RetryAdvice.CONDITIONAL, timeout.retryAdvice());
+        assertEquals(ExecutionOutcome.MAY_HAVE_APPLIED, timeout.executionOutcome());
+    }
+
+    @Test
     void unclassifiedDriverFailureUsesGenericOperationCategory() {
         DataProviderOperationException failure = assertInstanceOf(
                 DataProviderOperationException.class,
