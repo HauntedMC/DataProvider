@@ -18,7 +18,6 @@ import java.util.function.Supplier;
  */
 public final class BukkitCallerContextResolver implements CallerContextResolver {
 
-    private final ClassLoader ownClassLoader;
     private final PluginIdentityRegistry identities = new PluginIdentityRegistry();
     private final Supplier<List<ClassLoader>> callerChain;
 
@@ -30,7 +29,7 @@ public final class BukkitCallerContextResolver implements CallerContextResolver 
     }
 
     BukkitCallerContextResolver(ClassLoader ownClassLoader, Supplier<List<ClassLoader>> callerChain) {
-        this.ownClassLoader = Objects.requireNonNull(ownClassLoader, "Own class loader cannot be null.");
+        Objects.requireNonNull(ownClassLoader, "Own class loader cannot be null.");
         this.callerChain = Objects.requireNonNull(callerChain, "Caller chain cannot be null.");
     }
 

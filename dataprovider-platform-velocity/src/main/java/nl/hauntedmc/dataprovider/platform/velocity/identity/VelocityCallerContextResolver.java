@@ -21,7 +21,6 @@ import java.util.function.Supplier;
 public final class VelocityCallerContextResolver implements CallerContextResolver {
 
     private final ProxyServer proxyServer;
-    private final ClassLoader ownClassLoader;
     private final PluginIdentityRegistry identities = new PluginIdentityRegistry();
     private final Map<Object, PluginIdentity> identitiesByInstance =
             Collections.synchronizedMap(new IdentityHashMap<>());
@@ -38,10 +37,10 @@ public final class VelocityCallerContextResolver implements CallerContextResolve
     VelocityCallerContextResolver(
             ProxyServer proxyServer,
             ClassLoader ownClassLoader,
-            Supplier<List<ClassLoader>> callerChain
+        Supplier<List<ClassLoader>> callerChain
     ) {
         this.proxyServer = Objects.requireNonNull(proxyServer, "ProxyServer cannot be null.");
-        this.ownClassLoader = Objects.requireNonNull(ownClassLoader, "Own class loader cannot be null.");
+        Objects.requireNonNull(ownClassLoader, "Own class loader cannot be null.");
         this.callerChain = Objects.requireNonNull(callerChain, "Caller chain cannot be null.");
     }
 
