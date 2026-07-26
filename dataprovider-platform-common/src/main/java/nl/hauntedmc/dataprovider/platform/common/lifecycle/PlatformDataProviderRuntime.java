@@ -42,10 +42,10 @@ public final class PlatformDataProviderRuntime {
         Objects.requireNonNull(logger, "Logger cannot be null.");
 
         DataProvider previousProvider = activeProvider;
-        activeProvider = null;
         if (previousProvider != null) {
             logger.warn(LEFTOVER_INSTANCE_MESSAGE);
             shutdownProvider(previousProvider, logger, LEFTOVER_SHUTDOWN_FAILURE_MESSAGE);
+            activeProvider = null;
         }
 
         DataProvider createdProvider = Objects.requireNonNull(
@@ -57,7 +57,14 @@ public final class PlatformDataProviderRuntime {
             startupInitializer.accept(createdProvider);
         } catch (RuntimeException | Error exception) {
             logger.error(STARTUP_INITIALIZATION_FAILURE_MESSAGE, exception);
-            shutdownProvider(createdProvider, logger, STARTUP_FAILURE_SHUTDOWN_MESSAGE);
+            try {
+                shutdownProvider(createdProvider, logger, STARTUP_FAILURE_SHUTDOWN_MESSAGE);
+            } catch (RuntimeException | Error cleanupFailure) {
+                if (cleanupFailure != exception) {
+                    exception.addSuppressed(cleanupFailure);
+                }
+                activeProvider = createdProvider;
+            }
             throw exception;
         }
 
@@ -71,9 +78,9 @@ public final class PlatformDataProviderRuntime {
     public synchronized void stop(LoggerAdapter logger) {
         Objects.requireNonNull(logger, "Logger cannot be null.");
         DataProvider providerToShutdown = activeProvider;
-        activeProvider = null;
         if (providerToShutdown != null) {
             shutdownProvider(providerToShutdown, logger, SHUTDOWN_FAILURE_MESSAGE);
+            activeProvider = null;
         }
     }
 
@@ -91,8 +98,9 @@ public final class PlatformDataProviderRuntime {
     private static void shutdownProvider(DataProvider provider, LoggerAdapter logger, String failureMessage) {
         try {
             provider.shutdownAllDatabases();
-        } catch (Exception e) {
-            logger.error(failureMessage, e);
+        } catch (RuntimeException | Error failure) {
+            logger.error(failureMessage, failure);
+            throw failure;
         }
     }
 }
