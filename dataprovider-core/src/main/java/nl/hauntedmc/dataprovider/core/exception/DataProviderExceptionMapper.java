@@ -38,6 +38,7 @@ import java.sql.SQLTimeoutException;
 import java.util.LinkedHashMap;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Objects;
 import java.util.concurrent.CompletionException;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Executor;
@@ -50,7 +51,7 @@ public final class DataProviderExceptionMapper {
     }
 
     public static DataProviderException translate(Throwable failure, Executor executor, String operationName) {
-        Throwable root = unwrapAsync(failure);
+        Throwable root = unwrapAsync(Objects.requireNonNull(failure, "Failure cannot be null."));
         if (root instanceof DataProviderException structured) {
             return structured;
         }

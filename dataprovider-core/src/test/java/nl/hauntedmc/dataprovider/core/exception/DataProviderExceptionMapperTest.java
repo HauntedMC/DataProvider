@@ -26,11 +26,18 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 
 class DataProviderExceptionMapperTest {
 
     private final ExecutionHandle execution = new ContextualExecutionHandle(
             ExecutionHandle.direct(), "test-plugin", DatabaseType.MYSQL, "main");
+
+    @Test
+    void nullFailuresAreRejectedAtTheMappingBoundary() {
+        assertThrows(NullPointerException.class,
+                () -> DataProviderExceptionMapper.translate(null, execution, "mysql.queryForList"));
+    }
 
     @Test
     void queueRejectionIsSafeAndRetryable() {
