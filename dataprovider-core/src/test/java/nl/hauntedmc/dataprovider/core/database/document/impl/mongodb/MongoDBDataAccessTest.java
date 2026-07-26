@@ -88,7 +88,10 @@ class MongoDBDataAccessTest {
         ArgumentCaptor<Bson> updateCapture = ArgumentCaptor.forClass(Bson.class);
         ArgumentCaptor<UpdateOptions> optionsCapture = ArgumentCaptor.forClass(UpdateOptions.class);
         verify(collection).updateOne(queryCapture.capture(), updateCapture.capture(), optionsCapture.capture());
-        assertEquals("pending", ((Document) queryCapture.getValue()).getString("status"));
+        assertEquals(
+                "pending",
+                ((Document) queryCapture.getValue()).get("status", Document.class).getString("$eq")
+        );
         assertEquals(1, ((Document) updateCapture.getValue()).get("$set", Document.class).getInteger("attempt"));
         assertEquals(false, optionsCapture.getValue().isUpsert());
     }

@@ -31,7 +31,9 @@ public class DocumentQuery {
     public DocumentQuery eq(String field, Object value) {
         String validatedField = requireFieldName(field);
         explicitMatchAll = false;
-        criteria.put(validatedField, DocumentValueSnapshot.value(value));
+        Map<String, Object> op = new HashMap<>();
+        op.put("$eq", DocumentValueSnapshot.value(value));
+        criteria.put(validatedField, op);
         return this;
     }
 
@@ -53,21 +55,6 @@ public class DocumentQuery {
     }
 
     /**
-     * Adds a raw expression for a field.
-     *
-     * @param field      the field name
-     * @param expression the expression object
-     * @return this query instance for chaining
-     */
-    public DocumentQuery raw(String field, Object expression) {
-        String validatedField = requireFieldName(field);
-        Objects.requireNonNull(expression, "Raw expression cannot be null.");
-        explicitMatchAll = false;
-        criteria.put(validatedField, DocumentValueSnapshot.value(expression));
-        return this;
-    }
-
-    /**
      * Returns a deeply immutable snapshot of the query criteria.
      *
      * @return a map representing the query criteria
@@ -85,6 +72,10 @@ public class DocumentQuery {
         if (field == null || field.isBlank()) {
             throw new IllegalArgumentException("Query field name cannot be null or blank.");
         }
-        return field;
+        String normalized = field.trim();
+        if (normalized.startsWith("$") || normalized.indexOf('\0') >= 0) {
+            throw new IllegalArgumentException("Query field names cannot be operators or contain null characters.");
+        }
+        return normalized;
     }
 }

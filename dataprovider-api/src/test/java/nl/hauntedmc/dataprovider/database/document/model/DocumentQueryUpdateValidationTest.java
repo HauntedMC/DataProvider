@@ -18,18 +18,13 @@ class DocumentQueryUpdateValidationTest {
         DocumentQuery query = new DocumentQuery();
         assertThrows(IllegalArgumentException.class, () -> query.eq(" ", 1));
         assertThrows(IllegalArgumentException.class, () -> query.eq(null, 1));
+        assertThrows(IllegalArgumentException.class, () -> query.eq("$where", "unsafe"));
     }
 
     @Test
     void gteRejectsNullValue() {
         DocumentQuery query = new DocumentQuery();
         assertThrows(NullPointerException.class, () -> query.gte("score", null));
-    }
-
-    @Test
-    void rawRejectsNullExpression() {
-        DocumentQuery query = new DocumentQuery();
-        assertThrows(NullPointerException.class, () -> query.raw("meta", null));
     }
 
     @Test
@@ -50,7 +45,7 @@ class DocumentQueryUpdateValidationTest {
         DocumentQuery query = new DocumentQuery()
                 .eq("uuid", "abc")
                 .gte("score", 10)
-                .raw("active", true);
+                .eq("active", true);
 
         DocumentUpdate update = new DocumentUpdate()
                 .set("name", "Remy")
@@ -59,8 +54,12 @@ class DocumentQueryUpdateValidationTest {
         Map<String, Object> queryMap = query.toMap();
         Map<String, Object> updateMap = update.toMap();
 
-        assertEquals("abc", queryMap.get("uuid"));
-        assertEquals(true, queryMap.get("active"));
+        @SuppressWarnings("unchecked")
+        Map<String, Object> uuidExpression = (Map<String, Object>) queryMap.get("uuid");
+        @SuppressWarnings("unchecked")
+        Map<String, Object> activeExpression = (Map<String, Object>) queryMap.get("active");
+        assertEquals("abc", uuidExpression.get("$eq"));
+        assertEquals(true, activeExpression.get("$eq"));
         assertTrue(queryMap.containsKey("score"));
         assertTrue(queryMap.containsKey("active"));
         assertTrue(updateMap.containsKey("$set"));
@@ -88,7 +87,9 @@ class DocumentQueryUpdateValidationTest {
 
         Map<String, Object> snapshot = query.toMap();
         @SuppressWarnings("unchecked")
-        Map<String, Object> profile = (Map<String, Object>) snapshot.get("profile");
+        Map<String, Object> profileExpression = (Map<String, Object>) snapshot.get("profile");
+        @SuppressWarnings("unchecked")
+        Map<String, Object> profile = (Map<String, Object>) profileExpression.get("$eq");
         assertEquals(List.of("first"), profile.get("tags"));
         assertFalse(profile.containsKey("role"));
         assertThrows(UnsupportedOperationException.class, () -> profile.put("role", "admin"));
