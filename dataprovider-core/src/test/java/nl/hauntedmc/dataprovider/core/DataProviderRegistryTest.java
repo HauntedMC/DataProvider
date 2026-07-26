@@ -442,6 +442,35 @@ class DataProviderRegistryTest {
     }
 
     @Test
+    void providerReferenceCountsAreBounded() {
+        DatabaseFactory factory = mock(DatabaseFactory.class);
+        ConfigHandler configHandler = mock(ConfigHandler.class);
+        when(configHandler.isDatabaseTypeEnabled(DatabaseType.MYSQL)).thenReturn(true);
+        DataProviderRegistry registry = new DataProviderRegistry(
+                factory, configHandler, new RecordingLoggerAdapter()
+        );
+        RecordingProvider provider = new RecordingProvider(true);
+        when(factory.createDatabaseProvider(DatabaseType.MYSQL, ConnectionIdentifier.of("default")))
+                .thenReturn(provider);
+
+        for (int index = 0; index < 1_024; index++) {
+            assertSame(provider, registry.registerDatabase(
+                    "plugin", "feature", DatabaseType.MYSQL, "default"
+            ));
+        }
+
+        assertThrows(IllegalStateException.class, () -> registry.registerDatabase(
+                "plugin", "feature", DatabaseType.MYSQL, "default"
+        ));
+        assertEquals(
+                1_024,
+                registry.getActiveDatabaseReferenceCounts().values().iterator().next()
+        );
+        registry.unregisterAllDatabasesForPlugin("plugin");
+        assertEquals(1, provider.disconnectCalls);
+    }
+
+    @Test
     void getActiveSnapshotsExposeCurrentRegistryState() {
         DatabaseFactory factory = mock(DatabaseFactory.class);
         ConfigHandler configHandler = mock(ConfigHandler.class);

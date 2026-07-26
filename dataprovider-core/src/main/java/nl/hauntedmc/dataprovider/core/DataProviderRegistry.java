@@ -33,6 +33,7 @@ class DataProviderRegistry {
     private static final String SHUTDOWN_MESSAGE =
             "DataProvider is shut down. Obtain a fresh API instance after plugin enable.";
     private static final int MAX_RETAINED_TERMINAL_SNAPSHOTS = 256;
+    private static final int MAX_REFERENCES_PER_PROVIDER = 1_024;
 
     private final ConcurrentMap<RegistrationKey, ProviderSlot> activeDatabases = new ConcurrentHashMap<>();
     private final ConcurrentMap<RegistrationKey, ProviderLifecycleSnapshot> lifecycleSnapshots =
@@ -591,8 +592,15 @@ class DataProviderRegistry {
                 return false;
             }
             if (current == ProviderLifecycleState.READY && provider == null) return false;
+            int ownerReferences = ownerReferenceCounts.getOrDefault(ownerScope, 0);
+            if (referenceCount >= MAX_REFERENCES_PER_PROVIDER
+                    || ownerReferences >= MAX_REFERENCES_PER_PROVIDER) {
+                throw new IllegalStateException(
+                        "Database provider reference limit reached for this connection."
+                );
+            }
             referenceCount++;
-            ownerReferenceCounts.merge(ownerScope, 1, Integer::sum);
+            ownerReferenceCounts.put(ownerScope, ownerReferences + 1);
             return true;
         }
 
