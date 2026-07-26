@@ -261,8 +261,8 @@ class DataProviderRegistry {
         Objects.requireNonNull(pluginId, "Plugin id cannot be null.");
         Objects.requireNonNull(ownerScope, "Owner scope cannot be null.");
         List<ProviderSlot> toClose = new ArrayList<>();
-        Lock readLock = lifecycleLock.readLock();
-        readLock.lock();
+        Lock writeLock = lifecycleLock.writeLock();
+        writeLock.lock();
         try {
             ensureOpen();
             activeDatabases.forEach((key, slot) -> {
@@ -273,7 +273,7 @@ class DataProviderRegistry {
                 }
             });
         } finally {
-            readLock.unlock();
+            writeLock.unlock();
         }
         toClose.forEach(slot -> slot.close("owner scope released"));
     }
@@ -285,8 +285,8 @@ class DataProviderRegistry {
     void unregisterAllDatabasesForPlugin(PluginId pluginId) {
         Objects.requireNonNull(pluginId, "Plugin id cannot be null.");
         List<ProviderSlot> toClose = new ArrayList<>();
-        Lock readLock = lifecycleLock.readLock();
-        readLock.lock();
+        Lock writeLock = lifecycleLock.writeLock();
+        writeLock.lock();
         try {
             ensureOpen();
             activeDatabases.forEach((key, slot) -> {
@@ -296,7 +296,7 @@ class DataProviderRegistry {
                 }
             });
         } finally {
-            readLock.unlock();
+            writeLock.unlock();
         }
         toClose.forEach(slot -> slot.close("plugin cleanup"));
     }
