@@ -89,8 +89,10 @@ public final class DefaultDataProviderScope implements DataProviderScope {
             lifecycleState = LifecycleState.CLOSING;
             try {
                 handler.unregisterAllDatabasesForScope(identity, ownerScope);
-            } finally {
                 lifecycleState = LifecycleState.CLOSED;
+            } catch (RuntimeException | Error failure) {
+                lifecycleState = LifecycleState.OPEN;
+                throw failure;
             }
         }
     }

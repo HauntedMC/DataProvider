@@ -20,15 +20,19 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.CompletableFuture;
 
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.doAnswer;
+import static org.mockito.Mockito.doNothing;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.times;
 import static org.mockito.ArgumentMatchers.any;
 
 class CurrentApiTest {
@@ -176,6 +180,24 @@ class CurrentApiTest {
         assertThrows(ProviderClosedException.class,
                 () -> scope.unregisterDatabase(DatabaseType.MYSQL, "default"));
         assertThrows(ProviderClosedException.class, scope::unregisterAllDatabases);
+    }
+
+    @Test
+    void scopeCloseCanBeRetriedAfterCleanupFailure() {
+        DataProviderHandler handler = mock(DataProviderHandler.class);
+        PluginIdentity identity = identity("plugin");
+        OwnerScope ownerScope = OwnerScope.of("component.scope");
+        when(handler.getPluginId(identity)).thenReturn("plugin");
+        doThrow(new IllegalStateException("cleanup failed"))
+                .doNothing()
+                .when(handler).unregisterAllDatabasesForScope(identity, ownerScope);
+        DataProviderScope scope = boundApi(handler, identity).scope(ownerScope);
+
+        assertThrows(IllegalStateException.class, scope::close);
+        assertEquals(DataProviderScope.LifecycleState.OPEN, scope.lifecycleState());
+        scope.close();
+        assertEquals(DataProviderScope.LifecycleState.CLOSED, scope.lifecycleState());
+        verify(handler, times(2)).unregisterAllDatabasesForScope(identity, ownerScope);
     }
 
     @Test
