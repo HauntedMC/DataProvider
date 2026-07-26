@@ -67,18 +67,29 @@ public class DataProvider {
     public @Nullable InputStream getResource(String filename) {
         if (filename == null) {
             throw new IllegalArgumentException("Filename cannot be null");
-        } else {
-            try {
-                URL url = parentClassLoader.getResource(filename);
-                if (url == null) {
-                    return null;
-                } else {
-                    URLConnection connection = url.openConnection();
-                    connection.setUseCaches(false);
-                    return connection.getInputStream();
-                }
-            } catch (IOException var4) {
+        }
+        validateResourceName(filename);
+        try {
+            URL url = parentClassLoader.getResource(filename);
+            if (url == null) {
                 return null;
+            }
+            URLConnection connection = url.openConnection();
+            connection.setUseCaches(false);
+            return connection.getInputStream();
+        } catch (IOException ignored) {
+            return null;
+        }
+    }
+
+    private static void validateResourceName(String filename) {
+        if (filename.isBlank() || filename.startsWith("/") || filename.indexOf('\\') >= 0
+                || filename.chars().anyMatch(character -> Character.isISOControl(character))) {
+            throw new IllegalArgumentException("Filename must be a relative classpath resource name.");
+        }
+        for (String segment : filename.split("/", -1)) {
+            if (segment.isEmpty() || segment.equals(".") || segment.equals("..")) {
+                throw new IllegalArgumentException("Filename contains an unsupported path segment.");
             }
         }
     }

@@ -68,6 +68,10 @@ class DataProviderTest {
 
             assertNull(provider.getResource("missing-resource.txt"));
             assertThrows(IllegalArgumentException.class, () -> provider.getResource(null));
+            assertThrows(IllegalArgumentException.class, () -> provider.getResource(""));
+            assertThrows(IllegalArgumentException.class, () -> provider.getResource("/custom-resource.txt"));
+            assertThrows(IllegalArgumentException.class, () -> provider.getResource("../custom-resource.txt"));
+            assertThrows(IllegalArgumentException.class, () -> provider.getResource("folder//resource.txt"));
         }
     }
 
