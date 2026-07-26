@@ -250,6 +250,22 @@ class DatabaseFactory {
         }
     }
 
+    /** Candidate-snapshot equivalent used to decide revocations before committing a reload. */
+    protected boolean isConnectionAuthorized(
+            DatabaseConfigMap.DatabaseConfigSnapshot snapshot,
+            PluginId pluginId,
+            DatabaseType type,
+            ConnectionIdentifier connectionIdentifier
+    ) {
+        try {
+            return configMap.isAuthorized(snapshot, type, connectionIdentifier, pluginId, knownPlugin);
+        } catch (ConnectionAccessDeniedException | InvalidConnectionAccessPolicyException denied) {
+            logger.warn("Revoking " + pluginId.value() + " access to " + type.name() + "/"
+                    + connectionIdentifier.value() + ": " + denied.getMessage());
+            return false;
+        }
+    }
+
     /**
      * Produces an opaque, deterministic digest of the connection-affecting configuration. Access
      * policy is intentionally excluded: policy changes affect leases, not the backend client. The
@@ -576,6 +592,12 @@ class DatabaseFactory {
         @Override public void clearResilienceGate() {
             resilienceGate = () -> true;
             resilienceDiagnostics = () -> ConnectionHealthSnapshot.unprobed(isLocallyConnected());
+        }
+
+        @Override public void clearResilienceGateIfMatches(java.util.function.BooleanSupplier gate) {
+            if (resilienceGate == gate) {
+                clearResilienceGate();
+            }
         }
 
         private void requireAvailable(String operation) {

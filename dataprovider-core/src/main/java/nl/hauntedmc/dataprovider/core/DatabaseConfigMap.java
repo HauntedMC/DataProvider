@@ -240,7 +240,9 @@ class DatabaseConfigMap {
         Objects.requireNonNull(connectionIdentifier, "Connection identifier cannot be null.");
         Objects.requireNonNull(caller, "Caller plugin cannot be null.");
         Objects.requireNonNull(knownPlugin, "Known-plugin predicate cannot be null.");
-        ResolvedConnection resolved = resolveAuthorizedConnection(type, connectionIdentifier, caller, knownPlugin);
+        ResolvedConnection resolved = resolveAuthorizedConnection(
+                configMap, type, connectionIdentifier, caller, knownPlugin
+        );
         if (resolved == null) {
             return null;
         }
@@ -254,10 +256,23 @@ class DatabaseConfigMap {
             PluginId caller,
             Predicate<String> knownPlugin
     ) {
-        return resolveAuthorizedConnection(type, connectionIdentifier, caller, knownPlugin) != null;
+        return resolveAuthorizedConnection(configMap, type, connectionIdentifier, caller, knownPlugin) != null;
+    }
+
+    /** Validates access against an unapplied configuration snapshot. */
+    protected boolean isAuthorized(
+            DatabaseConfigSnapshot snapshot,
+            DatabaseType type,
+            ConnectionIdentifier connectionIdentifier,
+            PluginId caller,
+            Predicate<String> knownPlugin
+    ) {
+        Objects.requireNonNull(snapshot, "Database configuration snapshot cannot be null.");
+        return resolveAuthorizedConnection(snapshot.configurations(), type, connectionIdentifier, caller, knownPlugin) != null;
     }
 
     private ResolvedConnection resolveAuthorizedConnection(
+            Map<DatabaseType, CommentedConfigurationNode> configurations,
             DatabaseType type,
             ConnectionIdentifier connectionIdentifier,
             PluginId caller,
@@ -267,7 +282,7 @@ class DatabaseConfigMap {
         Objects.requireNonNull(connectionIdentifier, "Connection identifier cannot be null.");
         Objects.requireNonNull(caller, "Caller plugin cannot be null.");
         Objects.requireNonNull(knownPlugin, "Known-plugin predicate cannot be null.");
-        CommentedConfigurationNode config = configMap.get(type);
+        CommentedConfigurationNode config = configurations.get(type);
         if (config == null) {
             logger.warn("No configuration loaded for database type " + type.name());
             return null;

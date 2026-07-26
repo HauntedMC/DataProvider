@@ -25,6 +25,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.BooleanSupplier;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -174,6 +175,30 @@ class ResilienceRuntimeTest {
         runtime.untrack("physical-resource");
         assertEquals(1, provider.gateClearCalls);
         runtime.close();
+    }
+
+    @Test
+    void registrationHandleReleasesOnlyItsOwningRuntimeAndCannotClearANewerGate() {
+        ManualScheduler oldScheduler = new ManualScheduler();
+        ManualScheduler newScheduler = new ManualScheduler();
+        OwnershipGateProvider provider = new OwnershipGateProvider();
+        ResilienceRuntime oldRuntime = runtime(new DirectExecutorService(), oldScheduler, 3);
+        ResilienceRuntime.Registration oldRegistration = oldRuntime.register(
+                "physical-resource", provider, () -> ProviderLifecycleState.READY
+        );
+        ResilienceRuntime newRuntime = runtime(new DirectExecutorService(), newScheduler, 3);
+        ResilienceRuntime.Registration newRegistration = newRuntime.register(
+                "physical-resource", provider, () -> ProviderLifecycleState.READY
+        );
+
+        oldRegistration.close();
+
+        assertTrue(provider.installedGate.getAsBoolean());
+        assertEquals(0, provider.gateClearCalls);
+        newRegistration.close();
+        assertEquals(1, provider.gateClearCalls);
+        oldRuntime.close();
+        newRuntime.close();
     }
 
     @Test
@@ -365,6 +390,32 @@ class ResilienceRuntimeTest {
 
         @Override public void clearResilienceGate() {
             gateClearCalls++;
+        }
+    }
+
+    private static final class OwnershipGateProvider extends ScriptedProvider implements ResilienceGateAware {
+        private BooleanSupplier installedGate;
+        private int gateClearCalls;
+
+        private OwnershipGateProvider() {
+            super(true);
+        }
+
+        @Override public void setResilienceGate(
+                BooleanSupplier gate, java.util.function.Supplier<ConnectionHealthSnapshot> diagnostics
+        ) {
+            installedGate = gate;
+        }
+
+        @Override public void clearResilienceGate() {
+            installedGate = null;
+            gateClearCalls++;
+        }
+
+        @Override public void clearResilienceGateIfMatches(BooleanSupplier gate) {
+            if (installedGate == gate) {
+                clearResilienceGate();
+            }
         }
     }
 

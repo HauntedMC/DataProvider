@@ -253,6 +253,7 @@ class DataProviderRegistry {
             return;
         }
         if (toClose != null) {
+            beforeSlotClose();
             toClose.close("last reference released");
         }
     }
@@ -431,12 +432,16 @@ class DataProviderRegistry {
 
     protected void reloadConfiguration() {
         List<ProviderSlot> revokedSlots = new ArrayList<>();
+        Map<ProviderSlot, ResilienceRuntime.Registration> replacementRegistrations = new HashMap<>();
         ConfigHandler.ConfigSnapshot previousMainSnapshot = null;
         DatabaseConfigMap.DatabaseConfigSnapshot previousDatabaseSnapshot = null;
         boolean mainSnapshotApplied = false;
         boolean databaseSnapshotApplied = false;
         ResilienceRuntime replacementRuntime = null;
         DatabaseFactory.PreparedConfigurationReload replacementPlan = null;
+        ResilienceRuntime retiredRuntime = null;
+        List<ResilienceRuntime.Registration> registrationsToActivate = new ArrayList<>();
+        boolean committed = false;
         Lock writeLock = lifecycleLock.writeLock();
         writeLock.lock();
         try {
@@ -450,6 +455,34 @@ class DataProviderRegistry {
             // active configuration and every current resource untouched.
             replacementPlan = factory.prepareConfigurationReload(databaseSnapshot);
             replacementRuntime = new ResilienceRuntime(ResilienceRuntimeConfig.from(mainSnapshot.root()));
+
+            // Build the replacement ownership graph while it is inert.  No candidate monitor can
+            // probe, recover, or install a gate until every failure-prone preparation step succeeds.
+            for (ProviderSlot slot : activeDatabases.values()) {
+                replacementRegistrations.put(slot, slot.prepareResilience(replacementRuntime));
+            }
+
+            List<ProviderSlot> retainedSlots = new ArrayList<>();
+            for (Map.Entry<RegistrationKey, ProviderSlot> entry : activeDatabases.entrySet()) {
+                RegistrationKey key = entry.getKey();
+                ProviderSlot slot = entry.getValue();
+                boolean revoked = !mainSnapshot.enabledTypes().getOrDefault(key.type(), false)
+                        || !factory.isConnectionAuthorized(
+                                databaseSnapshot, key.pluginId(), key.type(), key.connectionIdentifier()
+                        );
+                if (revoked) {
+                    revokedSlots.add(slot);
+                } else {
+                    retainedSlots.add(slot);
+                }
+            }
+
+            // Scheduling is validated before snapshots or maps move. Candidate controls remain
+            // inert until the map/runtime/resource commit is complete.
+            for (ProviderSlot slot : retainedSlots) {
+                replacementRegistrations.get(slot).validateActivationForReload();
+            }
+
             configHandler.applySnapshot(mainSnapshot);
             mainSnapshotApplied = true;
             factory.applyConfigurationSnapshot(databaseSnapshot);
@@ -457,52 +490,84 @@ class DataProviderRegistry {
             if (replacementPlan != null) {
                 replacementPlan.commit();
             }
+
+            // This is the commit point.  Every candidate object is already validated and live;
+            // remove revoked entries and install the new ownership handles as one locked swap.
             activeDatabases.forEach((key, slot) -> {
-                if ((!mainSnapshot.enabledTypes().getOrDefault(key.type(), false)
-                        || !factory.isConnectionAuthorized(
-                                key.pluginId(), key.type(), key.connectionIdentifier()
-                        ))
-                        && activeDatabases.remove(key, slot)) {
+                if (revokedSlots.contains(slot) && activeDatabases.remove(key, slot)) {
                     slot.forceReleaseAll();
-                    revokedSlots.add(slot);
                 }
             });
-            ResilienceRuntime previousRuntime = resilienceRuntime;
-            previousRuntime.close();
+            retainedSlots.forEach(slot -> {
+                ResilienceRuntime.Registration registration = replacementRegistrations.remove(slot);
+                slot.installResilience(registration);
+                registrationsToActivate.add(registration);
+            });
+            // Candidate handles belonging to revoked slots were never activated and must not
+            // remain counted in the replacement runtime.
+            replacementRegistrations.values().forEach(ResilienceRuntime.Registration::close);
+            replacementRegistrations.clear();
+            retiredRuntime = resilienceRuntime;
             resilienceRuntime = replacementRuntime;
             replacementRuntime = null;
-            activeDatabases.values().forEach(ProviderSlot::restartResilience);
+            committed = true;
+            registrationsToActivate.forEach(ResilienceRuntime.Registration::activateForReload);
             logger.info("Reloaded DataProvider configuration snapshot from disk: "
                     + describeMainConfigurationChanges(previousMainSnapshot, mainSnapshot)
                     + ", changed database files=" + previousDatabaseSnapshot.changedTypeCount(databaseSnapshot)
                     + ". Changed active connection settings were validated and replaced where required.");
         } catch (RuntimeException e) {
-            if (replacementPlan != null) {
-                replacementPlan.close();
-            }
-            if (replacementRuntime != null) {
-                replacementRuntime.close();
-            }
-            if (databaseSnapshotApplied) {
-                try {
-                    factory.applyConfigurationSnapshot(previousDatabaseSnapshot);
-                } catch (RuntimeException rollbackFailure) {
-                    e.addSuppressed(rollbackFailure);
+            if (committed) {
+                logger.error("DataProvider configuration was committed, but starting its resilience controls failed.", e);
+            } else {
+                replacementRegistrations.values().forEach(ResilienceRuntime.Registration::close);
+                if (replacementPlan != null) {
+                    replacementPlan.close();
                 }
-            }
-            if (mainSnapshotApplied) {
-                try {
-                    configHandler.applySnapshot(previousMainSnapshot);
-                } catch (RuntimeException rollbackFailure) {
-                    e.addSuppressed(rollbackFailure);
+                if (replacementRuntime != null) {
+                    replacementRuntime.close();
                 }
+                if (databaseSnapshotApplied) {
+                    try {
+                        factory.applyConfigurationSnapshot(previousDatabaseSnapshot);
+                    } catch (RuntimeException rollbackFailure) {
+                        e.addSuppressed(rollbackFailure);
+                    }
+                }
+                if (mainSnapshotApplied) {
+                    try {
+                        configHandler.applySnapshot(previousMainSnapshot);
+                    } catch (RuntimeException rollbackFailure) {
+                        e.addSuppressed(rollbackFailure);
+                    }
+                }
+                ResilienceRuntime activeRuntime = resilienceRuntime;
+                activeRuntime.reattachAllGates();
+                logger.error("Rejected DataProvider configuration reload; active configuration remains unchanged.", e);
+                throw e;
             }
-            logger.error("Rejected DataProvider configuration reload; active configuration remains unchanged.", e);
-            throw e;
         } finally {
             writeLock.unlock();
         }
+        // Closing the retired runtime is intentionally post-commit. Conditional gate release
+        // guarantees it cannot detach the replacement control that now owns the resource.
+        closeRetiredRuntime(retiredRuntime);
         revokedSlots.forEach(slot -> slot.close("connection access policy changed"));
+        resilienceRuntime.requestAll();
+    }
+
+    private void closeRetiredRuntime(ResilienceRuntime runtime) {
+        if (runtime == null) {
+            return;
+        }
+        try {
+            runtime.close();
+        } catch (RuntimeException closeFailure) {
+            // The replacement runtime/map/snapshots are already committed. Reporting the old
+            // runtime cleanup failure as an atomic reload rejection would be false.
+            logger.error("DataProvider configuration reloaded, but closing the retired resilience runtime failed.",
+                    closeFailure);
+        }
     }
 
     private static String describeMainConfigurationChanges(
@@ -527,6 +592,10 @@ class DataProviderRegistry {
 
     protected boolean isClosed() {
         return closed;
+    }
+
+    /** Test seam for the unregister/reload hand-off; production implementations deliberately do nothing. */
+    void beforeSlotClose() {
     }
 
     private void ensureOpen() {
@@ -560,7 +629,7 @@ class DataProviderRegistry {
         private volatile Throwable failure;
         private volatile Instant changedAt = Instant.now();
         private volatile ResilienceRuntime.Control resilience;
-        private volatile Object resilienceKey;
+        private volatile ResilienceRuntime.Registration resilienceRegistration;
         private int referenceCount;
 
         private ProviderSlot(RegistrationKey key, OwnerScopeId initialOwnerScope) {
@@ -682,10 +751,10 @@ class DataProviderRegistry {
         private void close(String reason) {
             if (closeStarted.compareAndSet(false, true)) {
                 synchronized (this) {
-                    Object target = resilienceKey;
-                    if (target != null) {
-                        resilienceRuntime.untrack(target);
-                        resilienceKey = null;
+                    ResilienceRuntime.Registration registration = resilienceRegistration;
+                    if (registration != null) {
+                        registration.close();
+                        resilienceRegistration = null;
                         resilience = null;
                     }
                 }
@@ -778,19 +847,33 @@ class DataProviderRegistry {
                 ManagedDatabaseProvider target = provider instanceof ResilienceTargetAware targetAware
                         ? targetAware.resilienceTarget()
                         : provider;
-                resilienceKey = target;
-                resilience = resilienceRuntime.track(
+                ResilienceRuntime.Registration registration = resilienceRuntime.register(
                         target,
                         target,
                         this::state
                 );
+                resilienceRegistration = registration;
+                resilience = registration.control();
             }
         }
 
-        private synchronized void restartResilience() {
-            resilience = null;
-            resilienceKey = null;
-            startResilience();
+        private synchronized ResilienceRuntime.Registration prepareResilience(ResilienceRuntime runtime) {
+            if (closeStarted.get() || provider == null) {
+                throw new IllegalStateException("Cannot prepare resilience for a closed provider " + key);
+            }
+            ManagedDatabaseProvider target = provider instanceof ResilienceTargetAware targetAware
+                    ? targetAware.resilienceTarget()
+                    : provider;
+            return runtime.prepareRegistration(target, target, this::state);
+        }
+
+        private synchronized void installResilience(ResilienceRuntime.Registration registration) {
+            if (closeStarted.get()) {
+                registration.close();
+                return;
+            }
+            resilienceRegistration = Objects.requireNonNull(registration, "Resilience registration cannot be null.");
+            resilience = registration.control();
         }
 
         private ConnectionHealthSnapshot healthSnapshot() {

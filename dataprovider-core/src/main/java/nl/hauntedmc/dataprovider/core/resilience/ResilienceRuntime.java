@@ -21,6 +21,7 @@ import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.function.BooleanSupplier;
 import java.util.function.Supplier;
 
 /**
@@ -74,9 +75,21 @@ public final class ResilienceRuntime implements AutoCloseable {
             ManagedDatabaseProvider provider,
             Supplier<ProviderLifecycleState> lifecycleState
     ) {
+        return register(key, provider, lifecycleState).control();
+    }
+
+    /**
+     * Creates an ownership handle for one logical registration.  Closing the handle releases the
+     * exact controller in this runtime, rather than looking up the same key in a newer runtime.
+     */
+    public synchronized Registration register(
+            Object key,
+            ManagedDatabaseProvider provider,
+            Supplier<ProviderLifecycleState> lifecycleState
+    ) {
         requireOpen();
         Object resolvedKey = Objects.requireNonNull(key, "Key cannot be null.");
-        return controls.compute(resolvedKey, (ignored, existing) -> {
+        Control control = controls.compute(resolvedKey, (ignored, existing) -> {
             if (existing != null && existing.retain()) {
                 return existing;
             }
@@ -89,10 +102,79 @@ public final class ResilienceRuntime implements AutoCloseable {
             }
             return created;
         });
+        return new Registration(resolvedKey, control);
+    }
+
+    /** Builds an inert registration. It is used by reload while the current runtime is still live. */
+    public synchronized Registration prepareRegistration(
+            Object key,
+            ManagedDatabaseProvider provider,
+            Supplier<ProviderLifecycleState> lifecycleState
+    ) {
+        requireOpen();
+        Object resolvedKey = Objects.requireNonNull(key, "Key cannot be null.");
+        Control control = controls.compute(resolvedKey, (ignored, existing) -> {
+            if (existing != null && existing.retain()) {
+                return existing;
+            }
+            return new Control(provider, lifecycleState);
+        });
+        return new Registration(resolvedKey, control);
     }
 
     public synchronized void untrack(Object key) {
         controls.computeIfPresent(key, (ignored, control) -> control.release() ? null : control);
+    }
+
+    /** Restores this runtime's gates after an aborted replacement-runtime activation. */
+    public synchronized void reattachAllGates() {
+        controls.values().forEach(Control::attachGate);
+    }
+
+    public final class Registration implements AutoCloseable {
+        private final Object key;
+        private final Control control;
+        private final AtomicBoolean released = new AtomicBoolean();
+
+        private Registration(Object key, Control control) {
+            this.key = key;
+            this.control = control;
+        }
+
+        public Control control() {
+            return control;
+        }
+
+        /** Starts an inert replacement control without probing the existing physical resource. */
+        public void validateActivationForReload() {
+            synchronized (ResilienceRuntime.this) {
+                requireOpen();
+                if (!released.get()) {
+                    control.validateStart();
+                }
+            }
+        }
+
+        /** Starts an inert replacement control without probing the existing physical resource. */
+        public void activateForReload() {
+            synchronized (ResilienceRuntime.this) {
+                requireOpen();
+                if (!released.get()) {
+                    control.startWithoutInitialProbe();
+                }
+            }
+        }
+
+        @Override
+        public void close() {
+            if (!released.compareAndSet(false, true)) {
+                return;
+            }
+            synchronized (ResilienceRuntime.this) {
+                controls.computeIfPresent(key, (ignored, current) ->
+                        current == control && current.release() ? null : current);
+            }
+        }
     }
 
     /** Cached status reads use this value and never need to parse configuration or perform I/O. */
@@ -185,6 +267,9 @@ public final class ResilienceRuntime implements AutoCloseable {
         private final ManagedDatabaseProvider provider;
         private final Supplier<ProviderLifecycleState> lifecycleState;
         private final AtomicBoolean closed = new AtomicBoolean();
+        private boolean started;
+        private final BooleanSupplier gate = this::acceptsWork;
+        private final Supplier<ConnectionHealthSnapshot> diagnostics = this::snapshot;
 
         private ConnectionHealthSnapshot snapshot;
         private CompletableFuture<Void> activeAttempt;
@@ -199,19 +284,58 @@ public final class ResilienceRuntime implements AutoCloseable {
             this.provider = Objects.requireNonNull(provider, "Provider cannot be null.");
             this.lifecycleState = Objects.requireNonNull(lifecycleState, "Lifecycle state supplier cannot be null.");
             snapshot = ConnectionHealthSnapshot.unprobed(locallyConnected(), currentLifecycleState());
-            if (provider instanceof ResilienceGateAware gateAware) {
-                gateAware.setResilienceGate(this::acceptsWork, this::snapshot);
-            }
         }
 
         private void start() {
-            periodicTask = scheduler.scheduleWithFixedDelay(
+            start(true);
+        }
+
+        private void startWithoutInitialProbe() {
+            start(false);
+        }
+
+        /** Verifies scheduler admission without attaching a gate or touching a backend. */
+        private void validateStart() {
+            if (started || closed.get()) {
+                return;
+            }
+            ScheduledFuture<?> validation = scheduler.scheduleWithFixedDelay(
+                    () -> { },
+                    config.healthInterval().toMillis(),
+                    config.healthInterval().toMillis(),
+                    TimeUnit.MILLISECONDS
+            );
+            validation.cancel(false);
+        }
+
+        private void start(boolean requestInitialProbe) {
+            if (started || closed.get()) {
+                return;
+            }
+            ScheduledFuture<?> scheduled = scheduler.scheduleWithFixedDelay(
                     this::requestRefresh,
                     config.healthInterval().toMillis(),
                     config.healthInterval().toMillis(),
                     TimeUnit.MILLISECONDS
             );
-            requestRefresh();
+            periodicTask = scheduled;
+            try {
+                attachGate();
+                started = true;
+                if (requestInitialProbe) {
+                    requestRefresh();
+                }
+            } catch (RuntimeException | Error startupFailure) {
+                scheduled.cancel(true);
+                periodicTask = null;
+                throw startupFailure;
+            }
+        }
+
+        private void attachGate() {
+            if (!closed.get() && provider instanceof ResilienceGateAware gateAware) {
+                gateAware.setResilienceGate(gate, diagnostics);
+            }
         }
 
         private boolean retain() {
@@ -463,7 +587,7 @@ public final class ResilienceRuntime implements AutoCloseable {
                 }
             }
             if (provider instanceof ResilienceGateAware gateAware) {
-                gateAware.clearResilienceGate();
+                gateAware.clearResilienceGateIfMatches(gate);
             }
         }
     }

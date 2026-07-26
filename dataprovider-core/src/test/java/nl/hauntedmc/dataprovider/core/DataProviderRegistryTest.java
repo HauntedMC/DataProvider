@@ -15,6 +15,8 @@ import javax.sql.DataSource;
 import java.util.EnumMap;
 import java.util.Map;
 import java.util.concurrent.ConcurrentMap;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
@@ -23,6 +25,7 @@ import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.mock;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -628,7 +631,10 @@ class DataProviderRegistryTest {
         when(factory.createDatabaseProvider(DatabaseType.MYSQL, ConnectionIdentifier.of("default")))
                 .thenReturn(provider);
         when(factory.isConnectionAuthorized(
-                PluginId.of("plugin"), DatabaseType.MYSQL, ConnectionIdentifier.of("default")
+                any(DatabaseConfigMap.DatabaseConfigSnapshot.class),
+                org.mockito.ArgumentMatchers.eq(PluginId.of("plugin")),
+                org.mockito.ArgumentMatchers.eq(DatabaseType.MYSQL),
+                org.mockito.ArgumentMatchers.eq(ConnectionIdentifier.of("default"))
         )).thenReturn(false);
         DataProviderRegistry registry = new DataProviderRegistry(factory, configHandler, new RecordingLoggerAdapter());
 
@@ -638,7 +644,10 @@ class DataProviderRegistryTest {
         assertNull(registry.getDatabase("plugin", DatabaseType.MYSQL, "default"));
         assertEquals(1, provider.disconnectCalls);
         verify(factory).isConnectionAuthorized(
-                PluginId.of("plugin"), DatabaseType.MYSQL, ConnectionIdentifier.of("default")
+                any(DatabaseConfigMap.DatabaseConfigSnapshot.class),
+                org.mockito.ArgumentMatchers.eq(PluginId.of("plugin")),
+                org.mockito.ArgumentMatchers.eq(DatabaseType.MYSQL),
+                org.mockito.ArgumentMatchers.eq(ConnectionIdentifier.of("default"))
         );
     }
 
@@ -674,6 +683,47 @@ class DataProviderRegistryTest {
         assertEquals(1, provider.disconnectCalls);
     }
 
+    @Test
+    void unregisterClosingAnOldSlotCannotUntrackTheReplacementRuntimeControl() throws Exception {
+        DatabaseFactory factory = mock(DatabaseFactory.class);
+        ConfigHandler configHandler = mock(ConfigHandler.class);
+        when(configHandler.isDatabaseTypeEnabled(DatabaseType.MYSQL)).thenReturn(true);
+        ConfigHandler.ConfigSnapshot mainSnapshot = configSnapshot("validate");
+        DatabaseConfigMap.DatabaseConfigSnapshot databaseSnapshot = databaseSnapshot();
+        when(configHandler.currentSnapshot()).thenReturn(mainSnapshot);
+        when(configHandler.loadSnapshot()).thenReturn(mainSnapshot);
+        when(factory.currentConfigurationSnapshot()).thenReturn(databaseSnapshot);
+        when(factory.loadConfigurationSnapshot()).thenReturn(databaseSnapshot);
+        when(factory.isConnectionAuthorized(
+                any(DatabaseConfigMap.DatabaseConfigSnapshot.class), any(PluginId.class), any(DatabaseType.class),
+                any(ConnectionIdentifier.class)
+        )).thenReturn(true);
+
+        // Two logical slots deliberately share one target, matching a shared physical resource.
+        RecordingProvider sharedTarget = new RecordingProvider(true);
+        when(factory.createDatabaseProvider(DatabaseType.MYSQL, ConnectionIdentifier.of("first")))
+                .thenReturn(sharedTarget);
+        when(factory.createDatabaseProvider(DatabaseType.MYSQL, ConnectionIdentifier.of("second")))
+                .thenReturn(sharedTarget);
+        PausingCloseRegistry registry = new PausingCloseRegistry(factory, configHandler, new RecordingLoggerAdapter());
+        registry.registerDatabase("plugin", "first", DatabaseType.MYSQL, "first");
+        registry.registerDatabase("plugin", "second", DatabaseType.MYSQL, "second");
+
+        Thread unregister = Thread.ofVirtual().start(() ->
+                registry.unregisterDatabase("plugin", "first", DatabaseType.MYSQL, "first")
+        );
+        assertTrue(registry.slotRemoved.await(5, TimeUnit.SECONDS));
+
+        registry.reloadConfiguration();
+        int probesBeforeOldClose = sharedTarget.probeCalls;
+        registry.allowOldClose.countDown();
+        unregister.join();
+
+        registry.probeRemoteHealthAsync().join();
+        assertTrue(sharedTarget.probeCalls > probesBeforeOldClose,
+                "The remaining slot must retain its replacement-runtime resilience control.");
+    }
+
     private static ConfigHandler.ConfigSnapshot configSnapshot(String schemaMode) {
         return new ConfigHandler.ConfigSnapshot(
                 CommentedConfigurationNode.root(),
@@ -704,6 +754,7 @@ class DataProviderRegistryTest {
         private int disconnectCalls;
         private RuntimeException connectFailure;
         private RuntimeException healthFailure;
+        private int probeCalls;
 
         private RecordingProvider(boolean connected) {
             this.connected = connected;
@@ -738,6 +789,15 @@ class DataProviderRegistryTest {
         }
 
         @Override
+        public boolean probeRemoteHealth() {
+            probeCalls++;
+            if (healthFailure != null) {
+                throw healthFailure;
+            }
+            return connected;
+        }
+
+        @Override
         public DataAccess getDataAccess() {
             return null;
         }
@@ -745,6 +805,26 @@ class DataProviderRegistryTest {
         @Override
         public DataSource getDataSource() {
             return null;
+        }
+    }
+
+    private static final class PausingCloseRegistry extends DataProviderRegistry {
+        private final CountDownLatch slotRemoved = new CountDownLatch(1);
+        private final CountDownLatch allowOldClose = new CountDownLatch(1);
+
+        private PausingCloseRegistry(DatabaseFactory factory, ConfigHandler configHandler, RecordingLoggerAdapter logger) {
+            super(factory, configHandler, logger);
+        }
+
+        @Override
+        void beforeSlotClose() {
+            slotRemoved.countDown();
+            try {
+                assertTrue(allowOldClose.await(5, TimeUnit.SECONDS));
+            } catch (InterruptedException interrupted) {
+                Thread.currentThread().interrupt();
+                throw new AssertionError(interrupted);
+            }
         }
     }
 }
