@@ -3,6 +3,9 @@ package nl.hauntedmc.dataprovider.database.messaging.durable;
 import nl.hauntedmc.dataprovider.database.messaging.api.EventMessage;
 import org.junit.jupiter.api.Test;
 
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CompletionException;
+
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -23,6 +26,27 @@ class DurableEventTest {
 
         assertThrows(IllegalArgumentException.class, () -> new DurableEvent<>("event id", "key", payload));
         assertThrows(IllegalArgumentException.class, () -> new DurableEvent<>("event", "", payload));
+    }
+
+    @Test
+    void durableClosePropagatesCleanupFailure() {
+        DurableSubscription subscription = new DurableSubscription() {
+            @Override public String id() { return "durable"; }
+            @Override public DurableSubscriptionSnapshot snapshot() {
+                return new DurableSubscriptionSnapshot(
+                        "durable", "stream", "group", "consumer", false,
+                        0, 0, 0, 0, 0, 0, null
+                );
+            }
+            @Override public CompletableFuture<Void> closeAsync() {
+                return CompletableFuture.failedFuture(new IllegalStateException("close failed"));
+            }
+            @Override public CompletableFuture<Void> completion() {
+                return CompletableFuture.completedFuture(null);
+            }
+        };
+
+        assertThrows(CompletionException.class, subscription::close);
     }
 
     private record TestEvent(String type) implements EventMessage {

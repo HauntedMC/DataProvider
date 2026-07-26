@@ -11,6 +11,6 @@ public interface DurableSubscription extends AutoCloseable {
 
     @Override
     default void close() {
-        closeAsync();
+        closeAsync().join();
     }
 }
