@@ -17,6 +17,8 @@ public abstract class DataProviderException extends RuntimeException {
     private static final Pattern DIAGNOSTIC_KEY_PATTERN = Pattern.compile("[A-Za-z][A-Za-z0-9_.-]{0,63}");
     private static final Pattern DIAGNOSTIC_ID_PATTERN = Pattern.compile("[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}");
     private static final int MAX_DIAGNOSTIC_ENTRIES = 32;
+    private static final int MAX_PUBLIC_TEXT_LENGTH = 512;
+    private static final int MAX_CONTEXT_TEXT_LENGTH = 128;
 
     private final DataProviderErrorCode errorCode;
     private final DatabaseType backendType;
@@ -166,10 +168,24 @@ public abstract class DataProviderException extends RuntimeException {
                 throw new IllegalArgumentException(field + " cannot contain control characters.");
             }
         }
+        if (normalized.length() > MAX_PUBLIC_TEXT_LENGTH) {
+            throw new IllegalArgumentException(
+                    field + " cannot exceed " + MAX_PUBLIC_TEXT_LENGTH + " characters."
+            );
+        }
         return normalized;
     }
 
     private static String normalizeNullable(String value, String field) {
-        return value == null || value.isBlank() ? null : requireSafeText(value, field);
+        if (value == null || value.isBlank()) {
+            return null;
+        }
+        String normalized = requireSafeText(value, field);
+        if (normalized.length() > MAX_CONTEXT_TEXT_LENGTH) {
+            throw new IllegalArgumentException(
+                    field + " cannot exceed " + MAX_CONTEXT_TEXT_LENGTH + " characters."
+            );
+        }
+        return normalized;
     }
 }

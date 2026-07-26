@@ -92,6 +92,25 @@ class DataProviderExceptionTest {
                 ));
     }
 
+    @Test
+    void publicFailureTextLengthsAreBounded() {
+        assertThrows(IllegalArgumentException.class, () ->
+                new DataProviderRegistrationException(
+                        "x".repeat(513), context(Map.of(), null), null
+                ));
+        DataProviderFailureContext oversizedOperation = new DataProviderFailureContext(
+                DatabaseType.REDIS,
+                "cache",
+                "x".repeat(129),
+                RetryAdvice.NEVER,
+                ExecutionOutcome.NOT_STARTED,
+                Map.of(),
+                null
+        );
+        assertThrows(IllegalArgumentException.class, () ->
+                new DataProviderRegistrationException("Safe message.", oversizedOperation, null));
+    }
+
     private static DataProviderFailureContext context(Map<String, String> diagnostics, String diagnosticId) {
         return new DataProviderFailureContext(
                 DatabaseType.REDIS,
