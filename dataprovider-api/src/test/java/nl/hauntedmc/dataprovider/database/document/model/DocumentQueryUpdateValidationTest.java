@@ -96,4 +96,15 @@ class DocumentQueryUpdateValidationTest {
         List<String> snapshotTags = (List<String>) profile.get("tags");
         assertThrows(UnsupportedOperationException.class, () -> snapshotTags.add("third"));
     }
+
+    @Test
+    void matchAllMustBeExplicitAndIsClearedByCriteria() {
+        DocumentQuery empty = new DocumentQuery();
+        DocumentQuery all = DocumentQuery.all();
+
+        assertFalse(empty.isExplicitMatchAll());
+        assertTrue(all.isExplicitMatchAll());
+        all.eq("status", "active");
+        assertFalse(all.isExplicitMatchAll());
+    }
 }

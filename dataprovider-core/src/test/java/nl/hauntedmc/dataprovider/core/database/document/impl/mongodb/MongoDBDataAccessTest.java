@@ -93,6 +93,21 @@ class MongoDBDataAccessTest {
         assertEquals(false, optionsCapture.getValue().isUpsert());
     }
 
+    @Test
+    void documentWritesRequireAnExplicitMatchAllQuery() {
+        MongoDBDataAccess dataAccess = createDataAccess(mockCollection());
+        DocumentUpdate update = new DocumentUpdate().set("status", "archived");
+
+        assertThrows(IllegalArgumentException.class, () -> dataAccess.deleteMany("profiles", new DocumentQuery()));
+        assertThrows(IllegalArgumentException.class, () -> dataAccess.updateMany(
+                "profiles",
+                new DocumentQuery(),
+                update,
+                new DocumentUpdateOptions()
+        ));
+        dataAccess.deleteMany("profiles", DocumentQuery.all()).join();
+    }
+
     @SuppressWarnings("unchecked")
     private static MongoCollection<Document> mockCollection() {
         return mock(MongoCollection.class);

@@ -60,6 +60,16 @@ public class MongoDBDataAccess implements DocumentDataAccess {
         return toMongoDocument(update.toMap());
     }
 
+    private Bson toWriteBsonQuery(DocumentQuery query) {
+        Map<String, Object> snapshot = query.toMap();
+        if (snapshot.isEmpty() && !query.isExplicitMatchAll()) {
+            throw new IllegalArgumentException(
+                    "Document write queries cannot be empty; use DocumentQuery.all() for an intentional match-all."
+            );
+        }
+        return toMongoDocument(snapshot);
+    }
+
     private Document toMongoDocument(Map<?, ?> document) {
         return copyDocument(document, "document");
     }
@@ -109,7 +119,7 @@ public class MongoDBDataAccess implements DocumentDataAccess {
         Objects.requireNonNull(query, "Document query cannot be null.");
         Objects.requireNonNull(update, "Document update cannot be null.");
         Objects.requireNonNull(options, "Document update options cannot be null.");
-        Bson safeQuery = toBsonQuery(query);
+        Bson safeQuery = toWriteBsonQuery(query);
         Bson safeUpdate = toBsonUpdate(update);
         UpdateOptions safeOptions = new UpdateOptions().upsert(options.isUpsert());
         return AsyncTaskSupport.runAsync(executor, "mongodb.updateOne", () -> getCollection(collection)
@@ -126,7 +136,7 @@ public class MongoDBDataAccess implements DocumentDataAccess {
         Objects.requireNonNull(query, "Document query cannot be null.");
         Objects.requireNonNull(update, "Document update cannot be null.");
         Objects.requireNonNull(options, "Document update options cannot be null.");
-        Bson safeQuery = toBsonQuery(query);
+        Bson safeQuery = toWriteBsonQuery(query);
         Bson safeUpdate = toBsonUpdate(update);
         UpdateOptions safeOptions = new UpdateOptions().upsert(options.isUpsert());
         return AsyncTaskSupport.runAsync(executor, "mongodb.updateMany", () -> getCollection(collection)
@@ -136,7 +146,7 @@ public class MongoDBDataAccess implements DocumentDataAccess {
     @Override
     public CompletableFuture<Void> deleteOne(String collection, DocumentQuery query) {
         Objects.requireNonNull(query, "Document query cannot be null.");
-        Bson safeQuery = toBsonQuery(query);
+        Bson safeQuery = toWriteBsonQuery(query);
         return AsyncTaskSupport.runAsync(executor, "mongodb.deleteOne",
                 () -> getCollection(collection).deleteOne(safeQuery));
     }
@@ -144,7 +154,7 @@ public class MongoDBDataAccess implements DocumentDataAccess {
     @Override
     public CompletableFuture<Void> deleteMany(String collection, DocumentQuery query) {
         Objects.requireNonNull(query, "Document query cannot be null.");
-        Bson safeQuery = toBsonQuery(query);
+        Bson safeQuery = toWriteBsonQuery(query);
         return AsyncTaskSupport.runAsync(executor, "mongodb.deleteMany",
                 () -> getCollection(collection).deleteMany(safeQuery));
     }

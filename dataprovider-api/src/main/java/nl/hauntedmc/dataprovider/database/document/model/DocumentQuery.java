@@ -12,6 +12,14 @@ import java.util.Objects;
 public class DocumentQuery {
 
     private final Map<String, Object> criteria = new HashMap<>();
+    private boolean explicitMatchAll;
+
+    /** Creates an explicit match-all query for intentionally broad operations. */
+    public static DocumentQuery all() {
+        DocumentQuery query = new DocumentQuery();
+        query.explicitMatchAll = true;
+        return query;
+    }
 
     /**
      * Put a key–value pair in the query.
@@ -22,6 +30,7 @@ public class DocumentQuery {
      */
     public DocumentQuery eq(String field, Object value) {
         String validatedField = requireFieldName(field);
+        explicitMatchAll = false;
         criteria.put(validatedField, DocumentValueSnapshot.value(value));
         return this;
     }
@@ -36,6 +45,7 @@ public class DocumentQuery {
     public DocumentQuery gte(String field, Object value) {
         String validatedField = requireFieldName(field);
         Objects.requireNonNull(value, "Greater-than-or-equal value cannot be null.");
+        explicitMatchAll = false;
         Map<String, Object> op = new HashMap<>();
         op.put("$gte", DocumentValueSnapshot.value(value));
         criteria.put(validatedField, op);
@@ -52,6 +62,7 @@ public class DocumentQuery {
     public DocumentQuery raw(String field, Object expression) {
         String validatedField = requireFieldName(field);
         Objects.requireNonNull(expression, "Raw expression cannot be null.");
+        explicitMatchAll = false;
         criteria.put(validatedField, DocumentValueSnapshot.value(expression));
         return this;
     }
@@ -63,6 +74,11 @@ public class DocumentQuery {
      */
     public Map<String, Object> toMap() {
         return DocumentValueSnapshot.map(criteria);
+    }
+
+    /** Whether this empty query was deliberately constructed through {@link #all()}. */
+    public boolean isExplicitMatchAll() {
+        return explicitMatchAll && criteria.isEmpty();
     }
 
     private static String requireFieldName(String field) {
