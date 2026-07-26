@@ -431,16 +431,22 @@ class DataProviderRegistry {
 
     protected void reloadConfiguration() {
         List<ProviderSlot> revokedSlots = new ArrayList<>();
+        ConfigHandler.ConfigSnapshot previousMainSnapshot = null;
+        DatabaseConfigMap.DatabaseConfigSnapshot previousDatabaseSnapshot = null;
+        boolean mainSnapshotApplied = false;
+        boolean databaseSnapshotApplied = false;
         Lock writeLock = lifecycleLock.writeLock();
         writeLock.lock();
         try {
             ensureOpen();
-            ConfigHandler.ConfigSnapshot previousMainSnapshot = configHandler.currentSnapshot();
-            DatabaseConfigMap.DatabaseConfigSnapshot previousDatabaseSnapshot = factory.currentConfigurationSnapshot();
+            previousMainSnapshot = configHandler.currentSnapshot();
+            previousDatabaseSnapshot = factory.currentConfigurationSnapshot();
             ConfigHandler.ConfigSnapshot mainSnapshot = configHandler.loadSnapshot();
             DatabaseConfigMap.DatabaseConfigSnapshot databaseSnapshot = factory.loadConfigurationSnapshot();
             configHandler.applySnapshot(mainSnapshot);
+            mainSnapshotApplied = true;
             factory.applyConfigurationSnapshot(databaseSnapshot);
+            databaseSnapshotApplied = true;
             activeDatabases.forEach((key, slot) -> {
                 if (!factory.isConnectionAuthorized(key.pluginId(), key.type(), key.connectionIdentifier())
                         && activeDatabases.remove(key, slot)) {
@@ -457,6 +463,20 @@ class DataProviderRegistry {
                     + ", changed database files=" + previousDatabaseSnapshot.changedTypeCount(databaseSnapshot)
                     + ". Existing connections retain their previous settings until reconnected.");
         } catch (RuntimeException e) {
+            if (databaseSnapshotApplied) {
+                try {
+                    factory.applyConfigurationSnapshot(previousDatabaseSnapshot);
+                } catch (RuntimeException rollbackFailure) {
+                    e.addSuppressed(rollbackFailure);
+                }
+            }
+            if (mainSnapshotApplied) {
+                try {
+                    configHandler.applySnapshot(previousMainSnapshot);
+                } catch (RuntimeException rollbackFailure) {
+                    e.addSuppressed(rollbackFailure);
+                }
+            }
             logger.error("Rejected DataProvider configuration reload; active configuration remains unchanged.", e);
             throw e;
         } finally {

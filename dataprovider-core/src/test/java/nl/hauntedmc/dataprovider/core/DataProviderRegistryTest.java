@@ -569,6 +569,32 @@ class DataProviderRegistryTest {
     }
 
     @Test
+    void reloadRollsBackMainSnapshotWhenDatabaseSnapshotApplyFails() {
+        DatabaseFactory factory = mock(DatabaseFactory.class);
+        ConfigHandler configHandler = mock(ConfigHandler.class);
+        ConfigHandler.ConfigSnapshot activeMainSnapshot = configSnapshot("validate");
+        ConfigHandler.ConfigSnapshot candidateMainSnapshot = configSnapshot("update");
+        DatabaseConfigMap.DatabaseConfigSnapshot activeDatabaseSnapshot = databaseSnapshot();
+        DatabaseConfigMap.DatabaseConfigSnapshot candidateDatabaseSnapshot = databaseSnapshot();
+        when(configHandler.currentSnapshot()).thenReturn(activeMainSnapshot);
+        when(configHandler.loadSnapshot()).thenReturn(candidateMainSnapshot);
+        when(factory.currentConfigurationSnapshot()).thenReturn(activeDatabaseSnapshot);
+        when(factory.loadConfigurationSnapshot()).thenReturn(candidateDatabaseSnapshot);
+        org.mockito.Mockito.doThrow(new IllegalStateException("apply failed"))
+                .when(factory).applyConfigurationSnapshot(candidateDatabaseSnapshot);
+        DataProviderRegistry registry = new DataProviderRegistry(
+                factory, configHandler, new RecordingLoggerAdapter()
+        );
+
+        assertThrows(IllegalStateException.class, registry::reloadConfiguration);
+
+        org.mockito.InOrder order = org.mockito.Mockito.inOrder(configHandler, factory);
+        order.verify(configHandler).applySnapshot(candidateMainSnapshot);
+        order.verify(factory).applyConfigurationSnapshot(candidateDatabaseSnapshot);
+        order.verify(configHandler).applySnapshot(activeMainSnapshot);
+    }
+
+    @Test
     void reloadClosesAnActiveLeaseWhenItsPluginLosesConnectionAccess() {
         DatabaseFactory factory = mock(DatabaseFactory.class);
         ConfigHandler configHandler = mock(ConfigHandler.class);
@@ -611,6 +637,30 @@ class DataProviderRegistryTest {
         assertEquals(1, provider.disconnectCalls);
         verify(factory).isConnectionAuthorized(
                 PluginId.of("plugin"), DatabaseType.MYSQL, ConnectionIdentifier.of("default")
+        );
+    }
+
+    private static ConfigHandler.ConfigSnapshot configSnapshot(String schemaMode) {
+        return new ConfigHandler.ConfigSnapshot(
+                CommentedConfigurationNode.root(),
+                Map.of(
+                        DatabaseType.MYSQL, true,
+                        DatabaseType.MONGODB, true,
+                        DatabaseType.REDIS, true,
+                        DatabaseType.REDIS_MESSAGING, true
+                ),
+                schemaMode
+        );
+    }
+
+    private static DatabaseConfigMap.DatabaseConfigSnapshot databaseSnapshot() {
+        return new DatabaseConfigMap.DatabaseConfigSnapshot(
+                Map.of(
+                        DatabaseType.MYSQL, CommentedConfigurationNode.root(),
+                        DatabaseType.MONGODB, CommentedConfigurationNode.root(),
+                        DatabaseType.REDIS, CommentedConfigurationNode.root(),
+                        DatabaseType.REDIS_MESSAGING, CommentedConfigurationNode.root()
+                )
         );
     }
 
