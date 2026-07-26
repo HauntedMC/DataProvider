@@ -69,7 +69,7 @@ public final class ResilienceRuntime implements AutoCloseable {
         this.ownsExecutors = ownsExecutors;
     }
 
-    public Control track(
+    public synchronized Control track(
             Object key,
             ManagedDatabaseProvider provider,
             Supplier<ProviderLifecycleState> lifecycleState
@@ -86,7 +86,7 @@ public final class ResilienceRuntime implements AutoCloseable {
         });
     }
 
-    public void untrack(Object key) {
+    public synchronized void untrack(Object key) {
         controls.computeIfPresent(key, (ignored, control) -> control.release() ? null : control);
     }
 
@@ -103,7 +103,7 @@ public final class ResilienceRuntime implements AutoCloseable {
     }
 
     @Override
-    public void close() {
+    public synchronized void close() {
         if (!closed.compareAndSet(false, true)) {
             return;
         }

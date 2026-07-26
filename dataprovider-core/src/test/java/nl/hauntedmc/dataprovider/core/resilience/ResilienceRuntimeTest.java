@@ -22,6 +22,7 @@ import java.util.concurrent.FutureTask;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.atomic.AtomicReference;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -188,6 +189,25 @@ class ResilienceRuntimeTest {
         runtime.close();
     }
 
+    @Test
+    void closeCannotRaceAControllerInsertion() {
+        ManualScheduler scheduler = new ManualScheduler();
+        BlockingGateProvider provider = new BlockingGateProvider();
+        ResilienceRuntime runtime = runtime(new DirectExecutorService(), scheduler, 3);
+
+        CompletableFuture<ResilienceRuntime.Control> tracked = CompletableFuture.supplyAsync(
+                () -> runtime.track("resource", provider, () -> ProviderLifecycleState.READY)
+        );
+        await(provider.localCheckStarted);
+        CompletableFuture<Void> closed = CompletableFuture.runAsync(runtime::close);
+        provider.allowLocalCheck.countDown();
+
+        ResilienceRuntime.Control control = tracked.join();
+        closed.join();
+        assertFalse(control.acceptsWork());
+        assertEquals(1, provider.gateClearCalls);
+    }
+
     private static ResilienceRuntime runtime(
             java.util.concurrent.ExecutorService workers,
             ScheduledExecutorService scheduler,
@@ -237,6 +257,35 @@ class ResilienceRuntimeTest {
         }
     }
 
+    private static final class BlockingGateProvider extends ScriptedProvider implements ResilienceGateAware {
+        private final CountDownLatch localCheckStarted = new CountDownLatch(1);
+        private final CountDownLatch allowLocalCheck = new CountDownLatch(1);
+        private int gateClearCalls;
+
+        private BlockingGateProvider() {
+            super(true);
+        }
+
+        @Override
+        public boolean isLocallyConnected() {
+            localCheckStarted.countDown();
+            await(allowLocalCheck);
+            return true;
+        }
+
+        @Override
+        public void setResilienceGate(
+                java.util.function.BooleanSupplier gate,
+                java.util.function.Supplier<ConnectionHealthSnapshot> diagnostics
+        ) {
+        }
+
+        @Override
+        public void clearResilienceGate() {
+            gateClearCalls++;
+        }
+    }
+
     private static final class ManualExecutor extends AbstractExecutorService {
         private final ArrayDeque<Runnable> tasks = new ArrayDeque<>();
         private boolean shutdown;
@@ -274,6 +323,15 @@ class ResilienceRuntimeTest {
             private ManualFuture(Runnable command) { super(command, null); }
             @Override public long getDelay(TimeUnit unit) { return 0; }
             @Override public int compareTo(Delayed other) { return 0; }
+        }
+    }
+
+    private static void await(CountDownLatch latch) {
+        try {
+            assertTrue(latch.await(5, TimeUnit.SECONDS));
+        } catch (InterruptedException exception) {
+            Thread.currentThread().interrupt();
+            throw new AssertionError(exception);
         }
     }
 }
