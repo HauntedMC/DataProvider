@@ -41,6 +41,22 @@ class ResilienceRuntimeTest {
     }
 
     @Test
+    void directResilienceConfigurationCannotBypassOperationalBounds() {
+        assertThrows(IllegalArgumentException.class, () -> new ResilienceRuntimeConfig(
+                33, 8, Duration.ofSeconds(1), Duration.ofSeconds(1), 1, 1,
+                Duration.ofMillis(50), Duration.ofSeconds(1), 0, Duration.ofSeconds(1)
+        ));
+        assertThrows(IllegalArgumentException.class, () -> new ResilienceRuntimeConfig(
+                1, 8, Duration.ofDays(365), Duration.ofSeconds(1), 1, 1,
+                Duration.ofMillis(50), Duration.ofSeconds(1), 0, Duration.ofSeconds(1)
+        ));
+        assertThrows(NullPointerException.class, () -> new ResilienceRuntimeConfig(
+                1, 8, null, Duration.ofSeconds(1), 1, 1,
+                Duration.ofMillis(50), Duration.ofSeconds(1), 0, Duration.ofSeconds(1)
+        ));
+    }
+
+    @Test
     void transitionsClosedOpenHalfOpenClosedWithoutTimingSleep() {
         ManualScheduler scheduler = new ManualScheduler();
         ScriptedProvider provider = new ScriptedProvider(false, false, true);

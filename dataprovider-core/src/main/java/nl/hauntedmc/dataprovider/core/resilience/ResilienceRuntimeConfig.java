@@ -18,10 +18,21 @@ public record ResilienceRuntimeConfig(
         Duration shutdownGrace
 ) {
     public ResilienceRuntimeConfig {
-        if (workers < 1 || queueCapacity < 1 || failureThreshold < 1 || recoveryThreshold < 1
-                || healthInterval.isNegative() || healthInterval.isZero() || staleThreshold.isNegative()
-                || initialBackoff.isNegative() || initialBackoff.isZero() || maxBackoff.compareTo(initialBackoff) < 0
-                || !Double.isFinite(jitter) || jitter < 0 || jitter > 1 || shutdownGrace.isNegative()) {
+        Objects.requireNonNull(healthInterval, "healthInterval");
+        Objects.requireNonNull(staleThreshold, "staleThreshold");
+        Objects.requireNonNull(initialBackoff, "initialBackoff");
+        Objects.requireNonNull(maxBackoff, "maxBackoff");
+        Objects.requireNonNull(shutdownGrace, "shutdownGrace");
+        if (workers < 1 || workers > 32
+                || queueCapacity < 1 || queueCapacity > 100_000
+                || failureThreshold < 1 || failureThreshold > 100
+                || recoveryThreshold < 1 || recoveryThreshold > 100
+                || !between(healthInterval, Duration.ofMillis(100), Duration.ofHours(1))
+                || !between(staleThreshold, Duration.ZERO, Duration.ofHours(1))
+                || !between(initialBackoff, Duration.ofMillis(50), Duration.ofHours(1))
+                || !between(maxBackoff, initialBackoff, Duration.ofHours(1))
+                || !Double.isFinite(jitter) || jitter < 0 || jitter > 1
+                || !between(shutdownGrace, Duration.ZERO, Duration.ofMinutes(1))) {
             throw new IllegalArgumentException("Invalid resilience configuration.");
         }
     }
@@ -83,5 +94,9 @@ public record ResilienceRuntimeConfig(
             throw new IllegalArgumentException("resilience." + name + " is out of range.");
         }
         return value;
+    }
+
+    private static boolean between(Duration value, Duration minimum, Duration maximum) {
+        return value.compareTo(minimum) >= 0 && value.compareTo(maximum) <= 0;
     }
 }
