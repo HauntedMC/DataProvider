@@ -450,7 +450,10 @@ class DataProviderRegistry {
             factory.applyConfigurationSnapshot(databaseSnapshot);
             databaseSnapshotApplied = true;
             activeDatabases.forEach((key, slot) -> {
-                if (!factory.isConnectionAuthorized(key.pluginId(), key.type(), key.connectionIdentifier())
+                if ((!mainSnapshot.enabledTypes().getOrDefault(key.type(), false)
+                        || !factory.isConnectionAuthorized(
+                                key.pluginId(), key.type(), key.connectionIdentifier()
+                        ))
                         && activeDatabases.remove(key, slot)) {
                     slot.forceReleaseAll();
                     revokedSlots.add(slot);

@@ -12,6 +12,7 @@ import org.junit.jupiter.api.Test;
 import org.spongepowered.configurate.CommentedConfigurationNode;
 
 import javax.sql.DataSource;
+import java.util.EnumMap;
 import java.util.Map;
 import java.util.concurrent.ConcurrentMap;
 
@@ -638,6 +639,38 @@ class DataProviderRegistryTest {
         verify(factory).isConnectionAuthorized(
                 PluginId.of("plugin"), DatabaseType.MYSQL, ConnectionIdentifier.of("default")
         );
+    }
+
+    @Test
+    void reloadClosesConnectionsWhoseBackendWasDisabled() {
+        DatabaseFactory factory = mock(DatabaseFactory.class);
+        ConfigHandler configHandler = mock(ConfigHandler.class);
+        when(configHandler.isDatabaseTypeEnabled(DatabaseType.MYSQL)).thenReturn(true);
+        ConfigHandler.ConfigSnapshot activeMainSnapshot = configSnapshot("validate");
+        Map<DatabaseType, Boolean> candidateStates = new EnumMap<>(DatabaseType.class);
+        for (DatabaseType type : DatabaseType.values()) {
+            candidateStates.put(type, type != DatabaseType.MYSQL);
+        }
+        ConfigHandler.ConfigSnapshot candidateMainSnapshot = new ConfigHandler.ConfigSnapshot(
+                CommentedConfigurationNode.root(), candidateStates, "validate"
+        );
+        DatabaseConfigMap.DatabaseConfigSnapshot databaseSnapshot = databaseSnapshot();
+        when(configHandler.currentSnapshot()).thenReturn(activeMainSnapshot);
+        when(configHandler.loadSnapshot()).thenReturn(candidateMainSnapshot);
+        when(factory.currentConfigurationSnapshot()).thenReturn(databaseSnapshot);
+        when(factory.loadConfigurationSnapshot()).thenReturn(databaseSnapshot);
+        RecordingProvider provider = new RecordingProvider(true);
+        when(factory.createDatabaseProvider(DatabaseType.MYSQL, ConnectionIdentifier.of("default")))
+                .thenReturn(provider);
+        DataProviderRegistry registry = new DataProviderRegistry(
+                factory, configHandler, new RecordingLoggerAdapter()
+        );
+        registry.registerDatabase("plugin", "feature", DatabaseType.MYSQL, "default");
+
+        registry.reloadConfiguration();
+
+        assertNull(registry.getDatabase("plugin", DatabaseType.MYSQL, "default"));
+        assertEquals(1, provider.disconnectCalls);
     }
 
     private static ConfigHandler.ConfigSnapshot configSnapshot(String schemaMode) {
