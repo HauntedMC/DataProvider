@@ -79,6 +79,19 @@ class DataProviderExceptionTest {
                 new DataProviderRegistrationException("Safe message.", forgedOperation, null));
     }
 
+    @Test
+    void diagnosticEntryCountIsBounded() {
+        Map<String, String> diagnostics = new HashMap<>();
+        for (int index = 0; index < 33; index++) {
+            diagnostics.put("entry" + index, "value");
+        }
+
+        assertThrows(IllegalArgumentException.class, () ->
+                new DataProviderRegistrationException(
+                        "Safe message.", context(diagnostics, null), null
+                ));
+    }
+
     private static DataProviderFailureContext context(Map<String, String> diagnostics, String diagnosticId) {
         return new DataProviderFailureContext(
                 DatabaseType.REDIS,

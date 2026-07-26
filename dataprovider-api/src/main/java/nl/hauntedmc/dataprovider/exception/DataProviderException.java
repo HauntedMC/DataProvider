@@ -16,6 +16,7 @@ public abstract class DataProviderException extends RuntimeException {
 
     private static final Pattern DIAGNOSTIC_KEY_PATTERN = Pattern.compile("[A-Za-z][A-Za-z0-9_.-]{0,63}");
     private static final Pattern DIAGNOSTIC_ID_PATTERN = Pattern.compile("[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}");
+    private static final int MAX_DIAGNOSTIC_ENTRIES = 32;
 
     private final DataProviderErrorCode errorCode;
     private final DatabaseType backendType;
@@ -109,8 +110,18 @@ public abstract class DataProviderException extends RuntimeException {
         if (source == null || source.isEmpty()) {
             return Map.of();
         }
+        if (source.size() > MAX_DIAGNOSTIC_ENTRIES) {
+            throw new IllegalArgumentException(
+                    "Diagnostics cannot contain more than " + MAX_DIAGNOSTIC_ENTRIES + " entries."
+            );
+        }
         LinkedHashMap<String, String> safe = new LinkedHashMap<>();
         source.forEach((key, value) -> {
+            if (safe.size() >= MAX_DIAGNOSTIC_ENTRIES) {
+                throw new IllegalArgumentException(
+                        "Diagnostics cannot contain more than " + MAX_DIAGNOSTIC_ENTRIES + " entries."
+                );
+            }
             String normalizedKey = requireSafeText(key, "diagnostic key");
             if (!DIAGNOSTIC_KEY_PATTERN.matcher(normalizedKey).matches()) {
                 throw new IllegalArgumentException("Unsupported diagnostic key: " + normalizedKey);
