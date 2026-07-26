@@ -12,6 +12,7 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -25,7 +26,7 @@ class DatabaseConfigMapTest {
     @Test
     void resolvesExactIdentifierOnly() throws IOException {
         writeMySqlConfig("""
-                default:
+                modern:
                   host: modern-host
                   port: 3306
                 """);
@@ -33,10 +34,50 @@ class DatabaseConfigMapTest {
         RecordingLoggerAdapter logger = new RecordingLoggerAdapter();
         DatabaseConfigMap configMap = new DatabaseConfigMap(tempDir, logger, getClass().getClassLoader());
 
-        CommentedConfigurationNode node = configMap.getConfig(DatabaseType.MYSQL, "default");
+        CommentedConfigurationNode node = configMap.getConfig(DatabaseType.MYSQL, "modern");
         assertNotNull(node);
         assertTrue("modern-host".equals(node.node("host").getString()));
         assertTrue(logger.warnMessages().isEmpty());
+    }
+
+    @Test
+    void refreshesOnlyBundledDefaultAndPreservesUserNamedConnections() throws IOException {
+        writeMySqlConfig("""
+                default:
+                  host: user-modified-example
+                  obsolete_default_key: remove-me
+                production:
+                  access:
+                    owner_plugin: ServerFeatures
+                    shared_with: []
+                  host: production-host
+                  password: a-secret
+                  user_extension: preserve-me
+                """);
+
+        DatabaseConfigMap configMap = new DatabaseConfigMap(
+                tempDir,
+                new RecordingLoggerAdapter(),
+                getClass().getClassLoader()
+        );
+
+        CommentedConfigurationNode defaultConnection = configMap.getConfig(DatabaseType.MYSQL, "default");
+        CommentedConfigurationNode production = configMap.getConfig(DatabaseType.MYSQL, "production");
+        assertNotNull(defaultConnection);
+        assertNotNull(production);
+        assertEquals("localhost", defaultConnection.node("host").getString());
+        assertTrue(defaultConnection.node("obsolete_default_key").virtual());
+        assertEquals("production-host", production.node("host").getString());
+        assertEquals("a-secret", production.node("password").getString());
+        assertEquals("preserve-me", production.node("user_extension").getString());
+
+        Path databaseFile = tempDir.resolve("databases").resolve(DatabaseType.MYSQL.getConfigFileName());
+        String refreshedContents = Files.readString(databaseFile);
+        RecordingLoggerAdapter secondStartupLogger = new RecordingLoggerAdapter();
+        new DatabaseConfigMap(tempDir, secondStartupLogger, getClass().getClassLoader());
+        assertEquals(refreshedContents, Files.readString(databaseFile));
+        assertTrue(secondStartupLogger.infoMessages().stream().noneMatch(message ->
+                message.contains("Refreshed the bundled default example in mysql.yml")));
     }
 
     @Test
@@ -70,10 +111,10 @@ class DatabaseConfigMapTest {
         RecordingLoggerAdapter logger = new RecordingLoggerAdapter();
         DatabaseConfigMap configMap = new DatabaseConfigMap(tempDir, logger, getClass().getClassLoader());
 
-        CommentedConfigurationNode node = configMap.getConfig(DatabaseType.MYSQL, "default");
+        CommentedConfigurationNode node = configMap.getConfig(DatabaseType.MYSQL, "unknown");
         assertNull(node);
         assertTrue(logger.warnMessages().stream().anyMatch(message ->
-                message.contains("No configuration section found for 'default'")
+                message.contains("No configuration section found for 'unknown'")
                         && message.contains("default_credentials")
         ));
     }
@@ -202,7 +243,7 @@ class DatabaseConfigMapTest {
 
         CommentedConfigurationNode activeConfig = configMap.getConfig(DatabaseType.MYSQL, "default");
         assertNotNull(activeConfig);
-        assertTrue("active-host".equals(activeConfig.node("host").getString()));
+        assertTrue("localhost".equals(activeConfig.node("host").getString()));
     }
 
     private void writeMySqlConfig(String content) throws IOException {

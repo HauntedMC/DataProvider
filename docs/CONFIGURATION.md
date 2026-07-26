@@ -10,7 +10,9 @@ DataProvider writes defaults on first startup inside the plugin data folder.
 - `databases/redis.yml`
 - `databases/redis_messaging.yml`
 
-Each backend file supports named sections (`default`, `analytics`, etc.). Use the same identifier in code when calling `registerDatabase*`. Every section must declare an explicit access policy; there is no wildcard access and `default` is not special.
+Each backend file supports named sections (`analytics`, `primary`, etc.). Use the same identifier in code when calling `registerDatabase*`. Every connection section must declare an explicit access policy; there is no wildcard access.
+
+`default` is a bundled example, not a connection name for production use. On every DataProvider startup it is replaced wholesale with the version shipped by the current plugin, so its examples, comments, and safe defaults stay current. Put real connections in a differently named section; those user-owned sections are never changed by the upgrade process.
 
 ## Connection Access Policy
 
@@ -37,7 +39,13 @@ DataProvider binds returned providers, data-access objects, schema managers, sub
 
 If you need to support genuinely untrusted modules, keep database credentials and access in a separate service or sidecar process and use authenticated RPC. JVM classloader checks cannot provide that isolation.
 
-The generated `default` sections intentionally start with a blank owner and are unusable until configured. This prevents a new installation or upgrade from accidentally exposing default credentials. Plugin ids must be changed in the files before the relevant plugin registers the connection.
+The generated `default` sections intentionally start with a blank owner and are unusable. This prevents a new installation or upgrade from accidentally exposing default credentials. Copy it to a new named section, then set that section's plugin ids and credentials before the relevant plugin registers the connection.
+
+## Configuration Upgrades
+
+At startup, `config.yml` is reconciled with the bundled schema: newly introduced keys are added with their current defaults, administrator-set values are retained, and keys no longer supported by the current release are removed. The file is written through a sibling temporary file before it replaces the live file.
+
+Database files receive the narrower policy above: only their `default` section is refreshed. All named connection sections, including their unknown extension keys and credentials, are left intact.
 
 ## Reloading Configuration
 

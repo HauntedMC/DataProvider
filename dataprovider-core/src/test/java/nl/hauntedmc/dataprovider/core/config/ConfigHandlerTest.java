@@ -36,6 +36,37 @@ class ConfigHandlerTest {
     }
 
     @Test
+    void upgradesMissingKeysAndPrunesObsoleteKeysWithoutOverwritingConfiguredValues() throws IOException {
+        writeConfig("""
+                orm:
+                  schema_mode: update
+                execution:
+                  lanes:
+                    relational:
+                      workers: 3
+                obsolete_setting: true
+                obsolete_root: remove-me
+                """);
+
+        ConfigHandler handler = new ConfigHandler(tempDir, new RecordingLoggerAdapter());
+
+        assertEquals("update", handler.getOrmSchemaMode());
+        assertEquals(3, handler.getConfig().node("execution", "lanes", "relational", "workers").getInt());
+        assertEquals(2048, handler.getConfig().node("execution", "lanes", "relational", "queue_capacity").getInt());
+        assertTrue(handler.getConfig().node("execution", "lanes", "messaging", "workers").getInt() > 0);
+        assertTrue(handler.getConfig().node("databases", "redis_messaging", "enabled").getBoolean());
+        assertTrue(handler.getConfig().node("obsolete_root").virtual());
+        assertTrue(handler.getConfig().node("execution", "obsolete_setting").virtual());
+
+        String upgradedContents = Files.readString(tempDir.resolve("config.yml"));
+        RecordingLoggerAdapter secondStartupLogger = new RecordingLoggerAdapter();
+        new ConfigHandler(tempDir, secondStartupLogger);
+        assertEquals(upgradedContents, Files.readString(tempDir.resolve("config.yml")));
+        assertFalse(secondStartupLogger.infoMessages().stream().anyMatch(message ->
+                message.contains("Reconciled config.yml")));
+    }
+
+    @Test
     void rejectsInvalidOrmModeDuringSnapshotValidation() throws IOException {
         writeConfig("""
                 databases:

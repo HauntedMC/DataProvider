@@ -7,11 +7,13 @@ import nl.hauntedmc.dataprovider.database.DatabaseType;
 import nl.hauntedmc.dataprovider.logging.LoggerAdapter;
 import org.spongepowered.configurate.CommentedConfigurationNode;
 import org.spongepowered.configurate.loader.ConfigurationLoader;
-import org.spongepowered.configurate.serialize.SerializationException;
 import org.spongepowered.configurate.yaml.YamlConfigurationLoader;
 
+import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStream;
+import java.io.InputStreamReader;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.EnumMap;
@@ -39,8 +41,8 @@ public class ConfigHandler {
                 .build();
 
         ensureConfigFileExists();
+        reconcileWithBundledDefaults();
         reloadConfig();
-        injectMissingKeys();
     }
 
     private void ensureConfigFileExists() {
@@ -104,74 +106,29 @@ public class ConfigHandler {
         return activeSnapshot;
     }
 
-    private void injectMissingKeys() {
-        if (snapshot == null) {
-            throw new IllegalStateException("Configuration is not loaded.");
-        }
-
-        boolean changed = false;
-        for (DatabaseType type : DatabaseType.values()) {
-            CommentedConfigurationNode node = snapshot.root().node("databases", type.name().toLowerCase(), "enabled");
-            if (node.virtual()) {
-                try {
-                    node.set(true);
-                } catch (SerializationException e) {
-                    throw new IllegalStateException("Unable to add missing configuration key for " + type.name(), e);
-                }
-                changed = true;
-            }
-        }
-
-        CommentedConfigurationNode ormSchemaModeNode = snapshot.root().node("orm", "schema_mode");
-        if (ormSchemaModeNode.virtual()) {
-            try {
-                ormSchemaModeNode.set(DEFAULT_ORM_SCHEMA_MODE);
-            } catch (SerializationException e) {
-                throw new IllegalStateException("Unable to add missing ORM schema mode configuration.", e);
-            }
-            changed = true;
-        }
-
-        changed |= injectDefault("resilience", "workers", 2);
-        changed |= injectDefault("resilience", "queue_capacity", 128);
-        changed |= injectDefault("resilience", "health_interval_ms", 15_000);
-        changed |= injectDefault("resilience", "stale_threshold_ms", 45_000);
-        changed |= injectDefault("resilience", "failure_threshold", 3);
-        changed |= injectDefault("resilience", "recovery_threshold", 1);
-        changed |= injectDefault("resilience", "initial_backoff_ms", 1_000);
-        changed |= injectDefault("resilience", "max_backoff_ms", 30_000);
-        changed |= injectDefault("resilience", "jitter", 0.20D);
-        changed |= injectDefault("resilience", "shutdown_grace_ms", 2_000);
-
-        if (changed) {
-            saveConfig();
-            reloadConfig();
-            logger.info("Updated config.yml with missing default values.");
-        }
-    }
-
-    private boolean injectDefault(Object... pathAndValue) {
-        Object value = pathAndValue[pathAndValue.length - 1];
-        Object[] path = java.util.Arrays.copyOf(pathAndValue, pathAndValue.length - 1);
-        CommentedConfigurationNode node = snapshot.root().node(path);
-        if (!node.virtual()) {
-            return false;
-        }
+    private void reconcileWithBundledDefaults() {
         try {
-            node.set(value);
-            return true;
-        } catch (SerializationException exception) {
-            throw new IllegalStateException("Unable to add missing resilience configuration key.", exception);
-        }
-    }
-
-    private void saveConfig() {
-        try {
-            loader.save(snapshot.root());
-            FilePermissionHardening.restrictFileToOwner(configFile, logger, "DataProvider config.yml");
+            CommentedConfigurationNode configured = loader.load();
+            CommentedConfigurationNode defaults = loadBundledDefaults();
+            if (ConfigurationReconciler.reconcileSchema(configured, defaults)) {
+                AtomicConfigurationWriter.save(configFile, configured, logger, "DataProvider config.yml");
+                logger.info("Reconciled config.yml with the current default schema.");
+            }
         } catch (IOException e) {
-            throw new IllegalStateException("Error saving config file at " + configFile, e);
+            throw new IllegalStateException("Error reconciling config file at " + configFile, e);
         }
+    }
+
+    private CommentedConfigurationNode loadBundledDefaults() throws IOException {
+        if (getClass().getResource("/config.yml") == null) {
+            throw new IOException("Bundled config.yml resource is missing.");
+        }
+        return YamlConfigurationLoader.builder()
+                .source(() -> new BufferedReader(new InputStreamReader(
+                        Objects.requireNonNull(getClass().getResourceAsStream("/config.yml")), StandardCharsets.UTF_8
+                )))
+                .build()
+                .load();
     }
 
     public boolean isDatabaseTypeEnabled(DatabaseType type) {

@@ -1,17 +1,21 @@
 package nl.hauntedmc.dataprovider.core;
 
-import nl.hauntedmc.dataprovider.database.DatabaseType;
+import nl.hauntedmc.dataprovider.core.config.AtomicConfigurationWriter;
 import nl.hauntedmc.dataprovider.core.security.FilePermissionHardening;
+import nl.hauntedmc.dataprovider.database.DatabaseType;
 import nl.hauntedmc.dataprovider.logging.LoggerAdapter;
 import org.spongepowered.configurate.CommentedConfigurationNode;
 import org.spongepowered.configurate.loader.ConfigurationLoader;
 import org.spongepowered.configurate.yaml.YamlConfigurationLoader;
 
+import java.io.BufferedReader;
 import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
+import java.io.InputStreamReader;
 import java.net.URL;
 import java.net.URLConnection;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.EnumMap;
@@ -61,6 +65,9 @@ class DatabaseConfigMap {
                         .build();
                 try {
                     CommentedConfigurationNode node = loader.load();
+                    if (refreshBundledDefault(type, path, node)) {
+                        node = loader.load();
+                    }
                     loadedConfigs.put(type, node);
                 } catch (IOException e) {
                     logger.error("Failed to load config for " + type.name(), e);
@@ -117,6 +124,43 @@ class DatabaseConfigMap {
             logger.error("Failed to copy default config: " + resourcePath, e);
             return false;
         }
+    }
+
+    /**
+     * The {@code default} section is a shipped, non-operational example. It is replaced on
+     * every startup so its keys, comments and security guidance remain current. Named sections
+     * are administrator-owned connections and are never modified by this upgrade path.
+     */
+    private boolean refreshBundledDefault(
+            DatabaseType type,
+            Path configPath,
+            CommentedConfigurationNode configured
+    ) throws IOException {
+        CommentedConfigurationNode bundled = loadBundledConfig(type.getConfigFileName());
+        CommentedConfigurationNode bundledDefault = bundled.node("default");
+        if (bundledDefault.virtual()) {
+            throw new IOException("Bundled " + type.getConfigFileName() + " has no default section.");
+        }
+        CommentedConfigurationNode configuredDefault = configured.node("default");
+        if (configuredDefault.equals(bundledDefault)) {
+            return false;
+        }
+        configuredDefault.from(bundledDefault);
+        AtomicConfigurationWriter.save(configPath, configured, logger, type.name() + " database config");
+        logger.info("Refreshed the bundled default example in " + type.getConfigFileName() + ".");
+        return true;
+    }
+
+    private CommentedConfigurationNode loadBundledConfig(String resourcePath) throws IOException {
+        if (resourceClassLoader.getResource("databases/" + resourcePath) == null) {
+            throw new IOException("Bundled database config resource is missing: " + resourcePath);
+        }
+        return YamlConfigurationLoader.builder()
+                .source(() -> new BufferedReader(new InputStreamReader(
+                        Objects.requireNonNull(openResource("databases/" + resourcePath)), StandardCharsets.UTF_8
+                )))
+                .build()
+                .load();
     }
 
     private InputStream openResource(String resourcePath) throws IOException {
