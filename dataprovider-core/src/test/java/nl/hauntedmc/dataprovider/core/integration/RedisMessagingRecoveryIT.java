@@ -2,6 +2,8 @@ package nl.hauntedmc.dataprovider.core.integration;
 
 import nl.hauntedmc.dataprovider.api.DataProviderAPI;
 import nl.hauntedmc.dataprovider.core.DataProvider;
+import nl.hauntedmc.dataprovider.core.ManagedDatabaseProvider;
+import nl.hauntedmc.dataprovider.core.resilience.ResilienceTargetAware;
 import nl.hauntedmc.dataprovider.core.api.DefaultDataProviderApi;
 import nl.hauntedmc.dataprovider.core.identity.CallerContext;
 import nl.hauntedmc.dataprovider.core.identity.CallerContextResolver;
@@ -13,6 +15,8 @@ import nl.hauntedmc.dataprovider.database.messaging.MessagingDatabaseProvider;
 import nl.hauntedmc.dataprovider.database.messaging.api.EventMessage;
 import nl.hauntedmc.dataprovider.database.messaging.api.Subscription;
 import nl.hauntedmc.dataprovider.database.messaging.api.SubscriptionState;
+import nl.hauntedmc.dataprovider.database.messaging.durable.DurableEvent;
+import nl.hauntedmc.dataprovider.database.messaging.durable.DurableSubscription;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.testcontainers.containers.GenericContainer;
@@ -127,6 +131,74 @@ class RedisMessagingRecoveryIT {
         }
     }
 
+    @Test
+    void originalPubSubAndDurableHandlesSurvivePhysicalPoolRecreation() throws Exception {
+        writeMessagingConfiguration();
+        DataProvider provider = new DataProvider(
+                new RecordingLoggerAdapter(), dataDirectory, getClass().getClassLoader(), callerResolver()
+        );
+        AtomicBoolean redisStopped = new AtomicBoolean(false);
+        try {
+            DataProviderAPI api = new DefaultDataProviderApi(provider.getDataProviderHandler()).forPlugin(this);
+            MessagingDatabaseProvider messaging = (MessagingDatabaseProvider)
+                    api.registerDatabaseOrThrow(DatabaseType.REDIS_MESSAGING, "default");
+            ManagedDatabaseProvider recovery = (ManagedDatabaseProvider) provider.getDataProviderHandler()
+                    .requireRegisteredDatabase(DatabaseType.REDIS_MESSAGING, "default");
+            assertTrue(recovery instanceof ResilienceTargetAware,
+                    "Registered Redis messaging provider must expose its shared physical resilience target.");
+            ManagedDatabaseProvider physicalRecovery = ((ResilienceTargetAware) recovery).resilienceTarget();
+            String suffix = Long.toUnsignedString(System.nanoTime(), 36);
+            String channel = "dataprovider.pool.recreation." + suffix;
+            String stream = "dataprovider.pool.recreation." + suffix;
+            String group = "recreation-group-" + suffix;
+            String consumer = "recreation-consumer-" + suffix;
+            String type = "dataprovider.pool.recreation";
+            LinkedBlockingQueue<String> pubSubReceived = new LinkedBlockingQueue<>();
+            LinkedBlockingQueue<String> durableReceived = new LinkedBlockingQueue<>();
+
+            var access = messaging.getDataAccess();
+            var durable = messaging.getDurableDataAccess();
+            Subscription pubSub = access.subscribe(channel, type, TestEvent.class,
+                    event -> pubSubReceived.add(event.value()));
+            DurableSubscription durableSubscription = durable.consume(stream, group, consumer, type, TestEvent.class,
+                    delivery -> {
+                        durableReceived.add(delivery.event().payload().value());
+                        delivery.acknowledge().join();
+                    });
+            String pubSubId = pubSub.id();
+            String durableId = durableSubscription.id();
+            awaitState(pubSub, SubscriptionState.ACTIVE);
+            awaitCondition(() -> durableSubscription.snapshot().active(), "Durable consumer did not become active.");
+            assertPubSubDelivery(access, channel, type, pubSubReceived, "before");
+            assertDurableDelivery(durable, stream, type, durableReceived, "before");
+
+            stopRedis(redisStopped);
+            awaitState(pubSub, SubscriptionState.RECONNECTING);
+            // The first failed probe records that the locally-open pool is unhealthy. The second
+            // call must take PhysicalResource.recover()'s disconnect/connect replacement branch.
+            assertTrue(!physicalRecovery.recover(), "Redis unexpectedly recovered while stopped.");
+            assertTrue(!physicalRecovery.recover(), "Redis unexpectedly recreated while stopped.");
+
+            startRedis(redisStopped);
+            awaitCondition(physicalRecovery::recover, "Physical Redis resource did not recover after recreation.");
+            awaitState(pubSub, SubscriptionState.ACTIVE);
+            awaitCondition(() -> durableSubscription.snapshot().active(),
+                    "Original durable handle did not reattach after pool recreation.");
+            assertEquals(pubSubId, pubSub.id());
+            assertEquals(durableId, durableSubscription.id());
+            assertTrue(!pubSub.completion().isDone(), "Pool replacement closed the logical Pub/Sub handle.");
+            assertTrue(!durableSubscription.completion().isDone(), "Pool replacement closed the logical durable handle.");
+            assertPubSubDelivery(access, channel, type, pubSubReceived, "after");
+            assertDurableDelivery(durable, stream, type, durableReceived, "after");
+
+            pubSub.unsubscribe().get(5, TimeUnit.SECONDS);
+            durableSubscription.closeAsync().get(5, TimeUnit.SECONDS);
+        } finally {
+            if (redisStopped.get()) startRedis(redisStopped);
+            provider.shutdownAllDatabases();
+        }
+    }
+
     private void assertDelivery(
             nl.hauntedmc.dataprovider.database.messaging.MessagingDataAccess access,
             LinkedBlockingQueue<String> received,
@@ -135,6 +207,29 @@ class RedisMessagingRecoveryIT {
         access.publish(CHANNEL, new TestEvent("dataprovider.recovery", value)).get(5, TimeUnit.SECONDS);
         assertEquals(value, received.poll(5, TimeUnit.SECONDS));
         assertSubscriberCount(1L);
+    }
+
+    private static void assertPubSubDelivery(
+            nl.hauntedmc.dataprovider.database.messaging.MessagingDataAccess access,
+            String channel,
+            String type,
+            LinkedBlockingQueue<String> received,
+            String value
+    ) throws Exception {
+        access.publish(channel, new TestEvent(type, value)).get(5, TimeUnit.SECONDS);
+        assertEquals(value, received.poll(5, TimeUnit.SECONDS));
+    }
+
+    private static void assertDurableDelivery(
+            nl.hauntedmc.dataprovider.database.messaging.durable.DurableMessagingDataAccess access,
+            String stream,
+            String type,
+            LinkedBlockingQueue<String> received,
+            String value
+    ) throws Exception {
+        access.publish(stream, new DurableEvent<>("event-" + value, "key-" + value, new TestEvent(type, value)))
+                .get(5, TimeUnit.SECONDS);
+        assertEquals(value, received.poll(5, TimeUnit.SECONDS));
     }
 
     private void writeMessagingConfiguration() throws Exception {

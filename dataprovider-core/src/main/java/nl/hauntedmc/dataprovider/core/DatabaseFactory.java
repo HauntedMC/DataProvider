@@ -213,6 +213,7 @@ class DatabaseFactory {
         private long generation;
         private int consecutiveRecoveryFailures;
         private ResourceAdmission admission;
+        private final java.util.Set<SharedProviderLease> scopedLeases = ConcurrentHashMap.newKeySet();
         private volatile java.util.function.BooleanSupplier resilienceGate = () -> true;
         private volatile java.util.function.Supplier<ConnectionHealthSnapshot> resilienceDiagnostics =
                 () -> ConnectionHealthSnapshot.unprobed(isLocallyConnected());
@@ -270,6 +271,7 @@ class DatabaseFactory {
         @Override public boolean recover() {
             boolean locallyInvalid;
             boolean recreate;
+            boolean generationChanged = false;
             synchronized (this) {
                 if (retired) {
                     return false;
@@ -299,13 +301,28 @@ class DatabaseFactory {
                 if (healthy && provider.isLocallyConnected()) {
                     if (recreate) {
                         generation++;
+                        generationChanged = true;
                     }
                     consecutiveRecoveryFailures = 0;
                 } else {
                     consecutiveRecoveryFailures++;
                 }
             }
+            if (generationChanged) {
+                // Resilience monitors target this shared resource directly. Notify every live
+                // logical lease now, rather than waiting for an unrelated application call to
+                // discover the new generation.
+                scopedLeases.forEach(SharedProviderLease::rebindAfterPhysicalReplacement);
+            }
             return healthy;
+        }
+
+        private void registerScopedLease(SharedProviderLease lease) {
+            scopedLeases.add(lease);
+        }
+
+        private void unregisterScopedLease(SharedProviderLease lease) {
+            scopedLeases.remove(lease);
         }
 
         private synchronized long generation() {
@@ -439,6 +456,7 @@ class DatabaseFactory {
                 scoped = created.view();
                 resourceExecution = created.execution();
                 scopedGeneration = created.generation();
+                resource.registerScopedLease(this);
             } catch (RuntimeException exception) {
                 failure = exception;
                 disconnect();
@@ -466,6 +484,8 @@ class DatabaseFactory {
             if (!closed.compareAndSet(false, true)) {
                 return;
             }
+            resource.unregisterScopedLease(this);
+            onLeaseDisconnecting();
             DatabaseProvider view = scoped;
             if (view instanceof MessagingDatabaseProvider messaging) {
                 try {
@@ -536,6 +556,25 @@ class DatabaseFactory {
             scoped = rebound.view();
             resourceExecution = rebound.execution();
             scopedGeneration = rebound.generation();
+            onScopedViewRecreated(rebound.view());
+        }
+
+        private void rebindAfterPhysicalReplacement() {
+            refreshScopedViewIfNeeded();
+        }
+
+        /**
+         * Called after this lease has rebound its scoped view to a replacement physical resource.
+         * Most access facades resolve their delegate per call; messaging additionally owns long-lived
+         * logical consumers and therefore needs an explicit reattachment point.
+         */
+        protected void onScopedViewRecreated(DatabaseProvider rebound) {
+            // No long-lived logical state for ordinary database access types.
+        }
+
+        /** Gives stable facades a chance to close logical state before their physical view is retired. */
+        protected void onLeaseDisconnecting() {
+            // No long-lived logical state for ordinary database access types.
         }
     }
 
@@ -576,8 +615,8 @@ class DatabaseFactory {
     }
 
     private static final class MessagingLease extends SharedProviderLease implements MessagingDatabaseProvider {
-        private final nl.hauntedmc.dataprovider.database.messaging.MessagingDataAccess stableAccess = new StableMessagingAccess(this);
-        private final nl.hauntedmc.dataprovider.database.messaging.durable.DurableMessagingDataAccess stableDurableAccess = new StableDurableMessagingAccess(this);
+        private final StableMessagingAccess stableAccess = new StableMessagingAccess(this);
+        private final StableDurableMessagingAccess stableDurableAccess = new StableDurableMessagingAccess(this);
         private MessagingLease(PhysicalResource r, ExecutionHandle e, ConcurrentMap<ResourceKey, PhysicalResource> rs) {
             super(r, e, rs);
         }
@@ -586,6 +625,19 @@ class DatabaseFactory {
         }
         @Override public nl.hauntedmc.dataprovider.database.messaging.durable.DurableMessagingDataAccess getDurableDataAccess() {
             return stableDurableAccess;
+        }
+
+        @Override
+        protected void onScopedViewRecreated(DatabaseProvider rebound) {
+            MessagingDatabaseProvider messaging = (MessagingDatabaseProvider) rebound;
+            stableAccess.reattach(messaging.getDataAccess());
+            stableDurableAccess.reattach(messaging.getDurableDataAccess());
+        }
+
+        @Override
+        protected void onLeaseDisconnecting() {
+            stableAccess.shutdown();
+            stableDurableAccess.shutdown();
         }
     }
 
@@ -669,15 +721,163 @@ class DatabaseFactory {
 
     private static final class StableMessagingAccess extends StableAccess
             implements nl.hauntedmc.dataprovider.database.messaging.MessagingDataAccess {
+        private final Object attachmentLock = new Object();
+        private final java.util.concurrent.ConcurrentMap<String, LogicalSubscription<?>> subscriptions =
+                new java.util.concurrent.ConcurrentHashMap<>();
+        private final java.util.concurrent.atomic.AtomicBoolean shuttingDown = new java.util.concurrent.atomic.AtomicBoolean();
+
         private StableMessagingAccess(SharedProviderLease lease) { super(lease); }
-        private nl.hauntedmc.dataprovider.database.messaging.MessagingDataAccess delegate() { return ((MessagingDatabaseProvider) lease().view()).getDataAccess(); }
+
+        private nl.hauntedmc.dataprovider.database.messaging.MessagingDataAccess delegate() {
+            return ((MessagingDatabaseProvider) lease().view()).getDataAccess();
+        }
+
         @Override public <T extends nl.hauntedmc.dataprovider.database.messaging.api.EventMessage> java.util.concurrent.CompletableFuture<Void> publish(String destination, T message) { return call("publish", () -> delegate().publish(destination, message)); }
-        @Override public <T extends nl.hauntedmc.dataprovider.database.messaging.api.EventMessage> nl.hauntedmc.dataprovider.database.messaging.api.Subscription subscribe(String destination, String messageType, Class<T> type, java.util.function.Consumer<T> handler) { lease().requireAvailable("subscribe"); return delegate().subscribe(destination, messageType, type, handler); }
-        @Override public java.util.concurrent.CompletableFuture<Void> shutdown() { return call("shutdown", () -> delegate().shutdown()); }
+
+        @Override
+        public <T extends nl.hauntedmc.dataprovider.database.messaging.api.EventMessage>
+        nl.hauntedmc.dataprovider.database.messaging.api.Subscription subscribe(
+                String destination,
+                String messageType,
+                Class<T> type,
+                java.util.function.Consumer<T> handler
+        ) {
+            lease().requireAvailable("subscribe");
+            synchronized (attachmentLock) {
+                if (shuttingDown.get()) {
+                    throw new IllegalStateException("Messaging access is shut down.");
+                }
+                nl.hauntedmc.dataprovider.database.messaging.api.Subscription physical =
+                        delegate().subscribe(destination, messageType, type, handler);
+                LogicalSubscription<T> logical = new LogicalSubscription<>(
+                        physical.id(), destination, messageType, type, handler, physical);
+                if (subscriptions.putIfAbsent(logical.id(), logical) != null) {
+                    physical.unsubscribe();
+                    throw new IllegalStateException("Duplicate logical Redis subscription id: " + logical.id());
+                }
+                return logical;
+            }
+        }
+
+        @Override
+        public java.util.List<nl.hauntedmc.dataprovider.database.messaging.api.SubscriptionSnapshot> subscriptions() {
+            return subscriptions.values().stream()
+                    .map(LogicalSubscription::snapshot)
+                    .toList();
+        }
+
+        @Override
+        public java.util.concurrent.CompletableFuture<Void> shutdown() {
+            if (!shuttingDown.compareAndSet(false, true)) {
+                return java.util.concurrent.CompletableFuture.completedFuture(null);
+            }
+            java.util.concurrent.CompletableFuture<?>[] closes = subscriptions.values().stream()
+                    .map(LogicalSubscription::unsubscribe)
+                    .toArray(java.util.concurrent.CompletableFuture[]::new);
+            return java.util.concurrent.CompletableFuture.allOf(closes)
+                    .whenComplete((unused, failure) -> subscriptions.clear());
+        }
+
+        private void reattach(nl.hauntedmc.dataprovider.database.messaging.MessagingDataAccess replacement) {
+            synchronized (attachmentLock) {
+                if (shuttingDown.get()) {
+                    return;
+                }
+                subscriptions.values().forEach(subscription -> subscription.reattach(replacement));
+            }
+        }
+
+        private final class LogicalSubscription<T extends nl.hauntedmc.dataprovider.database.messaging.api.EventMessage>
+                implements nl.hauntedmc.dataprovider.database.messaging.api.Subscription {
+            private final String id;
+            private final String destination;
+            private final String messageType;
+            private final Class<T> type;
+            private final java.util.function.Consumer<T> handler;
+            private final java.util.concurrent.atomic.AtomicReference<nl.hauntedmc.dataprovider.database.messaging.api.Subscription> physical;
+            private final java.util.concurrent.atomic.AtomicLong attachment = new java.util.concurrent.atomic.AtomicLong();
+            private final java.util.concurrent.atomic.AtomicBoolean closed = new java.util.concurrent.atomic.AtomicBoolean();
+            private final java.util.concurrent.CompletableFuture<Void> completion = new java.util.concurrent.CompletableFuture<>();
+            private final java.util.concurrent.atomic.AtomicReference<Throwable> terminalFailure = new java.util.concurrent.atomic.AtomicReference<>();
+
+            private LogicalSubscription(
+                    String id, String destination, String messageType, Class<T> type,
+                    java.util.function.Consumer<T> handler,
+                    nl.hauntedmc.dataprovider.database.messaging.api.Subscription initial
+            ) {
+                this.id = id;
+                this.destination = destination;
+                this.messageType = messageType;
+                this.type = type;
+                this.handler = handler;
+                this.physical = new java.util.concurrent.atomic.AtomicReference<>(initial);
+                watch(initial, attachment.incrementAndGet());
+            }
+
+            private void reattach(nl.hauntedmc.dataprovider.database.messaging.MessagingDataAccess replacement) {
+                if (closed.get() || completion.isCompletedExceptionally()) return;
+                // Fence the retired listener before creating the replacement: a late terminal
+                // callback from the old pool must not win this reattachment race.
+                long nextAttachment = attachment.incrementAndGet();
+                try {
+                    nl.hauntedmc.dataprovider.database.messaging.api.Subscription next =
+                            replacement.subscribe(destination, messageType, type, handler);
+                    physical.set(next);
+                    watch(next, nextAttachment);
+                } catch (Throwable failure) {
+                    fail(failure);
+                }
+            }
+
+            private void watch(nl.hauntedmc.dataprovider.database.messaging.api.Subscription candidate, long generation) {
+                candidate.completion().whenComplete((unused, failure) -> {
+                    // Completion from a listener on the retired pool must never terminate the logical handle.
+                    if (attachment.get() != generation || physical.get() != candidate || closed.get()) return;
+                    if (failure != null) fail(failure);
+                });
+            }
+
+            private void fail(Throwable failure) {
+                if (terminalFailure.compareAndSet(null, failure)) {
+                    subscriptions.remove(id, this);
+                    completion.completeExceptionally(failure);
+                }
+            }
+
+            @Override public java.util.concurrent.CompletableFuture<Void> unsubscribe() {
+                if (!closed.compareAndSet(false, true)) return completion;
+                attachment.incrementAndGet();
+                subscriptions.remove(id, this);
+                nl.hauntedmc.dataprovider.database.messaging.api.Subscription current = physical.get();
+                current.unsubscribe().whenComplete((unused, failure) -> {
+                    if (failure == null) completion.complete(null); else completion.completeExceptionally(failure);
+                });
+                return completion;
+            }
+            @Override public String id() { return id; }
+            @Override public nl.hauntedmc.dataprovider.database.messaging.api.SubscriptionState state() {
+                return closed.get() ? nl.hauntedmc.dataprovider.database.messaging.api.SubscriptionState.CLOSED
+                        : terminalFailure.get() != null ? nl.hauntedmc.dataprovider.database.messaging.api.SubscriptionState.FAILED
+                        : physical.get().state();
+            }
+            @Override public nl.hauntedmc.dataprovider.database.messaging.api.SubscriptionSnapshot snapshot() {
+                nl.hauntedmc.dataprovider.database.messaging.api.SubscriptionSnapshot snapshot = physical.get().snapshot();
+                return new nl.hauntedmc.dataprovider.database.messaging.api.SubscriptionSnapshot(
+                        id, destination, messageType, state(), snapshot.reconnectCount(), snapshot.generation(),
+                        snapshot.lastFailureAt(), snapshot.lastFailure(), snapshot.currentDowntime(),
+                        snapshot.totalDowntime(), snapshot.activeListener());
+            }
+            @Override public java.util.concurrent.CompletableFuture<Void> completion() { return completion; }
+        }
     }
 
     private static final class StableDurableMessagingAccess extends StableAccess
             implements nl.hauntedmc.dataprovider.database.messaging.durable.DurableMessagingDataAccess {
+        private final Object attachmentLock = new Object();
+        private final java.util.concurrent.ConcurrentMap<String, LogicalDurableSubscription<?>> subscriptions =
+                new java.util.concurrent.ConcurrentHashMap<>();
+        private final java.util.concurrent.atomic.AtomicBoolean shuttingDown = new java.util.concurrent.atomic.AtomicBoolean();
+
         private StableDurableMessagingAccess(SharedProviderLease lease) { super(lease); }
         private nl.hauntedmc.dataprovider.database.messaging.durable.DurableMessagingDataAccess delegate() {
             return ((MessagingDatabaseProvider) lease().view()).getDurableDataAccess();
@@ -685,11 +885,109 @@ class DatabaseFactory {
         @Override public <T extends nl.hauntedmc.dataprovider.database.messaging.api.EventMessage> java.util.concurrent.CompletableFuture<nl.hauntedmc.dataprovider.database.messaging.durable.PublishedDurableEvent> publish(String stream, nl.hauntedmc.dataprovider.database.messaging.durable.DurableEvent<T> event) {
             return call("durablePublish", () -> delegate().publish(stream, event));
         }
+
         @Override public <T extends nl.hauntedmc.dataprovider.database.messaging.api.EventMessage> nl.hauntedmc.dataprovider.database.messaging.durable.DurableSubscription consume(String stream, String group, String consumer, String messageType, Class<T> type, java.util.function.Consumer<nl.hauntedmc.dataprovider.database.messaging.durable.DurableDelivery<T>> handler) {
-            lease().requireAvailable("durableConsume"); return delegate().consume(stream, group, consumer, messageType, type, handler);
+            lease().requireAvailable("durableConsume");
+            synchronized (attachmentLock) {
+                if (shuttingDown.get()) throw new IllegalStateException("Durable messaging access is shut down.");
+                nl.hauntedmc.dataprovider.database.messaging.durable.DurableSubscription physical =
+                        delegate().consume(stream, group, consumer, messageType, type, handler);
+                LogicalDurableSubscription<T> logical = new LogicalDurableSubscription<>(
+                        physical.id(), stream, group, consumer, messageType, type, handler, physical);
+                if (subscriptions.putIfAbsent(logical.id(), logical) != null) {
+                    physical.closeAsync();
+                    throw new IllegalStateException("A durable consumer already exists for " + logical.id());
+                }
+                return logical;
+            }
         }
-        @Override public java.util.List<nl.hauntedmc.dataprovider.database.messaging.durable.DurableSubscriptionSnapshot> subscriptions() { lease().requireAvailable("durableSubscriptions"); return delegate().subscriptions(); }
-        @Override public java.util.concurrent.CompletableFuture<Void> shutdown() { return call("durableShutdown", () -> delegate().shutdown()); }
+        @Override public java.util.List<nl.hauntedmc.dataprovider.database.messaging.durable.DurableSubscriptionSnapshot> subscriptions() {
+            return subscriptions.values().stream().map(LogicalDurableSubscription::snapshot).toList();
+        }
+        @Override public java.util.concurrent.CompletableFuture<Void> shutdown() {
+            if (!shuttingDown.compareAndSet(false, true)) return java.util.concurrent.CompletableFuture.completedFuture(null);
+            java.util.concurrent.CompletableFuture<?>[] closes = subscriptions.values().stream()
+                    .map(LogicalDurableSubscription::closeAsync)
+                    .toArray(java.util.concurrent.CompletableFuture[]::new);
+            return java.util.concurrent.CompletableFuture.allOf(closes)
+                    .whenComplete((unused, failure) -> subscriptions.clear());
+        }
+
+        private void reattach(nl.hauntedmc.dataprovider.database.messaging.durable.DurableMessagingDataAccess replacement) {
+            synchronized (attachmentLock) {
+                if (shuttingDown.get()) return;
+                subscriptions.values().forEach(subscription -> subscription.reattach(replacement));
+            }
+        }
+
+        private final class LogicalDurableSubscription<T extends nl.hauntedmc.dataprovider.database.messaging.api.EventMessage>
+                implements nl.hauntedmc.dataprovider.database.messaging.durable.DurableSubscription {
+            private final String id;
+            private final String stream;
+            private final String group;
+            private final String consumer;
+            private final String messageType;
+            private final Class<T> type;
+            private final java.util.function.Consumer<nl.hauntedmc.dataprovider.database.messaging.durable.DurableDelivery<T>> handler;
+            private final java.util.concurrent.atomic.AtomicReference<nl.hauntedmc.dataprovider.database.messaging.durable.DurableSubscription> physical;
+            private final java.util.concurrent.atomic.AtomicLong attachment = new java.util.concurrent.atomic.AtomicLong();
+            private final java.util.concurrent.atomic.AtomicBoolean closed = new java.util.concurrent.atomic.AtomicBoolean();
+            private final java.util.concurrent.CompletableFuture<Void> completion = new java.util.concurrent.CompletableFuture<>();
+
+            private LogicalDurableSubscription(String id, String stream, String group, String consumer, String messageType,
+                    Class<T> type, java.util.function.Consumer<nl.hauntedmc.dataprovider.database.messaging.durable.DurableDelivery<T>> handler,
+                    nl.hauntedmc.dataprovider.database.messaging.durable.DurableSubscription initial) {
+                this.id = id; this.stream = stream; this.group = group; this.consumer = consumer; this.messageType = messageType;
+                this.type = type; this.handler = handler;
+                this.physical = new java.util.concurrent.atomic.AtomicReference<>(initial);
+                watch(initial, attachment.incrementAndGet());
+            }
+
+            private void reattach(nl.hauntedmc.dataprovider.database.messaging.durable.DurableMessagingDataAccess replacement) {
+                if (closed.get() || completion.isCompletedExceptionally()) return;
+                // Fence the retired consumer loop before starting its replacement.
+                long nextAttachment = attachment.incrementAndGet();
+                try {
+                    nl.hauntedmc.dataprovider.database.messaging.durable.DurableSubscription next =
+                            replacement.consume(stream, group, consumer, messageType, type, handler);
+                    physical.set(next);
+                    watch(next, nextAttachment);
+                } catch (Throwable failure) {
+                    subscriptions.remove(id, this);
+                    completion.completeExceptionally(failure);
+                }
+            }
+
+            private void watch(nl.hauntedmc.dataprovider.database.messaging.durable.DurableSubscription candidate, long generation) {
+                candidate.completion().whenComplete((unused, failure) -> {
+                    // Retired consumer loops complete as the old transport closes; that is not a logical close.
+                    if (attachment.get() != generation || physical.get() != candidate || closed.get()) return;
+                    if (failure != null) {
+                        subscriptions.remove(id, this);
+                        completion.completeExceptionally(failure);
+                    }
+                });
+            }
+
+            @Override public String id() { return id; }
+            @Override public nl.hauntedmc.dataprovider.database.messaging.durable.DurableSubscriptionSnapshot snapshot() {
+                nl.hauntedmc.dataprovider.database.messaging.durable.DurableSubscriptionSnapshot snapshot = physical.get().snapshot();
+                return new nl.hauntedmc.dataprovider.database.messaging.durable.DurableSubscriptionSnapshot(
+                        id, stream, group, consumer, !closed.get() && snapshot.active(), snapshot.pendingCount(), snapshot.lag(),
+                        snapshot.deliveredCount(), snapshot.acknowledgedCount(), snapshot.reclaimedCount(),
+                        snapshot.deadLetteredCount(), snapshot.lastFailure());
+            }
+            @Override public java.util.concurrent.CompletableFuture<Void> closeAsync() {
+                if (!closed.compareAndSet(false, true)) return completion;
+                attachment.incrementAndGet();
+                subscriptions.remove(id, this);
+                physical.get().closeAsync().whenComplete((unused, failure) -> {
+                    if (failure == null) completion.complete(null); else completion.completeExceptionally(failure);
+                });
+                return completion;
+            }
+            @Override public java.util.concurrent.CompletableFuture<Void> completion() { return completion; }
+        }
     }
 
     private static final class StableSchemaManager extends StableAccess
