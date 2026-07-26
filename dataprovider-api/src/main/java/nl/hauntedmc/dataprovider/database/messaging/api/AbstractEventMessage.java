@@ -8,8 +8,13 @@ import java.util.regex.Pattern;
 public abstract class AbstractEventMessage implements EventMessage {
     private static final Pattern TYPE_PATTERN = Pattern.compile("[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}");
 
-    private final String type;
-    private final long timestamp = System.currentTimeMillis();
+    /*
+     * These fields intentionally are not final: Gson populates message subclasses reflectively
+     * without invoking this constructor, and future Java releases reject reflective final writes.
+     * They remain encapsulated and have no mutators.
+     */
+    private String type;
+    private long timestamp = System.currentTimeMillis();
 
     protected AbstractEventMessage(String type) {
         if (type == null || !TYPE_PATTERN.matcher(type).matches()) {
