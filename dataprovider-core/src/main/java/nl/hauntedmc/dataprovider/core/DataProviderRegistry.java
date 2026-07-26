@@ -641,10 +641,13 @@ class DataProviderRegistry {
 
         private void close(String reason) {
             if (closeStarted.compareAndSet(false, true)) {
-                Object target = resilienceKey;
-                if (target != null) {
-                    resilienceRuntime.untrack(target);
-                    resilienceKey = null;
+                synchronized (this) {
+                    Object target = resilienceKey;
+                    if (target != null) {
+                        resilienceRuntime.untrack(target);
+                        resilienceKey = null;
+                        resilience = null;
+                    }
                 }
                 while (true) {
                     ProviderLifecycleState current = state.get();
@@ -730,8 +733,8 @@ class DataProviderRegistry {
             return provider;
         }
 
-        private void startResilience() {
-            if (resilience == null && provider != null) {
+        private synchronized void startResilience() {
+            if (!closeStarted.get() && resilience == null && provider != null) {
                 ManagedDatabaseProvider target = provider instanceof ResilienceTargetAware targetAware
                         ? targetAware.resilienceTarget()
                         : provider;
@@ -744,7 +747,7 @@ class DataProviderRegistry {
             }
         }
 
-        private void restartResilience() {
+        private synchronized void restartResilience() {
             resilience = null;
             resilienceKey = null;
             startResilience();
