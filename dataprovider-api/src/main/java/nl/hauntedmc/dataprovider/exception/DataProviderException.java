@@ -90,7 +90,7 @@ public abstract class DataProviderException extends RuntimeException {
     }
 
     public final boolean retryable() {
-        return retryAdvice != RetryAdvice.NEVER;
+        return retryAdvice == RetryAdvice.SAFE;
     }
 
     public final ExecutionOutcome executionOutcome() {

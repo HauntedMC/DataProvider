@@ -37,7 +37,8 @@ All structured exceptions expose:
 
 ## Retry safety
 
-`retryable()` is a convenience method. Prefer `retryAdvice()` and `executionOutcome()` for writes:
+`retryable()` is a conservative convenience method that returns `true` only for `SAFE` failures.
+Inspect `retryAdvice()` and `executionOutcome()` before deciding whether to retry conditional failures:
 
 - `SAFE` + `NOT_STARTED` or `NOT_APPLIED`: retrying is normally safe.
 - `CONDITIONAL` + `MAY_HAVE_APPLIED`: do not retry blindly; use an idempotency key or verify backend state.

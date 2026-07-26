@@ -385,7 +385,7 @@ class MySQLDataAccessTest {
                 DataTransactionException.class, completion.getCause());
         assertEquals(TransactionPhase.COMMIT, transaction.phase());
         assertEquals(ExecutionOutcome.MAY_HAVE_APPLIED, transaction.executionOutcome());
-        assertTrue(transaction.retryable());
+        assertFalse(transaction.retryable());
         verify(connection).rollback();
         verify(connection).setAutoCommit(true);
         verify(connection).close();

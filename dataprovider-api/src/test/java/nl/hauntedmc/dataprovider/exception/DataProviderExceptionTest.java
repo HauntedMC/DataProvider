@@ -7,6 +7,7 @@ import java.util.HashMap;
 import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
@@ -32,6 +33,7 @@ class DataProviderExceptionTest {
         diagnostics.put("sqlState", "changed");
 
         assertEquals(DataProviderErrorCode.REGISTRATION_FAILED, exception.errorCode());
+        assertFalse(exception.retryable());
         assertEquals("23000", exception.diagnostics().get("sqlState"));
         assertThrows(UnsupportedOperationException.class,
                 () -> exception.diagnostics().put("other", "value"));
