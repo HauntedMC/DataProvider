@@ -158,9 +158,6 @@ final class IdentityBoundDatabaseProvider {
     private static boolean isCleanupMethod(Method method) {
         String name = method.getName();
         Class<?> declaringClass = method.getDeclaringClass();
-        if (DatabaseProvider.class.isAssignableFrom(declaringClass)) {
-            return true;
-        }
         if (Subscription.class.isAssignableFrom(declaringClass)
                 || DurableSubscription.class.isAssignableFrom(declaringClass)
                 || DurableDelivery.class.isAssignableFrom(declaringClass)) {
