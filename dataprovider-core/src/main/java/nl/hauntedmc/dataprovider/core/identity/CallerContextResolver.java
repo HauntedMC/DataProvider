@@ -30,6 +30,23 @@ public interface CallerContextResolver {
     }
 
     /**
+     * Resolves an active or disabling plugin caller for teardown-only operations.
+     * Platform integrations with explicit disabling states should override this method.
+     */
+    default CallerContext resolveCallerForCleanup() {
+        return resolveCaller();
+    }
+
+    /** Cleanup-aware equivalent of {@link #resolveCallerIfPresent()}. */
+    default CallerContext resolveCallerForCleanupIfPresent() {
+        try {
+            return resolveCallerForCleanup();
+        } catch (SecurityException ignored) {
+            return null;
+        }
+    }
+
+    /**
      * Issues the identity for an explicitly supplied platform plugin object. This is called at
      * the API binding boundary, never while a database handle is being used.
      */
@@ -40,6 +57,11 @@ public interface CallerContextResolver {
     /** Checks a captured identity without consulting platform APIs. */
     default boolean isIdentityActive(PluginIdentity identity) {
         return false;
+    }
+
+    /** Returns the lifecycle state of a captured identity generation. */
+    default PluginIdentityState identityState(PluginIdentity identity) {
+        return isIdentityActive(identity) ? PluginIdentityState.ACTIVE : PluginIdentityState.INACTIVE;
     }
 
     /**
