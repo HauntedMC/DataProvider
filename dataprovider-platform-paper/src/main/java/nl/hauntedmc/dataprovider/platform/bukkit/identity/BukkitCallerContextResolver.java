@@ -15,6 +15,7 @@ import java.util.Locale;
 import java.util.Objects;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.function.BiPredicate;
 import java.util.function.Supplier;
 
 /**
@@ -25,6 +26,7 @@ public final class BukkitCallerContextResolver implements CallerContextResolver 
     private final PluginIdentityRegistry identities = new PluginIdentityRegistry();
     private final Set<String> installedPluginIds = ConcurrentHashMap.newKeySet();
     private final Supplier<List<ClassLoader>> callerChain;
+    private BiPredicate<Plugin, PluginIdentity> disableFinalizer = (plugin, identity) -> false;
 
     public BukkitCallerContextResolver(ClassLoader ownClassLoader) {
         this(
@@ -116,51 +118,57 @@ public final class BukkitCallerContextResolver implements CallerContextResolver 
         }
     }
 
-    public PluginIdentity register(Plugin plugin) {
+    /** Installs the platform-owned finalizer used before a disabling generation can be replaced. */
+    public synchronized void setDisableFinalizer(BiPredicate<Plugin, PluginIdentity> disableFinalizer) {
+        this.disableFinalizer = Objects.requireNonNull(disableFinalizer, "Disable finalizer cannot be null.");
+    }
+
+    public synchronized PluginIdentity register(Plugin plugin) {
         Objects.requireNonNull(plugin, "Plugin cannot be null.");
         rememberInstalled(plugin);
         return registerActiveIdentity(plugin);
     }
 
     /** Marks the current plugin generation as teardown-only without invalidating its handles. */
-    public PluginIdentity beginDisable(Plugin plugin) {
+    public synchronized PluginIdentity beginDisable(Plugin plugin) {
         if (plugin == null) {
             return null;
         }
         return identities.beginDisable(plugin.getClass().getClassLoader());
     }
 
-    public void invalidate(Plugin plugin) {
+    public synchronized void invalidate(Plugin plugin) {
         if (plugin != null) {
             identities.invalidate(plugin.getClass().getClassLoader());
         }
     }
 
     /** Generation-fenced invalidation for deferred Paper disable finalization. */
-    public boolean invalidate(Plugin plugin, PluginIdentity expectedIdentity) {
+    public synchronized boolean invalidate(Plugin plugin, PluginIdentity expectedIdentity) {
         return plugin != null && identities.invalidate(plugin.getClass().getClassLoader(), expectedIdentity);
     }
 
-    public PluginIdentity find(Plugin plugin) {
+    /** Returns whether the supplied identity is still the current generation for the plugin. */
+    public synchronized boolean isCurrent(Plugin plugin, PluginIdentity expectedIdentity) {
+        return plugin != null && expectedIdentity != null && find(plugin) == expectedIdentity;
+    }
+
+    public synchronized PluginIdentity find(Plugin plugin) {
         return plugin == null ? null : identities.find(plugin.getClass().getClassLoader());
     }
 
-    public void invalidateAll() {
+    public synchronized void invalidateAll() {
         identities.invalidateAll();
         installedPluginIds.clear();
     }
 
     @Override
-    public PluginIdentity issueIdentity(Object platformPlugin) {
+    public synchronized PluginIdentity issueIdentity(Object platformPlugin) {
         if (!(platformPlugin instanceof Plugin plugin)) {
             throw new SecurityException("DataProvider requires a Bukkit Plugin instance for API binding.");
         }
         if (!plugin.isEnabled()) {
             throw new SecurityException("DataProvider requires an enabled Bukkit Plugin instance for API binding.");
-        }
-        PluginIdentity existing = find(plugin);
-        if (existing != null && identities.stateOf(existing) == PluginIdentityState.DISABLING) {
-            throw new SecurityException("DataProvider cannot bind a plugin while it is disabling.");
         }
         // Bukkit fires PluginEnableEvent after JavaPlugin.onEnable. Register here as
         // well so a plugin can bind the API from its own onEnable callback.
@@ -186,8 +194,29 @@ public final class BukkitCallerContextResolver implements CallerContextResolver 
         String pluginId = normalizePluginId(plugin.getName());
         ClassLoader classLoader = plugin.getClass().getClassLoader();
         PluginIdentity existing = identities.find(classLoader);
-        if (existing != null && identities.stateOf(existing) == PluginIdentityState.ACTIVE) {
-            return existing;
+        if (existing != null) {
+            PluginIdentityState state = identities.stateOf(existing);
+            if (state == PluginIdentityState.ACTIVE) {
+                return existing;
+            }
+            if (state == PluginIdentityState.DISABLING) {
+                boolean finalized;
+                try {
+                    finalized = disableFinalizer.test(plugin, existing);
+                } catch (RuntimeException | Error failure) {
+                    throw new IllegalStateException(
+                            "Could not finalize the previous DataProvider identity generation for plugin '"
+                                    + pluginId + "'.",
+                            failure
+                    );
+                }
+                if (!finalized || identities.stateOf(existing) != PluginIdentityState.INACTIVE) {
+                    throw new IllegalStateException(
+                            "Cannot reactivate DataProvider access for plugin '" + pluginId
+                                    + "' until its previous disabling generation is fully cleaned up."
+                    );
+                }
+            }
         }
         PluginIdentity identity = identities.register(pluginId, classLoader);
         if (!identity.pluginId().equals(pluginId)) {
