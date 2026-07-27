@@ -158,13 +158,16 @@ final class IdentityBoundDatabaseProvider {
     private static boolean isCleanupMethod(Method method) {
         String name = method.getName();
         Class<?> declaringClass = method.getDeclaringClass();
-        if (name.equals("unsubscribe") && Subscription.class.isAssignableFrom(declaringClass)) {
+        if (DatabaseProvider.class.isAssignableFrom(declaringClass)) {
             return true;
         }
-        if (name.equals("closeAsync") && DurableSubscription.class.isAssignableFrom(declaringClass)) {
+        if (Subscription.class.isAssignableFrom(declaringClass)
+                || DurableSubscription.class.isAssignableFrom(declaringClass)) {
             return true;
         }
-        if (name.equals("shutdown") && MessagingDataAccess.class.isAssignableFrom(declaringClass)) {
+        if ((name.equals("shutdown") || name.equals("subscriptions"))
+                && (MessagingDataAccess.class.isAssignableFrom(declaringClass)
+                || DurableMessagingDataAccess.class.isAssignableFrom(declaringClass))) {
             return true;
         }
         if (name.equals("acknowledge") && DurableDelivery.class.isAssignableFrom(declaringClass)) {
@@ -174,7 +177,8 @@ final class IdentityBoundDatabaseProvider {
             return true;
         }
         return Connection.class.isAssignableFrom(declaringClass)
-                && (name.equals("commit") || name.equals("rollback") || name.equals("abort"));
+                && (name.equals("commit") || name.equals("rollback") || name.equals("abort")
+                || name.equals("isClosed"));
     }
 
     private static final class GuardedDataSource implements ScopedDataSource {
