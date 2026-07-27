@@ -36,7 +36,8 @@ class RedisMessagingSubscriptionContractTest {
         AtomicReference<JedisPubSub> listener = new AtomicReference<>();
         CountDownLatch listening = new CountDownLatch(1);
         CountDownLatch releaseListener = new CountDownLatch(1);
-        when(pool.getResource()).thenReturn(listeningJedis(listener, listening, releaseListener));
+        Jedis jedis = listeningJedis(listener, listening, releaseListener);
+        when(pool.getResource()).thenReturn(jedis);
 
         PermissiveExecution execution = new PermissiveExecution();
         RecordingLoggerAdapter logger = new RecordingLoggerAdapter();
@@ -146,7 +147,8 @@ class RedisMessagingSubscriptionContractTest {
         AtomicReference<JedisPubSub> listener = new AtomicReference<>();
         CountDownLatch listening = new CountDownLatch(1);
         CountDownLatch releaseListener = new CountDownLatch(1);
-        when(pool.getResource()).thenReturn(listeningJedis(listener, listening, releaseListener));
+        Jedis jedis = listeningJedis(listener, listening, releaseListener);
+        when(pool.getResource()).thenReturn(jedis);
 
         RejectOnceExecution execution = new RejectOnceExecution();
         RecordingLoggerAdapter logger = new RecordingLoggerAdapter();
