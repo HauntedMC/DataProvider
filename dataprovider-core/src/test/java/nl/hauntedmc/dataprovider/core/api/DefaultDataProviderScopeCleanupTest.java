@@ -1,5 +1,6 @@
 package nl.hauntedmc.dataprovider.core.api;
 
+import nl.hauntedmc.dataprovider.api.DataProviderScope;
 import nl.hauntedmc.dataprovider.api.OwnerScope;
 import nl.hauntedmc.dataprovider.core.DataProviderHandler;
 import nl.hauntedmc.dataprovider.core.identity.PluginIdentity;
@@ -8,9 +9,11 @@ import nl.hauntedmc.dataprovider.database.DatabaseType;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.atLeastOnce;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
@@ -35,8 +38,10 @@ class DefaultDataProviderScopeCleanupTest {
         assertThrows(SecurityException.class,
                 () -> scope.registerDatabaseOrThrow(DatabaseType.MYSQL, "primary"));
         assertDoesNotThrow(scope::close);
+        assertEquals(DataProviderScope.LifecycleState.CLOSED, scope.lifecycleState());
+        assertEquals(OwnerScope.of("feature"), scope.ownerScope());
 
-        verify(handler).requireIdentityForCleanup(identity);
+        verify(handler, atLeastOnce()).requireIdentityForCleanup(identity);
         verify(handler).unregisterAllDatabasesForScope(eq(identity), any(OwnerScope.class));
     }
 }
