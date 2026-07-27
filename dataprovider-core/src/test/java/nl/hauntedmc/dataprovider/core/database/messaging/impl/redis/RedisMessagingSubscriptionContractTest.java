@@ -36,7 +36,7 @@ class RedisMessagingSubscriptionContractTest {
         AtomicReference<JedisPubSub> listener = new AtomicReference<>();
         CountDownLatch listening = new CountDownLatch(1);
         CountDownLatch releaseListener = new CountDownLatch(1);
-        Jedis jedis = listeningJedis(listener, listening, releaseListener);
+        Jedis jedis = listeningJedis("network.shared", listener, listening, releaseListener);
         when(pool.getResource()).thenReturn(jedis);
 
         PermissiveExecution execution = new PermissiveExecution();
@@ -147,7 +147,7 @@ class RedisMessagingSubscriptionContractTest {
         AtomicReference<JedisPubSub> listener = new AtomicReference<>();
         CountDownLatch listening = new CountDownLatch(1);
         CountDownLatch releaseListener = new CountDownLatch(1);
-        Jedis jedis = listeningJedis(listener, listening, releaseListener);
+        Jedis jedis = listeningJedis("network.rejection", listener, listening, releaseListener);
         when(pool.getResource()).thenReturn(jedis);
 
         RejectOnceExecution execution = new RejectOnceExecution();
@@ -187,6 +187,7 @@ class RedisMessagingSubscriptionContractTest {
     }
 
     private static Jedis listeningJedis(
+            String destination,
             AtomicReference<JedisPubSub> listenerReference,
             CountDownLatch listening,
             CountDownLatch release
@@ -195,8 +196,7 @@ class RedisMessagingSubscriptionContractTest {
         doAnswer(invocation -> {
             JedisPubSub listener = invocation.getArgument(0);
             listenerReference.set(listener);
-            String[] destinations = invocation.getArgument(1);
-            listener.onSubscribe(destinations[0], 1);
+            listener.onSubscribe(destination, 1);
             listening.countDown();
             awaitLatch(release);
             return null;
