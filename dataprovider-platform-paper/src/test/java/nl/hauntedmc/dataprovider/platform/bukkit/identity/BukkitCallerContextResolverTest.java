@@ -6,9 +6,11 @@ import org.bukkit.plugin.Plugin;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotSame;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -56,7 +58,54 @@ class BukkitCallerContextResolverTest {
         assertEquals(PluginIdentityState.DISABLING, resolver.identityState(identity));
         assertNull(resolver.resolveCallerIfPresent());
         assertEquals("example", resolver.resolveCallerForCleanup().pluginId());
-        assertThrows(SecurityException.class, () -> resolver.issueIdentity(plugin));
+        assertThrows(IllegalStateException.class, () -> resolver.issueIdentity(plugin));
+        assertEquals(PluginIdentityState.DISABLING, resolver.identityState(identity));
+    }
+
+    @Test
+    void successfulFinalizationAllowsOnEnableBindingToCreateANewGeneration() {
+        Plugin plugin = mock(Plugin.class);
+        when(plugin.getName()).thenReturn("Example");
+        when(plugin.isEnabled()).thenReturn(true);
+        BukkitCallerContextResolver resolver = resolverFor(plugin.getClass().getClassLoader());
+        PluginIdentity disabling = resolver.register(plugin);
+        resolver.beginDisable(plugin);
+        AtomicInteger finalizations = new AtomicInteger();
+        resolver.setDisableFinalizer((target, identity) -> {
+            finalizations.incrementAndGet();
+            return resolver.invalidate(target, identity);
+        });
+
+        PluginIdentity replacement = resolver.issueIdentity(plugin);
+
+        assertEquals(1, finalizations.get());
+        assertNotSame(disabling, replacement);
+        assertEquals(PluginIdentityState.INACTIVE, resolver.identityState(disabling));
+        assertEquals(PluginIdentityState.ACTIVE, resolver.identityState(replacement));
+        assertSame(replacement, resolver.find(plugin));
+    }
+
+    @Test
+    void failedFinalizationBlocksReactivationAndRetainsCleanupCapability() {
+        Plugin plugin = mock(Plugin.class);
+        when(plugin.getName()).thenReturn("Example");
+        when(plugin.isEnabled()).thenReturn(true);
+        ClassLoader loader = plugin.getClass().getClassLoader();
+        BukkitCallerContextResolver resolver = resolverFor(loader);
+        PluginIdentity disabling = resolver.register(plugin);
+        resolver.beginDisable(plugin);
+        AtomicInteger finalizations = new AtomicInteger();
+        resolver.setDisableFinalizer((target, identity) -> {
+            finalizations.incrementAndGet();
+            return false;
+        });
+
+        assertThrows(IllegalStateException.class, () -> resolver.register(plugin));
+
+        assertEquals(1, finalizations.get());
+        assertSame(disabling, resolver.find(plugin));
+        assertEquals(PluginIdentityState.DISABLING, resolver.identityState(disabling));
+        assertEquals("example", resolver.resolveCallerForCleanup().pluginId());
     }
 
     @Test
@@ -67,6 +116,7 @@ class BukkitCallerContextResolverTest {
         BukkitCallerContextResolver resolver = resolverFor(plugin.getClass().getClassLoader());
         PluginIdentity disabling = resolver.register(plugin);
         resolver.beginDisable(plugin);
+        resolver.setDisableFinalizer(resolver::invalidate);
         PluginIdentity replacement = resolver.register(plugin);
 
         assertFalse(resolver.invalidate(plugin, disabling));
