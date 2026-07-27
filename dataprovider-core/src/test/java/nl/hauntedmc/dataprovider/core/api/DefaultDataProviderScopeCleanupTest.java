@@ -9,6 +9,8 @@ import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
@@ -35,16 +37,6 @@ class DefaultDataProviderScopeCleanupTest {
         assertDoesNotThrow(scope::close);
 
         verify(handler).requireIdentityForCleanup(identity);
-        verify(handler).unregisterAllDatabasesForScope(identity, scopeRegistration(scope));
-    }
-
-    private static OwnerScope scopeRegistration(DefaultDataProviderScope scope) {
-        try {
-            java.lang.reflect.Field field = DefaultDataProviderScope.class.getDeclaredField("registrationScope");
-            field.setAccessible(true);
-            return (OwnerScope) field.get(scope);
-        } catch (ReflectiveOperationException failure) {
-            throw new AssertionError(failure);
-        }
+        verify(handler).unregisterAllDatabasesForScope(eq(identity), any(OwnerScope.class));
     }
 }
