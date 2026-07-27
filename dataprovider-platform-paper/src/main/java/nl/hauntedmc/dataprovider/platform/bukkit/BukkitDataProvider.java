@@ -1,21 +1,23 @@
 package nl.hauntedmc.dataprovider.platform.bukkit;
 
-import nl.hauntedmc.dataprovider.core.DataProvider;
 import nl.hauntedmc.dataprovider.api.DataProviderAPI;
-import nl.hauntedmc.dataprovider.core.api.DefaultDataProviderApi;
+import nl.hauntedmc.dataprovider.core.DataProvider;
 import nl.hauntedmc.dataprovider.core.DataProviderHandler;
+import nl.hauntedmc.dataprovider.core.api.DefaultDataProviderApi;
 import nl.hauntedmc.dataprovider.core.identity.PluginIdentity;
 import nl.hauntedmc.dataprovider.platform.bukkit.command.DataProviderCommand;
 import nl.hauntedmc.dataprovider.platform.bukkit.identity.BukkitCallerContextResolver;
-import nl.hauntedmc.dataprovider.platform.common.logging.JulLoggerAdapter;
 import nl.hauntedmc.dataprovider.platform.common.lifecycle.PlatformDataProviderRuntime;
+import nl.hauntedmc.dataprovider.platform.common.logging.JulLoggerAdapter;
 import org.bukkit.command.PluginCommand;
-import org.bukkit.plugin.ServicePriority;
-import org.bukkit.plugin.java.JavaPlugin;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.Listener;
 import org.bukkit.event.server.PluginDisableEvent;
 import org.bukkit.event.server.PluginEnableEvent;
+import org.bukkit.plugin.ServicePriority;
+import org.bukkit.plugin.java.JavaPlugin;
+
+import java.util.logging.Level;
 
 public final class BukkitDataProvider extends JavaPlugin {
 
@@ -23,7 +25,6 @@ public final class BukkitDataProvider extends JavaPlugin {
     private final PlatformDataProviderRuntime runtime = new PlatformDataProviderRuntime();
     private BukkitCallerContextResolver identityResolver;
     private DataProviderHandler activeHandler;
-
 
     @Override
     public void onEnable() {
@@ -48,11 +49,14 @@ public final class BukkitDataProvider extends JavaPlugin {
     @Override
     public void onDisable() {
         getServer().getServicesManager().unregisterAll(this);
-        if (identityResolver != null) {
-            identityResolver.invalidateAll();
+        try {
+            runtime.stop(new JulLoggerAdapter(getLogger()));
+        } finally {
+            if (identityResolver != null) {
+                identityResolver.invalidateAll();
+            }
+            activeHandler = null;
         }
-        runtime.stop(new JulLoggerAdapter(getLogger()));
-        activeHandler = null;
         getLogger().info("DataProvider disabled.");
     }
 
@@ -64,15 +68,37 @@ public final class BukkitDataProvider extends JavaPlugin {
 
         @EventHandler
         public void onPluginDisable(PluginDisableEvent event) {
-            PluginIdentity identity = identityResolver.find(event.getPlugin());
-            if (identity != null && activeHandler != null) {
+            if (event.getPlugin() == BukkitDataProvider.this) {
+                return;
+            }
+            PluginIdentity identity = identityResolver.beginDisable(event.getPlugin());
+            if (identity == null) {
+                return;
+            }
+            if (activeHandler != null) {
                 try {
                     activeHandler.unregisterAllDatabasesForPlugin(identity);
-                } catch (RuntimeException ignored) {
-                    // The plugin is already disabling; invalidate the capability even if cleanup fails.
+                } catch (RuntimeException | Error failure) {
+                    getLogger().log(
+                            Level.SEVERE,
+                            "Failed to force cleanup DataProvider resources for disabling plugin '"
+                                    + event.getPlugin().getName() + "'. Remaining resources will be closed during "
+                                    + "DataProvider shutdown.",
+                            failure
+                    );
                 }
             }
-            identityResolver.invalidate(event.getPlugin());
+            try {
+                getServer().getScheduler().runTask(BukkitDataProvider.this, () ->
+                        identityResolver.invalidate(event.getPlugin(), identity));
+            } catch (RuntimeException failure) {
+                getLogger().log(
+                        Level.WARNING,
+                        "Could not schedule final identity invalidation for plugin '"
+                                + event.getPlugin().getName() + "'. Global DataProvider shutdown will finalize it.",
+                        failure
+                );
+            }
         }
     }
 
