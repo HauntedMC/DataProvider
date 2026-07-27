@@ -62,7 +62,10 @@ public final class BukkitCallerContextResolver implements CallerContextResolver 
 
     @Override
     public boolean isKnownPlugin(String pluginId) {
-        return pluginId != null && installedPluginIds.contains(normalizePluginId(pluginId));
+        if (pluginId == null || pluginId.isBlank()) {
+            return false;
+        }
+        return installedPluginIds.contains(normalizePluginId(pluginId));
     }
 
     /**
