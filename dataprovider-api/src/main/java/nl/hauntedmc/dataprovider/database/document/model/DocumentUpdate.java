@@ -58,6 +58,10 @@ public class DocumentUpdate {
         if (field == null || field.isBlank()) {
             throw new IllegalArgumentException("Update field name cannot be null or blank.");
         }
-        return field;
+        String normalized = field.trim();
+        if (normalized.startsWith("$") || normalized.indexOf('\0') >= 0) {
+            throw new IllegalArgumentException("Update field names cannot be operators or contain null characters.");
+        }
+        return normalized;
     }
 }
