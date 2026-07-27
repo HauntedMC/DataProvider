@@ -114,7 +114,9 @@ class ConnectionStateSnapshotTest {
     @Test
     void autoCommitIsAlwaysRestoredAfterEveryOtherConnectionProperty() throws Exception {
         Connection connection = mock(Connection.class);
-        stubState(connection, Map.of(), new Properties());
+        Properties clientInfo = new Properties();
+        clientInfo.setProperty("application", "dataprovider");
+        stubState(connection, Map.of(), clientInfo);
         ConnectionStateSnapshot snapshot = ConnectionStateSnapshot.capture(connection);
 
         snapshot.restore(connection);
