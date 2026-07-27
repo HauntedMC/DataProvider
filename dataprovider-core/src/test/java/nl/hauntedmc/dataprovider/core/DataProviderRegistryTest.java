@@ -748,6 +748,9 @@ class DataProviderRegistryTest {
         assertTrue(registry.slotRemoved.await(5, TimeUnit.SECONDS));
 
         registry.reloadConfiguration();
+        // reloadConfiguration intentionally requests health asynchronously. Drain that request
+        // before taking the baseline so the post-close verification cannot reuse the same future.
+        registry.probeRemoteHealthAsync().join();
         int probesBeforeOldClose = sharedTarget.probeCalls;
         registry.allowOldClose.countDown();
         unregister.join();
