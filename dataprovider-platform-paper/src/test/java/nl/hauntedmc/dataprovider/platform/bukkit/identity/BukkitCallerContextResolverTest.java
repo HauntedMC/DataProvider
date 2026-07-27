@@ -10,15 +10,15 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
-import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.clearInvocations;
+import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 class BukkitCallerContextResolverTest {
 
     @Test
-    void issuesAndInvalidatesLifecycleIdentityWithoutBukkitAccessDuringUse() {
+    void invalidatesLifecycleIdentityButRetainsInstalledPluginKnowledge() {
         Plugin plugin = mock(Plugin.class);
         BukkitCallerContextResolver resolver = resolverFor(plugin.getClass().getClassLoader());
         when(plugin.getName()).thenReturn("Example");
@@ -34,6 +34,19 @@ class BukkitCallerContextResolverTest {
         verifyNoInteractions(plugin);
 
         resolver.invalidate(plugin);
+        assertFalse(resolver.isIdentityActive(identity));
+        assertTrue(resolver.isKnownPlugin("example"));
+    }
+
+    @Test
+    void invalidateAllClearsLifecycleAndInstalledPluginKnowledge() {
+        Plugin plugin = mock(Plugin.class);
+        when(plugin.getName()).thenReturn("Example");
+        BukkitCallerContextResolver resolver = resolverFor(plugin.getClass().getClassLoader());
+        PluginIdentity identity = resolver.register(plugin);
+
+        resolver.invalidateAll();
+
         assertFalse(resolver.isIdentityActive(identity));
         assertFalse(resolver.isKnownPlugin("example"));
     }
