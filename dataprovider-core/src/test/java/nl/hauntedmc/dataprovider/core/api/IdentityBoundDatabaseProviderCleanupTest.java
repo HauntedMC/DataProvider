@@ -7,12 +7,14 @@ import nl.hauntedmc.dataprovider.database.messaging.MessagingDataAccess;
 import nl.hauntedmc.dataprovider.database.messaging.MessagingDatabaseProvider;
 import nl.hauntedmc.dataprovider.database.messaging.api.EventMessage;
 import nl.hauntedmc.dataprovider.database.messaging.api.Subscription;
+import nl.hauntedmc.dataprovider.database.messaging.api.SubscriptionState;
 import org.junit.jupiter.api.Test;
 
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
@@ -46,11 +48,12 @@ class IdentityBoundDatabaseProviderCleanupTest {
         when(access.subscribe(anyString(), anyString(), any(), any())).thenReturn(subscription);
         when(access.shutdown()).thenReturn(CompletableFuture.completedFuture(null));
         when(subscription.unsubscribe()).thenReturn(CompletableFuture.completedFuture(null));
+        when(subscription.state()).thenReturn(SubscriptionState.ACTIVE);
 
         MessagingDatabaseProvider bound = (MessagingDatabaseProvider)
                 IdentityBoundDatabaseProvider.wrap(handler, identity, delegate);
-        MessagingDataAccess boundAccess = bound.getDataAccess();
-        Subscription boundSubscription = boundAccess.subscribe(
+        MessagingDataAccess activeAccess = bound.getDataAccess();
+        Subscription boundSubscription = activeAccess.subscribe(
                 "channel",
                 "test",
                 TestMessage.class,
@@ -59,10 +62,13 @@ class IdentityBoundDatabaseProviderCleanupTest {
 
         disabling.set(true);
 
+        MessagingDataAccess teardownAccess = assertDoesNotThrow(bound::getDataAccess);
+        assertDoesNotThrow(bound::isConnected);
+        assertEquals(SubscriptionState.ACTIVE, boundSubscription.state());
         assertThrows(SecurityException.class,
-                () -> boundAccess.publish("channel", new TestMessage()));
+                () -> teardownAccess.publish("channel", new TestMessage()));
         assertDoesNotThrow(() -> boundSubscription.unsubscribe().join());
-        assertDoesNotThrow(() -> boundAccess.shutdown().join());
+        assertDoesNotThrow(() -> teardownAccess.shutdown().join());
         verify(handler, atLeastOnce()).requireIdentityForCleanup(identity);
         verify(subscription).unsubscribe();
         verify(access).shutdown();
