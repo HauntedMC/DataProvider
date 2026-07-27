@@ -4,6 +4,13 @@ on:
   push:
     branches:
       - fix/resilience-reload-test-race
+  pull_request:
+    types:
+      - opened
+      - synchronize
+      - reopened
+    branches:
+      - main
 
 permissions:
   contents: write
