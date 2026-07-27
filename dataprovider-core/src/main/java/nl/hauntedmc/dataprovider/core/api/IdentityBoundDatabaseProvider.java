@@ -1,10 +1,10 @@
 package nl.hauntedmc.dataprovider.core.api;
 
 import nl.hauntedmc.dataprovider.core.DataProviderHandler;
-import nl.hauntedmc.dataprovider.core.identity.PluginIdentity;
 import nl.hauntedmc.dataprovider.core.concurrent.ScopedDataSource;
-import nl.hauntedmc.dataprovider.database.DatabaseProvider;
+import nl.hauntedmc.dataprovider.core.identity.PluginIdentity;
 import nl.hauntedmc.dataprovider.database.DataAccess;
+import nl.hauntedmc.dataprovider.database.DatabaseProvider;
 import nl.hauntedmc.dataprovider.database.document.DocumentDatabaseProvider;
 import nl.hauntedmc.dataprovider.database.keyvalue.KeyValueDatabaseProvider;
 import nl.hauntedmc.dataprovider.database.messaging.MessagingDatabaseProvider;
@@ -89,7 +89,7 @@ final class IdentityBoundDatabaseProvider {
             if (method.getDeclaringClass() == Object.class) {
                 return method.invoke(delegate, args);
             }
-            check(handler, identity);
+            check(handler, identity, isCleanupMethod(method));
             if (method.getName().equals("unwrap") && args != null && args.length == 1) {
                 Class<?> type = (Class<?>) args[0];
                 if (type.isInstance(proxy)) {
@@ -154,6 +154,25 @@ final class IdentityBoundDatabaseProvider {
         return result;
     }
 
+    private static boolean isCleanupMethod(Method method) {
+        String name = method.getName();
+        Class<?> declaringClass = method.getDeclaringClass();
+        if (name.equals("unsubscribe") && Subscription.class.isAssignableFrom(declaringClass)) {
+            return true;
+        }
+        if (name.equals("closeAsync") && DurableSubscription.class.isAssignableFrom(declaringClass)) {
+            return true;
+        }
+        if (name.equals("acknowledge") && DurableDelivery.class.isAssignableFrom(declaringClass)) {
+            return true;
+        }
+        if (name.equals("close") && AutoCloseable.class.isAssignableFrom(declaringClass)) {
+            return true;
+        }
+        return Connection.class.isAssignableFrom(declaringClass)
+                && (name.equals("commit") || name.equals("rollback") || name.equals("abort"));
+    }
+
     private static final class GuardedDataSource implements ScopedDataSource {
         private final DataSource delegate;
         private final DataProviderHandler handler;
@@ -165,7 +184,10 @@ final class IdentityBoundDatabaseProvider {
             this.identity = identity;
         }
 
-        private void check() { IdentityBoundDatabaseProvider.check(handler, identity); }
+        private void check() {
+            IdentityBoundDatabaseProvider.check(handler, identity, false);
+        }
+
         @Override public Connection getConnection() throws SQLException {
             check();
             return (Connection) bindResult(Connection.class, delegate.getConnection(), handler, identity);
@@ -189,7 +211,12 @@ final class IdentityBoundDatabaseProvider {
         @Override public boolean isWrapperFor(Class<?> type) throws SQLException { check(); return type.isInstance(this); }
     }
 
-    private static void check(DataProviderHandler handler, PluginIdentity identity) {
-        handler.requireIdentity(Objects.requireNonNull(identity, "Bound provider identity cannot be null."));
+    private static void check(DataProviderHandler handler, PluginIdentity identity, boolean cleanup) {
+        PluginIdentity boundIdentity = Objects.requireNonNull(identity, "Bound provider identity cannot be null.");
+        if (cleanup) {
+            handler.requireIdentityForCleanup(boundIdentity);
+        } else {
+            handler.requireIdentity(boundIdentity);
+        }
     }
 }
