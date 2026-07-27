@@ -53,14 +53,20 @@ class BukkitCallerContextResolverTest {
 
     @Test
     void synchronizesInstalledPluginsBeforeTheyAreEnabled() {
-        Plugin dataRegistry = mock(Plugin.class);
-        Plugin serverFeatures = mock(Plugin.class);
-        when(dataRegistry.getName()).thenReturn("DataRegistry");
-        when(serverFeatures.getName()).thenReturn("ServerFeatures");
-        when(dataRegistry.isEnabled()).thenReturn(true);
-        when(serverFeatures.isEnabled()).thenReturn(false);
+        Plugin dataRegistryDelegate = mock(Plugin.class);
+        Plugin serverFeaturesDelegate = mock(Plugin.class);
+        when(dataRegistryDelegate.getName()).thenReturn("DataRegistry");
+        when(serverFeaturesDelegate.getName()).thenReturn("ServerFeatures");
+        when(dataRegistryDelegate.isEnabled()).thenReturn(true);
+        when(serverFeaturesDelegate.isEnabled()).thenReturn(false);
+        ClassLoader dataRegistryLoader = new ClassLoader() {
+        };
+        ClassLoader serverFeaturesLoader = new ClassLoader() {
+        };
+        Plugin dataRegistry = pluginWithLoader(dataRegistryDelegate, dataRegistryLoader);
+        Plugin serverFeatures = pluginWithLoader(serverFeaturesDelegate, serverFeaturesLoader);
 
-        BukkitCallerContextResolver resolver = resolverFor(dataRegistry.getClass().getClassLoader());
+        BukkitCallerContextResolver resolver = resolverFor(dataRegistryLoader);
         resolver.synchronizePlugins(List.of(dataRegistry, serverFeatures));
 
         assertTrue(resolver.isKnownPlugin("dataregistry"));
