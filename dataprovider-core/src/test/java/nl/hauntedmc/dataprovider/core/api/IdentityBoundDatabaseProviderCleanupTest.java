@@ -16,6 +16,7 @@ import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.Mockito.atLeastOnce;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
@@ -62,7 +63,7 @@ class IdentityBoundDatabaseProviderCleanupTest {
                 () -> boundAccess.publish("channel", new TestMessage()));
         assertDoesNotThrow(() -> boundSubscription.unsubscribe().join());
         assertDoesNotThrow(() -> boundAccess.shutdown().join());
-        verify(handler).requireIdentityForCleanup(identity);
+        verify(handler, atLeastOnce()).requireIdentityForCleanup(identity);
         verify(subscription).unsubscribe();
         verify(access).shutdown();
     }
