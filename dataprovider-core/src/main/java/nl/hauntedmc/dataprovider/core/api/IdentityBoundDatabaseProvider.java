@@ -7,6 +7,7 @@ import nl.hauntedmc.dataprovider.database.DataAccess;
 import nl.hauntedmc.dataprovider.database.DatabaseProvider;
 import nl.hauntedmc.dataprovider.database.document.DocumentDatabaseProvider;
 import nl.hauntedmc.dataprovider.database.keyvalue.KeyValueDatabaseProvider;
+import nl.hauntedmc.dataprovider.database.messaging.MessagingDataAccess;
 import nl.hauntedmc.dataprovider.database.messaging.MessagingDatabaseProvider;
 import nl.hauntedmc.dataprovider.database.messaging.api.Subscription;
 import nl.hauntedmc.dataprovider.database.messaging.durable.DurableDelivery;
@@ -161,6 +162,9 @@ final class IdentityBoundDatabaseProvider {
             return true;
         }
         if (name.equals("closeAsync") && DurableSubscription.class.isAssignableFrom(declaringClass)) {
+            return true;
+        }
+        if (name.equals("shutdown") && MessagingDataAccess.class.isAssignableFrom(declaringClass)) {
             return true;
         }
         if (name.equals("acknowledge") && DurableDelivery.class.isAssignableFrom(declaringClass)) {
