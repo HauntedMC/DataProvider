@@ -1,11 +1,13 @@
 package nl.hauntedmc.dataprovider.platform.bukkit.identity;
 
 import nl.hauntedmc.dataprovider.core.identity.PluginIdentity;
+import nl.hauntedmc.dataprovider.core.identity.PluginIdentityState;
 import org.bukkit.plugin.Plugin;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
@@ -36,7 +38,42 @@ class BukkitCallerContextResolverTest {
 
         resolver.invalidate(plugin);
         assertFalse(resolver.isIdentityActive(identity));
+        assertEquals(PluginIdentityState.INACTIVE, resolver.identityState(identity));
         assertTrue(resolver.isKnownPlugin("example"));
+    }
+
+    @Test
+    void disablingGenerationRemainsResolvableOnlyForCleanup() {
+        Plugin plugin = mock(Plugin.class);
+        when(plugin.getName()).thenReturn("Example");
+        when(plugin.isEnabled()).thenReturn(true);
+        ClassLoader loader = plugin.getClass().getClassLoader();
+        BukkitCallerContextResolver resolver = resolverFor(loader);
+        PluginIdentity identity = resolver.register(plugin);
+
+        assertSame(identity, resolver.beginDisable(plugin));
+
+        assertEquals(PluginIdentityState.DISABLING, resolver.identityState(identity));
+        assertNull(resolver.resolveCallerIfPresent());
+        assertEquals("example", resolver.resolveCallerForCleanup().pluginId());
+        assertThrows(SecurityException.class, () -> resolver.issueIdentity(plugin));
+    }
+
+    @Test
+    void delayedDisableFinalizationCannotInvalidateReenabledGeneration() {
+        Plugin plugin = mock(Plugin.class);
+        when(plugin.getName()).thenReturn("Example");
+        when(plugin.isEnabled()).thenReturn(true);
+        BukkitCallerContextResolver resolver = resolverFor(plugin.getClass().getClassLoader());
+        PluginIdentity disabling = resolver.register(plugin);
+        resolver.beginDisable(plugin);
+        PluginIdentity replacement = resolver.register(plugin);
+
+        assertFalse(resolver.invalidate(plugin, disabling));
+
+        assertEquals(PluginIdentityState.INACTIVE, resolver.identityState(disabling));
+        assertEquals(PluginIdentityState.ACTIVE, resolver.identityState(replacement));
+        assertSame(replacement, resolver.find(plugin));
     }
 
     @Test
