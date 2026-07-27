@@ -16,7 +16,7 @@ class ConnectionHealthSnapshotTest {
     void unprobedSnapshotsReflectLocalConnectivityAndSafeDefaults() {
         ConnectionHealthSnapshot connected = ConnectionHealthSnapshot.unprobed(true);
         ConnectionHealthSnapshot disconnected = ConnectionHealthSnapshot.unprobed(
-                false, ProviderLifecycleState.DEGRADED);
+                false, ProviderLifecycleState.FAILED);
 
         assertEquals(ConnectionHealthSnapshot.LocalConnectionState.CONNECTED, connected.localState());
         assertEquals(ConnectionHealthSnapshot.LocalConnectionState.DISCONNECTED, disconnected.localState());
@@ -24,7 +24,7 @@ class ConnectionHealthSnapshotTest {
         assertEquals(ConnectionHealthSnapshot.RuntimeHealth.DEGRADED, connected.runtimeHealth());
         assertEquals(ConnectionHealthSnapshot.Circuit.CLOSED, connected.circuit());
         assertEquals(ProviderLifecycleState.READY, connected.lifecycleState());
-        assertEquals(ProviderLifecycleState.DEGRADED, disconnected.lifecycleState());
+        assertEquals(ProviderLifecycleState.FAILED, disconnected.lifecycleState());
         assertEquals(Duration.ZERO, connected.currentBackoff());
         assertEquals(Duration.ZERO, connected.degradedDuration(Instant.EPOCH));
         assertNull(connected.checkedAt());
@@ -159,7 +159,7 @@ class ConnectionHealthSnapshotTest {
                 ConnectionHealthSnapshot.LocalConnectionState.CONNECTED,
                 ConnectionHealthSnapshot.RemoteHealth.UNHEALTHY,
                 null,
-                ProviderLifecycleState.DEGRADED,
+                ProviderLifecycleState.FAILED,
                 ConnectionHealthSnapshot.RuntimeHealth.DEGRADED,
                 ConnectionHealthSnapshot.Circuit.OPEN,
                 1, 0, "failure", degradedSince, 1, Duration.ofSeconds(1), null
