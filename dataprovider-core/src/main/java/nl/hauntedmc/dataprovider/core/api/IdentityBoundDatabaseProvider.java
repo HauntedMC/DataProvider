@@ -162,15 +162,13 @@ final class IdentityBoundDatabaseProvider {
             return true;
         }
         if (Subscription.class.isAssignableFrom(declaringClass)
-                || DurableSubscription.class.isAssignableFrom(declaringClass)) {
+                || DurableSubscription.class.isAssignableFrom(declaringClass)
+                || DurableDelivery.class.isAssignableFrom(declaringClass)) {
             return true;
         }
         if ((name.equals("shutdown") || name.equals("subscriptions"))
                 && (MessagingDataAccess.class.isAssignableFrom(declaringClass)
                 || DurableMessagingDataAccess.class.isAssignableFrom(declaringClass))) {
-            return true;
-        }
-        if (name.equals("acknowledge") && DurableDelivery.class.isAssignableFrom(declaringClass)) {
             return true;
         }
         if (name.equals("close") && AutoCloseable.class.isAssignableFrom(declaringClass)) {
