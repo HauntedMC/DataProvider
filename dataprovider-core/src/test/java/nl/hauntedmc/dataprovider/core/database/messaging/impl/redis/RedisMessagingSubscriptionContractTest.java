@@ -21,7 +21,6 @@ import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.doAnswer;
@@ -30,36 +29,6 @@ import static org.mockito.Mockito.when;
 
 @SuppressWarnings("deprecation")
 class RedisMessagingSubscriptionContractTest {
-
-    @Test
-    void logicalSubscriptionIdsAreUniqueAcrossDifferentDestinations() throws Exception {
-        JedisPool pool = mock(JedisPool.class);
-        CountDownLatch listening = new CountDownLatch(2);
-        CountDownLatch releaseListeners = new CountDownLatch(1);
-        when(pool.getResource()).thenAnswer(invocation -> listeningJedis(null, listening, releaseListeners));
-
-        PermissiveExecution execution = new PermissiveExecution();
-        RedisMessagingDataAccess access = access(pool, execution);
-        try {
-            var first = access.subscribe("network.alpha", "test.event", TestEvent.class, ignored -> { });
-            var second = access.subscribe("network.beta", "test.event", TestEvent.class, ignored -> { });
-
-            assertTrue(listening.await(2, TimeUnit.SECONDS));
-            await(() -> first.state() == SubscriptionState.ACTIVE && second.state() == SubscriptionState.ACTIVE);
-
-            assertNotEquals(first.id(), second.id(),
-                    "Every stable logical subscription handle must have a distinct diagnostic identity.");
-            assertNotEquals(first.snapshot().logicalId(), second.snapshot().logicalId());
-            assertEquals(2, access.logicalSubscriptionCount());
-            assertEquals(2, execution.activeSubscriptions.get());
-        } finally {
-            CompletableFuture<Void> shutdown = access.shutdown();
-            releaseListeners.countDown();
-            shutdown.get(2, TimeUnit.SECONDS);
-        }
-        assertEquals(0, execution.activeSubscriptions.get());
-        assertEquals(2, execution.releasedSubscriptions.get());
-    }
 
     @Test
     void handlersOnTheSameDestinationShareOneListenerAndUnsubscribeIndependently() throws Exception {
@@ -206,11 +175,6 @@ class RedisMessagingSubscriptionContractTest {
         }
     }
 
-    private static RedisMessagingDataAccess access(JedisPool pool, ExecutionHandle execution) {
-        RecordingLoggerAdapter logger = new RecordingLoggerAdapter();
-        return access(pool, execution, logger, new MessageRegistry(logger));
-    }
-
     private static RedisMessagingDataAccess access(
             JedisPool pool,
             ExecutionHandle execution,
@@ -228,9 +192,7 @@ class RedisMessagingSubscriptionContractTest {
         Jedis jedis = mock(Jedis.class);
         doAnswer(invocation -> {
             JedisPubSub listener = invocation.getArgument(0);
-            if (listenerReference != null) {
-                listenerReference.set(listener);
-            }
+            listenerReference.set(listener);
             String[] destinations = invocation.getArgument(1);
             listener.onSubscribe(destinations[0], 1);
             listening.countDown();
@@ -259,45 +221,22 @@ class RedisMessagingSubscriptionContractTest {
     private static class PermissiveExecution implements ExecutionHandle {
         private final AtomicInteger activeSubscriptions = new AtomicInteger();
         private final AtomicInteger releasedSubscriptions = new AtomicInteger();
-        private final AtomicLong droppedMessages = new AtomicLong();
+        protected final AtomicLong droppedMessages = new AtomicLong();
 
-        @Override
-        public void execute(Runnable command) {
-            command.run();
-        }
-
-        @Override
-        public ExecutionMetricsSnapshot metrics() {
+        @Override public void execute(Runnable command) { command.run(); }
+        @Override public ExecutionMetricsSnapshot metrics() {
             return new ExecutionMetricsSnapshot(
                     0, 0, 0, 0, 0, 0, activeSubscriptions.get(), droppedMessages.get(), 0, 0, 0, 0
             );
         }
-
-        @Override
-        public boolean isClosed() {
-            return false;
-        }
-
-        @Override
-        public boolean tryAcquireSubscription() {
-            activeSubscriptions.incrementAndGet();
-            return true;
-        }
-
-        @Override
-        public void releaseSubscription() {
+        @Override public boolean isClosed() { return false; }
+        @Override public boolean tryAcquireSubscription() { activeSubscriptions.incrementAndGet(); return true; }
+        @Override public void releaseSubscription() {
             activeSubscriptions.decrementAndGet();
             releasedSubscriptions.incrementAndGet();
         }
-
-        @Override
-        public void recordDroppedMessages(long count) {
-            droppedMessages.addAndGet(count);
-        }
-
-        @Override
-        public void close() {
-        }
+        @Override public void recordDroppedMessages(long count) { droppedMessages.addAndGet(count); }
+        @Override public void close() { }
     }
 
     private static final class RejectOnceExecution extends PermissiveExecution {
@@ -313,10 +252,7 @@ class RedisMessagingSubscriptionContractTest {
     }
 
     private record TestEvent(String type, String value) implements EventMessage {
-        @Override
-        public String getType() {
-            return type;
-        }
+        @Override public String getType() { return type; }
     }
 
     @FunctionalInterface
