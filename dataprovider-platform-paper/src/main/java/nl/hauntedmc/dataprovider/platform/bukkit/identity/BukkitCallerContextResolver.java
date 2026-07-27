@@ -61,12 +61,22 @@ public final class BukkitCallerContextResolver implements CallerContextResolver 
         return identities.isKnownPlugin(pluginId);
     }
 
-    /** Called from Paper's lifecycle thread before APIs are handed to plugins. */
+    /**
+     * Called from Paper's lifecycle thread before APIs are handed to plugins.
+     *
+     * <p>All installed plugins must be known here, not only plugins that have already completed
+     * {@code onEnable}. Access policies are configuration declarations and may legitimately name a
+     * plugin that enables later in Paper's dependency order. API binding still requires the plugin
+     * to be enabled, so registering its identity here does not allow premature API use.</p>
+     */
     public void synchronizePlugins() {
-        for (Plugin plugin : Bukkit.getPluginManager().getPlugins()) {
-            if (plugin.isEnabled()) {
-                register(plugin);
-            }
+        synchronizePlugins(List.of(Bukkit.getPluginManager().getPlugins()));
+    }
+
+    void synchronizePlugins(Iterable<? extends Plugin> plugins) {
+        Objects.requireNonNull(plugins, "Plugins cannot be null.");
+        for (Plugin plugin : plugins) {
+            register(plugin);
         }
     }
 
