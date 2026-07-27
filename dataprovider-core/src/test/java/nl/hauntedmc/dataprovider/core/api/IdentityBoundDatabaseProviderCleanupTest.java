@@ -27,7 +27,7 @@ import static org.mockito.Mockito.when;
 class IdentityBoundDatabaseProviderCleanupTest {
 
     @Test
-    void subscriptionAndMessagingShutdownRemainAvailableWhileNormalWorkIsRejected() {
+    void retainedSubscriptionAndMessagingAccessCanShutDownWhileNewProviderAccessIsRejected() {
         DataProviderHandler handler = mock(DataProviderHandler.class);
         PluginIdentity identity = new PluginIdentityRegistry().register(
                 "owner",
@@ -52,8 +52,8 @@ class IdentityBoundDatabaseProviderCleanupTest {
 
         MessagingDatabaseProvider bound = (MessagingDatabaseProvider)
                 IdentityBoundDatabaseProvider.wrap(handler, identity, delegate);
-        MessagingDataAccess activeAccess = bound.getDataAccess();
-        Subscription boundSubscription = activeAccess.subscribe(
+        MessagingDataAccess retainedAccess = bound.getDataAccess();
+        Subscription retainedSubscription = retainedAccess.subscribe(
                 "channel",
                 "test",
                 TestMessage.class,
@@ -62,13 +62,13 @@ class IdentityBoundDatabaseProviderCleanupTest {
 
         disabling.set(true);
 
-        MessagingDataAccess teardownAccess = assertDoesNotThrow(bound::getDataAccess);
-        assertDoesNotThrow(bound::isConnected);
-        assertEquals(SubscriptionState.ACTIVE, boundSubscription.state());
+        assertThrows(SecurityException.class, bound::getDataAccess);
+        assertThrows(SecurityException.class, bound::isConnected);
+        assertEquals(SubscriptionState.ACTIVE, retainedSubscription.state());
         assertThrows(SecurityException.class,
-                () -> teardownAccess.publish("channel", new TestMessage()));
-        assertDoesNotThrow(() -> boundSubscription.unsubscribe().join());
-        assertDoesNotThrow(() -> teardownAccess.shutdown().join());
+                () -> retainedAccess.publish("channel", new TestMessage()));
+        assertDoesNotThrow(() -> retainedSubscription.unsubscribe().join());
+        assertDoesNotThrow(() -> retainedAccess.shutdown().join());
         verify(handler, atLeastOnce()).requireIdentityForCleanup(identity);
         verify(subscription).unsubscribe();
         verify(access).shutdown();
