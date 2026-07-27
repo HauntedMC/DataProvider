@@ -14,6 +14,7 @@ import org.bukkit.event.EventHandler;
 import org.bukkit.event.Listener;
 import org.bukkit.event.server.PluginDisableEvent;
 import org.bukkit.event.server.PluginEnableEvent;
+import org.bukkit.plugin.Plugin;
 import org.bukkit.plugin.ServicePriority;
 import org.bukkit.plugin.java.JavaPlugin;
 
@@ -68,42 +69,60 @@ public final class BukkitDataProvider extends JavaPlugin {
 
         @EventHandler
         public void onPluginDisable(PluginDisableEvent event) {
-            if (event.getPlugin() == BukkitDataProvider.this) {
+            Plugin plugin = event.getPlugin();
+            if (plugin == BukkitDataProvider.this) {
                 return;
             }
-            PluginIdentity identity = identityResolver.beginDisable(event.getPlugin());
+            PluginIdentity identity = identityResolver.beginDisable(plugin);
             if (identity == null) {
                 return;
             }
-            if (activeHandler != null) {
-                try {
-                    activeHandler.unregisterAllDatabasesForPlugin(identity);
-                } catch (RuntimeException | Error failure) {
-                    getLogger().log(
-                            Level.SEVERE,
-                            "Failed to force cleanup DataProvider resources for disabling plugin '"
-                                    + event.getPlugin().getName() + "'. Remaining resources will be closed during "
-                                    + "DataProvider shutdown.",
-                            failure
-                    );
-                }
-            }
             try {
-                getServer().getScheduler().runTask(BukkitDataProvider.this, () ->
-                        identityResolver.invalidate(event.getPlugin(), identity));
+                // Paper emits PluginDisableEvent before invoking the target plugin's onDisable callback.
+                // Deferring one tick lets the plugin close its own scopes and consumers first. The finalizer
+                // then force-closes only leftovers and invalidates exactly this identity generation.
+                getServer().getScheduler().runTask(
+                        BukkitDataProvider.this,
+                        () -> finalizePluginDisable(plugin, identity)
+                );
             } catch (RuntimeException failure) {
                 getLogger().log(
                         Level.WARNING,
-                        "Could not schedule final identity invalidation for plugin '"
-                                + event.getPlugin().getName() + "'. Global DataProvider shutdown will finalize it.",
+                        "Could not schedule final DataProvider cleanup for plugin '" + plugin.getName()
+                                + "'. Reactivation will retry cleanup and global DataProvider shutdown remains "
+                                + "the final resource barrier.",
                         failure
                 );
             }
         }
     }
 
+    private boolean finalizePluginDisable(Plugin plugin, PluginIdentity identity) {
+        if (!identityResolver.isCurrent(plugin, identity)) {
+            return true;
+        }
+        DataProviderHandler handler = activeHandler;
+        if (handler == null) {
+            return false;
+        }
+        try {
+            handler.unregisterAllDatabasesForPlugin(identity);
+        } catch (RuntimeException | Error failure) {
+            getLogger().log(
+                    Level.SEVERE,
+                    "Failed to finalize DataProvider resources for disabling plugin '" + plugin.getName()
+                            + "'. Its identity remains DISABLING and reactivation is blocked until cleanup succeeds; "
+                            + "global DataProvider shutdown will still close remaining resources.",
+                    failure
+            );
+            return false;
+        }
+        return identityResolver.invalidate(plugin, identity);
+    }
+
     private void initializeBindings(DataProvider provider) {
         activeHandler = provider.getDataProviderHandler();
+        identityResolver.setDisableFinalizer(this::finalizePluginDisable);
         registerCommand(activeHandler);
         registerApiService(new DefaultDataProviderApi(activeHandler));
     }
