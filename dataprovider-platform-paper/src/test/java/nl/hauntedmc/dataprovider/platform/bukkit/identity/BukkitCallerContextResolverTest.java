@@ -39,6 +39,23 @@ class BukkitCallerContextResolverTest {
     }
 
     @Test
+    void synchronizesInstalledPluginsBeforeTheyAreEnabled() {
+        Plugin dataRegistry = mock(Plugin.class);
+        Plugin serverFeatures = mock(Plugin.class);
+        when(dataRegistry.getName()).thenReturn("DataRegistry");
+        when(serverFeatures.getName()).thenReturn("ServerFeatures");
+        when(dataRegistry.isEnabled()).thenReturn(true);
+        when(serverFeatures.isEnabled()).thenReturn(false);
+
+        BukkitCallerContextResolver resolver = resolverFor(dataRegistry.getClass().getClassLoader());
+        resolver.synchronizePlugins(List.of(dataRegistry, serverFeatures));
+
+        assertTrue(resolver.isKnownPlugin("dataregistry"));
+        assertTrue(resolver.isKnownPlugin("serverfeatures"));
+        assertThrows(SecurityException.class, () -> resolver.issueIdentity(serverFeatures));
+    }
+
+    @Test
     void issuesAnIdentityDuringPluginEnableBeforeTheLifecycleEventIsFired() {
         Plugin plugin = mock(Plugin.class);
         BukkitCallerContextResolver resolver = resolverFor(plugin.getClass().getClassLoader());
