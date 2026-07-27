@@ -10,7 +10,10 @@ import org.bukkit.Bukkit;
 import org.bukkit.plugin.Plugin;
 
 import java.util.List;
+import java.util.Locale;
 import java.util.Objects;
+import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Supplier;
 
 /**
@@ -19,6 +22,7 @@ import java.util.function.Supplier;
 public final class BukkitCallerContextResolver implements CallerContextResolver {
 
     private final PluginIdentityRegistry identities = new PluginIdentityRegistry();
+    private final Set<String> installedPluginIds = ConcurrentHashMap.newKeySet();
     private final Supplier<List<ClassLoader>> callerChain;
 
     public BukkitCallerContextResolver(ClassLoader ownClassLoader) {
@@ -58,7 +62,7 @@ public final class BukkitCallerContextResolver implements CallerContextResolver 
 
     @Override
     public boolean isKnownPlugin(String pluginId) {
-        return identities.isKnownPlugin(pluginId);
+        return pluginId != null && installedPluginIds.contains(normalizePluginId(pluginId));
     }
 
     /**
@@ -82,9 +86,18 @@ public final class BukkitCallerContextResolver implements CallerContextResolver 
 
     public PluginIdentity register(Plugin plugin) {
         Objects.requireNonNull(plugin, "Plugin cannot be null.");
+        String pluginId = normalizePluginId(plugin.getName());
         ClassLoader classLoader = plugin.getClass().getClassLoader();
         PluginIdentity existing = identities.find(classLoader);
-        return existing != null ? existing : identities.register(plugin.getName(), classLoader);
+        PluginIdentity identity = existing != null ? existing : identities.register(pluginId, classLoader);
+        if (!identity.pluginId().equals(pluginId)) {
+            throw new IllegalStateException(
+                    "Cannot securely distinguish Bukkit plugins '" + identity.pluginId() + "' and '"
+                            + pluginId + "' because they share one class loader."
+            );
+        }
+        installedPluginIds.add(pluginId);
+        return identity;
     }
 
     public void invalidate(Plugin plugin) {
@@ -99,6 +112,7 @@ public final class BukkitCallerContextResolver implements CallerContextResolver 
 
     public void invalidateAll() {
         identities.invalidateAll();
+        installedPluginIds.clear();
     }
 
     @Override
@@ -112,7 +126,7 @@ public final class BukkitCallerContextResolver implements CallerContextResolver 
         // Bukkit fires PluginEnableEvent after JavaPlugin.onEnable. Register here as
         // well so a plugin can bind the API from its own onEnable callback.
         PluginIdentity identity = register(plugin);
-        if (identity == null || !identity.pluginId().equals(plugin.getName().trim().toLowerCase(java.util.Locale.ROOT))) {
+        if (!identity.pluginId().equals(normalizePluginId(plugin.getName()))) {
             throw new SecurityException("Bukkit plugin is not active in DataProvider's identity registry.");
         }
         requireBindingCaller(identity);
@@ -129,5 +143,15 @@ public final class BukkitCallerContextResolver implements CallerContextResolver 
         if (!identity.pluginId().equals(caller.pluginId()) || identity.classLoader() != caller.classLoader()) {
             throw new SecurityException("A Bukkit plugin can bind DataProvider only to its own plugin instance.");
         }
+    }
+
+    private static String normalizePluginId(String pluginId) {
+        String normalized = Objects.requireNonNull(pluginId, "Plugin id cannot be null.")
+                .trim()
+                .toLowerCase(Locale.ROOT);
+        if (normalized.isEmpty()) {
+            throw new IllegalArgumentException("Plugin id cannot be blank.");
+        }
+        return normalized;
     }
 }
