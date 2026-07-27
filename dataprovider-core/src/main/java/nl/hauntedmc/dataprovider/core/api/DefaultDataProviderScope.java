@@ -36,13 +36,13 @@ public final class DefaultDataProviderScope implements DataProviderScope {
 
     @Override
     public OwnerScope ownerScope() {
-        requireOwner();
+        requireCleanupOwner();
         return ownerScope;
     }
 
     @Override
     public LifecycleState lifecycleState() {
-        requireOwner();
+        requireCleanupOwner();
         return lifecycleState;
     }
 
