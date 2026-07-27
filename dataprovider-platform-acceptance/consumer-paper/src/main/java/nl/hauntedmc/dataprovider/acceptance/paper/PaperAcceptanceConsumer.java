@@ -1,6 +1,7 @@
 package nl.hauntedmc.dataprovider.acceptance.paper;
 
 import nl.hauntedmc.dataprovider.api.DataProviderAPI;
+import nl.hauntedmc.dataprovider.api.DataProviderScope;
 import nl.hauntedmc.dataprovider.database.DatabaseType;
 import nl.hauntedmc.dataprovider.database.document.DocumentDatabaseProvider;
 import nl.hauntedmc.dataprovider.database.document.model.DocumentQuery;
@@ -29,6 +30,8 @@ public final class PaperAcceptanceConsumer extends JavaPlugin {
     private static final String CONNECTION = "paper";
     private static final String CHANNEL = "dataprovider.platform.acceptance";
     private static final Duration OPERATION_TIMEOUT = Duration.ofSeconds(10);
+
+    private volatile DataProviderScope shutdownScope;
 
     @Override
     public void onEnable() {
@@ -61,9 +64,40 @@ public final class PaperAcceptanceConsumer extends JavaPlugin {
                 }
             }
             if (passed) {
-                getLogger().info("DATAPROVIDER_ACCEPTANCE_PASS platform=paper");
+                try {
+                    DataProviderScope scope = api.scope("paper-shutdown-cleanup");
+                    KeyValueDatabaseProvider shutdownRedis = (KeyValueDatabaseProvider) scope.registerDatabaseOrThrow(
+                            DatabaseType.REDIS,
+                            CONNECTION
+                    );
+                    await(shutdownRedis.getDataAccess().setKey(
+                            "dataprovider:acceptance:paper:shutdown",
+                            "open-until-disable"
+                    ));
+                    shutdownScope = scope;
+                    getLogger().info("DATAPROVIDER_ACCEPTANCE_PASS platform=paper");
+                } catch (Exception exception) {
+                    getLogger().severe("DATAPROVIDER_ACCEPTANCE_FAIL platform=paper shutdown-setup=" + exception);
+                }
             }
         });
+    }
+
+    @Override
+    public void onDisable() {
+        DataProviderScope scope = shutdownScope;
+        if (scope == null) {
+            getLogger().severe("DATAPROVIDER_ACCEPTANCE_FAIL platform=paper shutdown-scope=missing");
+            return;
+        }
+        try {
+            scope.close();
+            require(scope.lifecycleState() == DataProviderScope.LifecycleState.CLOSED,
+                    "Shutdown scope did not enter CLOSED state.");
+            getLogger().info("DATAPROVIDER_ACCEPTANCE_SHUTDOWN_CLEANUP_PASS platform=paper");
+        } catch (RuntimeException | Error failure) {
+            getLogger().severe("DATAPROVIDER_ACCEPTANCE_FAIL platform=paper shutdown-cleanup=" + failure);
+        }
     }
 
     private DataProviderAPI resolveApi() {

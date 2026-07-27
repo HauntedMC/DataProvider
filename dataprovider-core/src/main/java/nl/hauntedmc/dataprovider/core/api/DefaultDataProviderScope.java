@@ -36,13 +36,13 @@ public final class DefaultDataProviderScope implements DataProviderScope {
 
     @Override
     public OwnerScope ownerScope() {
-        requireOwner();
+        requireCleanupOwner();
         return ownerScope;
     }
 
     @Override
     public LifecycleState lifecycleState() {
-        requireOwner();
+        requireCleanupOwner();
         return lifecycleState;
     }
 
@@ -64,7 +64,7 @@ public final class DefaultDataProviderScope implements DataProviderScope {
     @Override
     public void unregisterDatabase(DatabaseType databaseType, String connectionIdentifier) {
         synchronized (lifecycleMonitor) {
-            requireOpen("scope.unregisterDatabase");
+            requireCleanupOpen("scope.unregisterDatabase");
             handler.unregisterDatabaseForScope(identity, registrationScope, databaseType, connectionIdentifier);
         }
     }
@@ -72,7 +72,7 @@ public final class DefaultDataProviderScope implements DataProviderScope {
     @Override
     public void unregisterAllDatabases() {
         synchronized (lifecycleMonitor) {
-            requireOpen("scope.unregisterAllDatabases");
+            requireCleanupOpen("scope.unregisterAllDatabases");
             handler.unregisterAllDatabasesForScope(identity, registrationScope);
         }
     }
@@ -95,7 +95,7 @@ public final class DefaultDataProviderScope implements DataProviderScope {
     @Override
     public void close() {
         synchronized (lifecycleMonitor) {
-            requireOwner();
+            requireCleanupOwner();
             if (lifecycleState != LifecycleState.OPEN) {
                 return;
             }
@@ -112,6 +112,15 @@ public final class DefaultDataProviderScope implements DataProviderScope {
 
     private void requireStructuredOpen(String operation) {
         requireOwner();
+        requireLocallyOpen(operation);
+    }
+
+    private void requireCleanupOpen(String operation) {
+        requireCleanupOwner();
+        requireLocallyOpen(operation);
+    }
+
+    private void requireLocallyOpen(String operation) {
         if (lifecycleState != LifecycleState.OPEN) {
             throw new ProviderClosedException(
                     CLOSED_MESSAGE,
@@ -127,12 +136,12 @@ public final class DefaultDataProviderScope implements DataProviderScope {
         }
     }
 
-    private void requireOpen(String operation) {
-        requireStructuredOpen(operation);
-    }
-
     private void requireOwner() {
         handler.requireIdentity(identity);
+    }
+
+    private void requireCleanupOwner() {
+        handler.requireIdentityForCleanup(identity);
     }
 
     private static OwnerScope uniqueRegistrationScope(OwnerScope ownerScope) {

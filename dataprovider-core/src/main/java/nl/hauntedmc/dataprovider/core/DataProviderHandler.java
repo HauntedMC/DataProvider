@@ -7,8 +7,9 @@ import nl.hauntedmc.dataprovider.core.config.ConfigHandler;
 import nl.hauntedmc.dataprovider.core.exception.DataProviderExceptionMapper;
 import nl.hauntedmc.dataprovider.core.identity.CallerContext;
 import nl.hauntedmc.dataprovider.core.identity.CallerContextResolver;
-import nl.hauntedmc.dataprovider.core.identity.StackCallerClassLoaderResolver;
 import nl.hauntedmc.dataprovider.core.identity.PluginIdentity;
+import nl.hauntedmc.dataprovider.core.identity.PluginIdentityState;
+import nl.hauntedmc.dataprovider.core.identity.StackCallerClassLoaderResolver;
 import nl.hauntedmc.dataprovider.core.resilience.ConnectionHealthSnapshot;
 import nl.hauntedmc.dataprovider.database.DatabaseConnectionKey;
 import nl.hauntedmc.dataprovider.database.DatabaseProvider;
@@ -112,7 +113,7 @@ public class DataProviderHandler {
 
     public void unregisterDatabase(DatabaseType databaseType, String connectionIdentifier) {
         requireOpen("unregisterDatabase");
-        PluginId pluginId = resolvePluginId();
+        PluginId pluginId = resolveCleanupPluginId();
         registry.unregisterDatabase(
                 pluginId,
                 OwnerScopeId.of(pluginId.value()),
@@ -132,7 +133,7 @@ public class DataProviderHandler {
     ) {
         requireOpen("scope.unregisterDatabase");
         registry.unregisterDatabase(
-                resolvePluginId(),
+                resolveCleanupPluginId(),
                 OwnerScopeId.from(Objects.requireNonNull(ownerScope, "Owner scope cannot be null.")),
                 requireType(databaseType),
                 ConnectionIdentifier.of(connectionIdentifier)
@@ -141,7 +142,7 @@ public class DataProviderHandler {
 
     public void unregisterAllDatabases() {
         requireOpen("unregisterAllDatabases");
-        PluginId pluginId = resolvePluginId();
+        PluginId pluginId = resolveCleanupPluginId();
         registry.unregisterAllDatabases(pluginId, OwnerScopeId.of(pluginId.value()));
     }
 
@@ -152,14 +153,14 @@ public class DataProviderHandler {
     public void unregisterAllDatabasesForScope(OwnerScope ownerScope) {
         requireOpen("scope.unregisterAllDatabases");
         registry.unregisterAllDatabases(
-                resolvePluginId(),
+                resolveCleanupPluginId(),
                 OwnerScopeId.from(Objects.requireNonNull(ownerScope, "Owner scope cannot be null."))
         );
     }
 
     public void unregisterAllDatabasesForPlugin() {
         requireOpen("unregisterAllDatabasesForPlugin");
-        registry.unregisterAllDatabasesForPlugin(resolvePluginId());
+        registry.unregisterAllDatabasesForPlugin(resolveCleanupPluginId());
     }
 
     public void shutdownAllDatabases() {
@@ -196,14 +197,30 @@ public class DataProviderHandler {
         return callerContextResolver.issueIdentity(Objects.requireNonNull(platformPlugin, "Platform plugin cannot be null."));
     }
 
-    /** Verifies a previously issued token without invoking a platform API. */
+    /** Verifies that a captured identity may start or continue normal work. */
     public void requireIdentity(PluginIdentity identity) {
+        requireIdentity(identity, false);
+    }
+
+    /** Verifies that a captured identity may perform idempotent teardown. */
+    public void requireIdentityForCleanup(PluginIdentity identity) {
+        requireIdentity(identity, true);
+    }
+
+    private void requireIdentity(PluginIdentity identity, boolean cleanup) {
         Objects.requireNonNull(identity, "Plugin identity cannot be null.");
-        if (!callerContextResolver.isIdentityActive(identity)) {
-            logger.error("Rejected DataProvider handle use for an inactive plugin identity.");
-            throw new SecurityException("This DataProvider handle belongs to a disabled or replaced plugin.");
+        PluginIdentityState state = callerContextResolver.identityState(identity);
+        boolean permitted = cleanup ? state.permitsCleanup() : state == PluginIdentityState.ACTIVE;
+        if (!permitted) {
+            logger.error("Rejected DataProvider " + (cleanup ? "cleanup" : "operation")
+                    + " for plugin identity in state " + state + ".");
+            throw new SecurityException(state == PluginIdentityState.DISABLING
+                    ? "This DataProvider handle cannot start new work while its plugin is disabling."
+                    : "This DataProvider handle belongs to a disabled or replaced plugin.");
         }
-        CallerContext caller = callerContextResolver.resolveCallerIfPresent();
+        CallerContext caller = cleanup
+                ? callerContextResolver.resolveCallerForCleanupIfPresent()
+                : callerContextResolver.resolveCallerIfPresent();
         if (caller != null && (!identity.pluginId().equals(PluginId.of(caller.pluginId()).value())
                 || identity.classLoader() != caller.classLoader())) {
             logger.error("Rejected DataProvider handle use by a different plugin.");
@@ -239,7 +256,7 @@ public class DataProviderHandler {
 
     public void unregisterDatabase(PluginIdentity identity, DatabaseType databaseType, String connectionIdentifier) {
         requireOpen("unregisterDatabase");
-        requireIdentity(identity);
+        requireIdentityForCleanup(identity);
         PluginId pluginId = PluginId.of(identity.pluginId());
         registry.unregisterDatabase(pluginId, OwnerScopeId.of(pluginId.value()), requireType(databaseType),
                 ConnectionIdentifier.of(connectionIdentifier));
@@ -249,7 +266,7 @@ public class DataProviderHandler {
             PluginIdentity identity, OwnerScope ownerScope, DatabaseType databaseType, String connectionIdentifier
     ) {
         requireOpen("scope.unregisterDatabase");
-        requireIdentity(identity);
+        requireIdentityForCleanup(identity);
         registry.unregisterDatabase(PluginId.of(identity.pluginId()),
                 OwnerScopeId.from(Objects.requireNonNull(ownerScope, "Owner scope cannot be null.")),
                 requireType(databaseType), ConnectionIdentifier.of(connectionIdentifier));
@@ -257,21 +274,21 @@ public class DataProviderHandler {
 
     public void unregisterAllDatabases(PluginIdentity identity) {
         requireOpen("unregisterAllDatabases");
-        requireIdentity(identity);
+        requireIdentityForCleanup(identity);
         PluginId pluginId = PluginId.of(identity.pluginId());
         registry.unregisterAllDatabases(pluginId, OwnerScopeId.of(pluginId.value()));
     }
 
     public void unregisterAllDatabasesForScope(PluginIdentity identity, OwnerScope ownerScope) {
         requireOpen("scope.unregisterAllDatabases");
-        requireIdentity(identity);
+        requireIdentityForCleanup(identity);
         registry.unregisterAllDatabases(PluginId.of(identity.pluginId()),
                 OwnerScopeId.from(Objects.requireNonNull(ownerScope, "Owner scope cannot be null.")));
     }
 
     public void unregisterAllDatabasesForPlugin(PluginIdentity identity) {
         requireOpen("unregisterAllDatabasesForPlugin");
-        requireIdentity(identity);
+        requireIdentityForCleanup(identity);
         registry.unregisterAllDatabasesForPlugin(PluginId.of(identity.pluginId()));
     }
 
@@ -443,11 +460,17 @@ public class DataProviderHandler {
     }
 
     private PluginId resolvePluginId() {
-        return PluginId.of(resolveCallerContext().pluginId());
+        return PluginId.of(resolveCallerContext(false).pluginId());
     }
 
-    private CallerContext resolveCallerContext() {
-        CallerContext caller = callerContextResolver.resolveCaller();
+    private PluginId resolveCleanupPluginId() {
+        return PluginId.of(resolveCallerContext(true).pluginId());
+    }
+
+    private CallerContext resolveCallerContext(boolean cleanup) {
+        CallerContext caller = cleanup
+                ? callerContextResolver.resolveCallerForCleanup()
+                : callerContextResolver.resolveCaller();
         if (caller == null) {
             logger.error("Could not resolve caller plugin context for API operation.");
             throw new SecurityException("Could not resolve caller plugin context.");

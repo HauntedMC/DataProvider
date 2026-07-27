@@ -140,6 +140,9 @@ stop_process() {
     fi
     wait "$process_id" || fail "Platform exited unsuccessfully after ${stop_command}."
     grep -Eq 'DataProvider disabled' "$log_file" || fail "DataProvider did not report clean platform shutdown."
+    if grep -Eq 'DATAPROVIDER_ACCEPTANCE_FAIL' "$log_file"; then
+        fail "Platform reported an acceptance failure during shutdown."
+    fi
 }
 
 write_dataprovider_configuration() {
@@ -243,6 +246,8 @@ start_paper() {
     exec {paper_input_fd}>"$directory/console.in"
     wait_for_log "$directory/paper.log" 'DATAPROVIDER_ACCEPTANCE_PASS platform=paper' 180
     stop_process "$paper_process" "$paper_input_fd" stop "$directory/paper.log"
+    grep -Eq 'DATAPROVIDER_ACCEPTANCE_SHUTDOWN_CLEANUP_PASS platform=paper' "$directory/paper.log" \
+        || fail "Paper consumer did not close its DataProvider scope from onDisable."
     eval "exec ${paper_input_fd}>&-"
     paper_input_fd=""
     paper_process=""

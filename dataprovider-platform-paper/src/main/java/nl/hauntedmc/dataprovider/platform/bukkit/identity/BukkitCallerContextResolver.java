@@ -5,6 +5,7 @@ import nl.hauntedmc.dataprovider.core.identity.CallerContextResolver;
 import nl.hauntedmc.dataprovider.core.identity.PluginCallerChainResolver;
 import nl.hauntedmc.dataprovider.core.identity.PluginIdentity;
 import nl.hauntedmc.dataprovider.core.identity.PluginIdentityRegistry;
+import nl.hauntedmc.dataprovider.core.identity.PluginIdentityState;
 import nl.hauntedmc.dataprovider.core.identity.StackCallerClassLoaderResolver;
 import org.bukkit.Bukkit;
 import org.bukkit.plugin.Plugin;
@@ -14,6 +15,7 @@ import java.util.Locale;
 import java.util.Objects;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.function.BiPredicate;
 import java.util.function.Supplier;
 
 /**
@@ -24,6 +26,7 @@ public final class BukkitCallerContextResolver implements CallerContextResolver 
     private final PluginIdentityRegistry identities = new PluginIdentityRegistry();
     private final Set<String> installedPluginIds = ConcurrentHashMap.newKeySet();
     private final Supplier<List<ClassLoader>> callerChain;
+    private BiPredicate<Plugin, PluginIdentity> disableFinalizer = (plugin, identity) -> false;
 
     public BukkitCallerContextResolver(ClassLoader ownClassLoader) {
         this(
@@ -39,25 +42,50 @@ public final class BukkitCallerContextResolver implements CallerContextResolver 
 
     @Override
     public CallerContext resolveCaller() {
-        return PluginCallerChainResolver.resolveNearestMappedCaller(
-                callerChain.get(),
-                classLoader -> {
-                    PluginIdentity identity = identities.find(classLoader);
-                    return identity == null ? null : identity.pluginId();
-                },
-                "Could not resolve the calling Bukkit plugin."
-        );
+        return resolveCaller(false);
     }
 
     @Override
     public CallerContext resolveCallerIfPresent() {
+        return findCaller(false);
+    }
+
+    @Override
+    public CallerContext resolveCallerForCleanup() {
+        return resolveCaller(true);
+    }
+
+    @Override
+    public CallerContext resolveCallerForCleanupIfPresent() {
+        return findCaller(true);
+    }
+
+    private CallerContext resolveCaller(boolean cleanup) {
+        return PluginCallerChainResolver.resolveNearestMappedCaller(
+                callerChain.get(),
+                classLoader -> pluginIdFor(classLoader, cleanup),
+                cleanup
+                        ? "Could not resolve the calling Bukkit plugin for cleanup."
+                        : "Could not resolve the calling Bukkit plugin."
+        );
+    }
+
+    private CallerContext findCaller(boolean cleanup) {
         return PluginCallerChainResolver.findNearestMappedCaller(
                 callerChain.get(),
-                classLoader -> {
-                    PluginIdentity identity = identities.find(classLoader);
-                    return identity == null ? null : identity.pluginId();
-                }
+                classLoader -> pluginIdFor(classLoader, cleanup)
         );
+    }
+
+    private String pluginIdFor(ClassLoader classLoader, boolean cleanup) {
+        PluginIdentity identity = identities.find(classLoader);
+        if (identity == null) {
+            return null;
+        }
+        PluginIdentityState state = identities.stateOf(identity);
+        return state == PluginIdentityState.ACTIVE || cleanup && state.permitsCleanup()
+                ? identity.pluginId()
+                : null;
     }
 
     @Override
@@ -90,29 +118,52 @@ public final class BukkitCallerContextResolver implements CallerContextResolver 
         }
     }
 
-    public PluginIdentity register(Plugin plugin) {
+    /** Installs the platform-owned finalizer used before a disabling generation can be replaced. */
+    public synchronized void setDisableFinalizer(BiPredicate<Plugin, PluginIdentity> disableFinalizer) {
+        this.disableFinalizer = Objects.requireNonNull(disableFinalizer, "Disable finalizer cannot be null.");
+    }
+
+    public synchronized PluginIdentity register(Plugin plugin) {
         Objects.requireNonNull(plugin, "Plugin cannot be null.");
         rememberInstalled(plugin);
         return registerActiveIdentity(plugin);
     }
 
-    public void invalidate(Plugin plugin) {
+    /** Marks the current plugin generation as teardown-only without invalidating its handles. */
+    public synchronized PluginIdentity beginDisable(Plugin plugin) {
+        if (plugin == null) {
+            return null;
+        }
+        return identities.beginDisable(plugin.getClass().getClassLoader());
+    }
+
+    public synchronized void invalidate(Plugin plugin) {
         if (plugin != null) {
             identities.invalidate(plugin.getClass().getClassLoader());
         }
     }
 
-    public PluginIdentity find(Plugin plugin) {
+    /** Generation-fenced invalidation for deferred Paper disable finalization. */
+    public synchronized boolean invalidate(Plugin plugin, PluginIdentity expectedIdentity) {
+        return plugin != null && identities.invalidate(plugin.getClass().getClassLoader(), expectedIdentity);
+    }
+
+    /** Returns whether the supplied identity is still the current generation for the plugin. */
+    public synchronized boolean isCurrent(Plugin plugin, PluginIdentity expectedIdentity) {
+        return plugin != null && expectedIdentity != null && find(plugin) == expectedIdentity;
+    }
+
+    public synchronized PluginIdentity find(Plugin plugin) {
         return plugin == null ? null : identities.find(plugin.getClass().getClassLoader());
     }
 
-    public void invalidateAll() {
+    public synchronized void invalidateAll() {
         identities.invalidateAll();
         installedPluginIds.clear();
     }
 
     @Override
-    public PluginIdentity issueIdentity(Object platformPlugin) {
+    public synchronized PluginIdentity issueIdentity(Object platformPlugin) {
         if (!(platformPlugin instanceof Plugin plugin)) {
             throw new SecurityException("DataProvider requires a Bukkit Plugin instance for API binding.");
         }
@@ -134,11 +185,40 @@ public final class BukkitCallerContextResolver implements CallerContextResolver 
         return identities.isActive(identity);
     }
 
+    @Override
+    public PluginIdentityState identityState(PluginIdentity identity) {
+        return identities.stateOf(identity);
+    }
+
     private PluginIdentity registerActiveIdentity(Plugin plugin) {
         String pluginId = normalizePluginId(plugin.getName());
         ClassLoader classLoader = plugin.getClass().getClassLoader();
         PluginIdentity existing = identities.find(classLoader);
-        PluginIdentity identity = existing != null ? existing : identities.register(pluginId, classLoader);
+        if (existing != null) {
+            PluginIdentityState state = identities.stateOf(existing);
+            if (state == PluginIdentityState.ACTIVE) {
+                return existing;
+            }
+            if (state == PluginIdentityState.DISABLING) {
+                boolean finalized;
+                try {
+                    finalized = disableFinalizer.test(plugin, existing);
+                } catch (RuntimeException | Error failure) {
+                    throw new IllegalStateException(
+                            "Could not finalize the previous DataProvider identity generation for plugin '"
+                                    + pluginId + "'.",
+                            failure
+                    );
+                }
+                if (!finalized || identities.stateOf(existing) != PluginIdentityState.INACTIVE) {
+                    throw new IllegalStateException(
+                            "Cannot reactivate DataProvider access for plugin '" + pluginId
+                                    + "' until its previous disabling generation is fully cleaned up."
+                    );
+                }
+            }
+        }
+        PluginIdentity identity = identities.register(pluginId, classLoader);
         if (!identity.pluginId().equals(pluginId)) {
             throw new IllegalStateException(
                     "Cannot securely distinguish Bukkit plugins '" + identity.pluginId() + "' and '"

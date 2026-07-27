@@ -5,6 +5,7 @@ import org.junit.jupiter.api.Test;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executors;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotSame;
 import static org.junit.jupiter.api.Assertions.assertSame;
@@ -23,8 +24,38 @@ class PluginIdentityRegistryTest {
         PluginIdentity replacement = registry.register("example", new ClassLoader() { });
 
         assertFalse(registry.isActive(oldIdentity));
+        assertEquals(PluginIdentityState.INACTIVE, registry.stateOf(oldIdentity));
         assertTrue(registry.isActive(replacement));
         assertNotSame(oldIdentity, replacement);
+    }
+
+    @Test
+    void disablingIdentityRejectsActiveChecksButStillPermitsCleanup() {
+        PluginIdentityRegistry registry = new PluginIdentityRegistry();
+        ClassLoader loader = new ClassLoader() { };
+        PluginIdentity identity = registry.register("example", loader);
+
+        assertSame(identity, registry.beginDisable(loader));
+
+        assertFalse(registry.isActive(identity));
+        assertEquals(PluginIdentityState.DISABLING, registry.stateOf(identity));
+        assertTrue(registry.stateOf(identity).permitsCleanup());
+        assertSame(identity, registry.beginDisable(loader));
+    }
+
+    @Test
+    void delayedInvalidationCannotInvalidateAReplacementGeneration() {
+        PluginIdentityRegistry registry = new PluginIdentityRegistry();
+        ClassLoader loader = new ClassLoader() { };
+        PluginIdentity disabling = registry.register("example", loader);
+        registry.beginDisable(loader);
+        PluginIdentity replacement = registry.register("example", loader);
+
+        assertFalse(registry.invalidate(loader, disabling));
+
+        assertEquals(PluginIdentityState.INACTIVE, registry.stateOf(disabling));
+        assertEquals(PluginIdentityState.ACTIVE, registry.stateOf(replacement));
+        assertSame(replacement, registry.find(loader));
     }
 
     @Test
