@@ -6,6 +6,7 @@ import org.hibernate.jdbc.ReturningWork;
 import org.hibernate.jdbc.Work;
 import org.junit.jupiter.api.Test;
 
+import java.lang.reflect.UndeclaredThrowableException;
 import java.sql.Connection;
 import java.sql.ResultSet;
 import java.sql.SQLException;
@@ -155,9 +156,13 @@ class TransactionalSessionTest {
         SQLException primary = new SQLException("work failed");
         Session session = TransactionalSession.create(delegate).view();
 
-        SQLException thrown = assertThrows(SQLException.class, () -> session.doWork(connection -> {
-            throw primary;
-        }));
+        UndeclaredThrowableException wrapper = assertThrows(
+                UndeclaredThrowableException.class,
+                () -> session.doWork(connection -> {
+                    throw primary;
+                })
+        );
+        Throwable thrown = wrapper.getUndeclaredThrowable();
 
         assertSame(primary, thrown);
         assertEquals(1, thrown.getSuppressed().length);
