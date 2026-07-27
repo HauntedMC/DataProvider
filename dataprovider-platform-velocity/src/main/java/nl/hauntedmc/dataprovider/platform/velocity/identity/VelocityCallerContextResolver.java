@@ -6,6 +6,7 @@ import nl.hauntedmc.dataprovider.core.identity.CallerContextResolver;
 import nl.hauntedmc.dataprovider.core.identity.PluginCallerChainResolver;
 import nl.hauntedmc.dataprovider.core.identity.PluginIdentity;
 import nl.hauntedmc.dataprovider.core.identity.PluginIdentityRegistry;
+import nl.hauntedmc.dataprovider.core.identity.PluginIdentityState;
 import nl.hauntedmc.dataprovider.core.identity.StackCallerClassLoaderResolver;
 
 import java.util.Collections;
@@ -37,7 +38,7 @@ public final class VelocityCallerContextResolver implements CallerContextResolve
     VelocityCallerContextResolver(
             ProxyServer proxyServer,
             ClassLoader ownClassLoader,
-        Supplier<List<ClassLoader>> callerChain
+            Supplier<List<ClassLoader>> callerChain
     ) {
         this.proxyServer = Objects.requireNonNull(proxyServer, "ProxyServer cannot be null.");
         Objects.requireNonNull(ownClassLoader, "Own class loader cannot be null.");
@@ -48,10 +49,7 @@ public final class VelocityCallerContextResolver implements CallerContextResolve
     public CallerContext resolveCaller() {
         return PluginCallerChainResolver.resolveNearestMappedCaller(
                 callerChain.get(),
-                classLoader -> {
-                    PluginIdentity identity = identities.find(classLoader);
-                    return identity == null ? null : identity.pluginId();
-                },
+                classLoader -> pluginIdFor(classLoader, false),
                 "Could not resolve the calling Velocity plugin."
         );
     }
@@ -60,11 +58,36 @@ public final class VelocityCallerContextResolver implements CallerContextResolve
     public CallerContext resolveCallerIfPresent() {
         return PluginCallerChainResolver.findNearestMappedCaller(
                 callerChain.get(),
-                classLoader -> {
-                    PluginIdentity identity = identities.find(classLoader);
-                    return identity == null ? null : identity.pluginId();
-                }
+                classLoader -> pluginIdFor(classLoader, false)
         );
+    }
+
+    @Override
+    public CallerContext resolveCallerForCleanup() {
+        return PluginCallerChainResolver.resolveNearestMappedCaller(
+                callerChain.get(),
+                classLoader -> pluginIdFor(classLoader, true),
+                "Could not resolve the calling Velocity plugin for cleanup."
+        );
+    }
+
+    @Override
+    public CallerContext resolveCallerForCleanupIfPresent() {
+        return PluginCallerChainResolver.findNearestMappedCaller(
+                callerChain.get(),
+                classLoader -> pluginIdFor(classLoader, true)
+        );
+    }
+
+    private String pluginIdFor(ClassLoader classLoader, boolean cleanup) {
+        PluginIdentity identity = identities.find(classLoader);
+        if (identity == null) {
+            return null;
+        }
+        PluginIdentityState state = identities.stateOf(identity);
+        return state == PluginIdentityState.ACTIVE || cleanup && state.permitsCleanup()
+                ? identity.pluginId()
+                : null;
     }
 
     @Override
@@ -97,7 +120,7 @@ public final class VelocityCallerContextResolver implements CallerContextResolve
     public PluginIdentity issueIdentity(Object platformPlugin) {
         Objects.requireNonNull(platformPlugin, "Platform plugin cannot be null.");
         PluginIdentity identity = identitiesByInstance.get(platformPlugin);
-        if (identity == null) {
+        if (identity == null || identities.stateOf(identity) != PluginIdentityState.ACTIVE) {
             throw new SecurityException("Object is not the active Velocity plugin instance registered with DataProvider.");
         }
         CallerContext caller = resolveCaller();
@@ -110,5 +133,10 @@ public final class VelocityCallerContextResolver implements CallerContextResolve
     @Override
     public boolean isIdentityActive(PluginIdentity identity) {
         return identities.isActive(identity);
+    }
+
+    @Override
+    public PluginIdentityState identityState(PluginIdentity identity) {
+        return identities.stateOf(identity);
     }
 }
