@@ -16,7 +16,6 @@ import java.util.concurrent.TimeUnit;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNotSame;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -77,7 +76,7 @@ class TransactionalConnectionTest {
 
         assertTrue(first.equals(first));
         assertFalse(first.equals(second));
-        assertNotEquals(first.hashCode(), second.hashCode());
+        assertEquals(System.identityHashCode(first), first.hashCode());
         assertEquals("TransactionalConnection[active=true]", first.toString());
     }
 
@@ -127,6 +126,7 @@ class TransactionalConnectionTest {
 
         assertTrue(statement.equals(statement));
         assertFalse(statement.equals(physical));
+        assertEquals(System.identityHashCode(statement), statement.hashCode());
         assertTrue(statement.isWrapperFor(Statement.class));
         assertSame(statement, statement.unwrap(Statement.class));
         assertFalse(statement.isWrapperFor(ResultSet.class));
@@ -176,6 +176,7 @@ class TransactionalConnectionTest {
         Connection delegate = mock(Connection.class);
         CountDownLatch enteredDelegate = new CountDownLatch(1);
         CountDownLatch releaseDelegate = new CountDownLatch(1);
+        CountDownLatch expirationStarted = new CountDownLatch(1);
         when(delegate.getCatalog()).thenAnswer(invocation -> {
             enteredDelegate.countDown();
             assertTrue(releaseDelegate.await(2, TimeUnit.SECONDS));
@@ -186,7 +187,11 @@ class TransactionalConnectionTest {
         try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
             var invocation = executor.submit(() -> scoped.view().getCatalog());
             assertTrue(enteredDelegate.await(2, TimeUnit.SECONDS));
-            var expiration = executor.submit(scoped::expire);
+            var expiration = executor.submit(() -> {
+                expirationStarted.countDown();
+                scoped.expire();
+            });
+            assertTrue(expirationStarted.await(2, TimeUnit.SECONDS));
 
             Thread.sleep(20L);
             assertFalse(expiration.isDone());
