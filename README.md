@@ -71,10 +71,11 @@ If you maintain multiple plugins, this gives your team one standard integration 
 
 ## Admin Commands
 
-- `/dataprovider help` shows command usage.
-- `/dataprovider status [summary|connections] [unhealthy] [plugin <name>] [type <databaseType>]` shows local state plus cached remote health and its age; it never blocks on remote checks.
-- `/dataprovider config` prints current runtime config state (`orm.schema_mode` + backend enablement).
-- `/dataprovider reload` validates and atomically reloads `config.yml` plus every `databases/*.yml` file.
+- Paper uses `/dataprovider`; Velocity uses `/dataproviderproxy`.
+- `<root> help` shows command usage.
+- `<root> status [summary|connections] [unhealthy] [plugin <name>] [type <databaseType>]` shows local state plus cached remote health and its age; it never blocks on remote checks.
+- `<root> config` prints current runtime config state (`orm.schema_mode` + backend enablement).
+- `<root> reload` validates and atomically reloads `config.yml` plus every `databases/*.yml` file.
 
 Permissions:
 
@@ -82,7 +83,7 @@ Permissions:
 - `dataprovider.command.config`
 - `dataprovider.command.reload`
 
-The `/dataprovider` root is only sent to players with at least one of these operational permissions. This keeps the
+The platform-specific command root is only sent to players with at least one of these operational permissions. This keeps the
 administrative command out of command completion and discovery for other players on both Paper and Velocity.
 
 ## Install DataProvider (Server)

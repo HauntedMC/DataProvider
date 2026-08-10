@@ -33,7 +33,7 @@ public final class VelocityDataProvider implements DataProviderApiSupplier {
 
     private static final short INITIALIZE_EVENT_PRIORITY = Short.MAX_VALUE;
     private static final short SHUTDOWN_EVENT_PRIORITY = Short.MIN_VALUE;
-    private static final String COMMAND_NAME = "dataprovider";
+    private static final String COMMAND_NAME = DataProviderCommand.COMMAND_NAME;
     private static final String NOT_INITIALIZED_MESSAGE = "DataProvider is not initialized yet.";
 
     private final ProxyServer proxyServer;

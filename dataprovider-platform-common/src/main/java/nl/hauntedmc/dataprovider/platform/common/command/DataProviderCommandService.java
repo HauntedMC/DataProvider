@@ -45,18 +45,6 @@ public final class DataProviderCommandService {
             Component.text("No active database connections found.", NamedTextColor.YELLOW);
     private static final Component NO_MATCHING_CONNECTIONS_MESSAGE =
             Component.text("No active database connections match the selected filters.", NamedTextColor.YELLOW);
-    private static final Component UNKNOWN_SUBCOMMAND_MESSAGE =
-            Component.text("Unknown subcommand. Use /dataprovider help for usage.", NamedTextColor.RED);
-    private static final Component STATUS_USAGE_MESSAGE =
-            Component.text(
-                    "Usage: /dataprovider status [summary|connections] [unhealthy] [plugin <name>] [type <databaseType>]",
-                    NamedTextColor.YELLOW
-            );
-    private static final Component CONFIG_USAGE_MESSAGE =
-            Component.text("Usage: /dataprovider config", NamedTextColor.YELLOW);
-    private static final Component RELOAD_USAGE_MESSAGE =
-            Component.text("Usage: /dataprovider reload", NamedTextColor.YELLOW);
-
     private static final List<String> ROOT_COMPLETIONS = List.of(
             HELP_SUBCOMMAND,
             STATUS_SUBCOMMAND,
@@ -79,9 +67,34 @@ public final class DataProviderCommandService {
                     .thenComparing(DatabaseConnectionKey::connectionIdentifier, String.CASE_INSENSITIVE_ORDER);
 
     private final DataProviderHandler dataProviderHandler;
+    private final String commandRoot;
+    private final Component unknownSubcommandMessage;
+    private final Component statusUsageMessage;
+    private final Component configUsageMessage;
+    private final Component reloadUsageMessage;
 
     public DataProviderCommandService(DataProviderHandler dataProviderHandler) {
+        this(dataProviderHandler, "dataprovider");
+    }
+
+    public DataProviderCommandService(DataProviderHandler dataProviderHandler, String commandName) {
         this.dataProviderHandler = Objects.requireNonNull(dataProviderHandler, "Data provider handler cannot be null.");
+        String normalizedCommandName = Objects.requireNonNull(commandName, "Command name cannot be null.").trim();
+        if (normalizedCommandName.isEmpty()) {
+            throw new IllegalArgumentException("Command name cannot be blank.");
+        }
+        commandRoot = "/" + normalizedCommandName;
+        unknownSubcommandMessage = Component.text(
+                "Unknown subcommand. Use " + commandRoot + " help for usage.",
+                NamedTextColor.RED
+        );
+        statusUsageMessage = Component.text(
+                "Usage: " + commandRoot
+                        + " status [summary|connections] [unhealthy] [plugin <name>] [type <databaseType>]",
+                NamedTextColor.YELLOW
+        );
+        configUsageMessage = Component.text("Usage: " + commandRoot + " config", NamedTextColor.YELLOW);
+        reloadUsageMessage = Component.text("Usage: " + commandRoot + " reload", NamedTextColor.YELLOW);
     }
 
     public void execute(
@@ -103,7 +116,7 @@ public final class DataProviderCommandService {
             case STATUS_SUBCOMMAND -> executeStatus(args, permissionChecker, messageSink);
             case CONFIG_SUBCOMMAND -> executeConfig(args, permissionChecker, messageSink);
             case RELOAD_SUBCOMMAND -> executeReload(args, permissionChecker, messageSink);
-            default -> messageSink.accept(UNKNOWN_SUBCOMMAND_MESSAGE);
+            default -> messageSink.accept(unknownSubcommandMessage);
         }
     }
 
@@ -194,7 +207,7 @@ public final class DataProviderCommandService {
             Consumer<Component> messageSink
     ) {
         if (args.length > 1) {
-            messageSink.accept(CONFIG_USAGE_MESSAGE);
+            messageSink.accept(configUsageMessage);
             return;
         }
         if (!permissionChecker.test(CONFIG_PERMISSION)) {
@@ -232,7 +245,7 @@ public final class DataProviderCommandService {
             Consumer<Component> messageSink
     ) {
         if (args.length > 1) {
-            messageSink.accept(RELOAD_USAGE_MESSAGE);
+            messageSink.accept(reloadUsageMessage);
             return;
         }
         if (!permissionChecker.test(RELOAD_PERMISSION)) {
@@ -256,18 +269,19 @@ public final class DataProviderCommandService {
 
     private void sendHelp(Consumer<Component> messageSink) {
         messageSink.accept(HELP_HEADER);
-        messageSink.accept(Component.text("/dataprovider help", NamedTextColor.YELLOW)
+        messageSink.accept(Component.text(commandRoot + " help", NamedTextColor.YELLOW)
                 .append(Component.text(" - Show this help.", NamedTextColor.GRAY)));
         messageSink.accept(Component.text(
-                        "/dataprovider status [summary|connections] [unhealthy] [plugin <name>] [type <databaseType>]",
+                        commandRoot
+                                + " status [summary|connections] [unhealthy] [plugin <name>] [type <databaseType>]",
                         NamedTextColor.YELLOW
                 )
                 .append(Component.text(" - Connection diagnostics.", NamedTextColor.GRAY))
                 .append(Component.text(" (" + STATUS_PERMISSION + ")", NamedTextColor.DARK_GRAY)));
-        messageSink.accept(Component.text("/dataprovider config", NamedTextColor.YELLOW)
+        messageSink.accept(Component.text(commandRoot + " config", NamedTextColor.YELLOW)
                 .append(Component.text(" - Show runtime config state.", NamedTextColor.GRAY))
                 .append(Component.text(" (" + CONFIG_PERMISSION + ")", NamedTextColor.DARK_GRAY)));
-        messageSink.accept(Component.text("/dataprovider reload", NamedTextColor.YELLOW)
+        messageSink.accept(Component.text(commandRoot + " reload", NamedTextColor.YELLOW)
                 .append(Component.text(" - Atomically reload config.yml and databases/*.yml.", NamedTextColor.GRAY))
                 .append(Component.text(" (" + RELOAD_PERMISSION + ")", NamedTextColor.DARK_GRAY)));
     }
@@ -290,7 +304,7 @@ public final class DataProviderCommandService {
                                 "Cannot combine 'summary' with 'connections' in the same command.",
                                 NamedTextColor.RED
                         ));
-                        messageSink.accept(STATUS_USAGE_MESSAGE);
+                        messageSink.accept(statusUsageMessage);
                         return null;
                     }
                     summaryOnly = true;
@@ -303,7 +317,7 @@ public final class DataProviderCommandService {
                                 "Cannot combine 'connections' with 'summary' in the same command.",
                                 NamedTextColor.RED
                         ));
-                        messageSink.accept(STATUS_USAGE_MESSAGE);
+                        messageSink.accept(statusUsageMessage);
                         return null;
                     }
                     summaryOnly = false;
@@ -317,18 +331,18 @@ public final class DataProviderCommandService {
                 case "plugin" -> {
                     if (index + 1 >= args.length) {
                         messageSink.accept(Component.text("Missing plugin name after 'plugin'.", NamedTextColor.RED));
-                        messageSink.accept(STATUS_USAGE_MESSAGE);
+                        messageSink.accept(statusUsageMessage);
                         return null;
                     }
                     if (pluginFilter != null) {
                         messageSink.accept(Component.text("Plugin filter can only be set once.", NamedTextColor.RED));
-                        messageSink.accept(STATUS_USAGE_MESSAGE);
+                        messageSink.accept(statusUsageMessage);
                         return null;
                     }
                     String pluginName = args[index + 1].trim();
                     if (pluginName.isEmpty()) {
                         messageSink.accept(Component.text("Plugin filter cannot be blank.", NamedTextColor.RED));
-                        messageSink.accept(STATUS_USAGE_MESSAGE);
+                        messageSink.accept(statusUsageMessage);
                         return null;
                     }
                     pluginFilter = pluginName;
@@ -337,12 +351,12 @@ public final class DataProviderCommandService {
                 case "type" -> {
                     if (index + 1 >= args.length) {
                         messageSink.accept(Component.text("Missing database type after 'type'.", NamedTextColor.RED));
-                        messageSink.accept(STATUS_USAGE_MESSAGE);
+                        messageSink.accept(statusUsageMessage);
                         return null;
                     }
                     if (typeFilter != null) {
                         messageSink.accept(Component.text("Type filter can only be set once.", NamedTextColor.RED));
-                        messageSink.accept(STATUS_USAGE_MESSAGE);
+                        messageSink.accept(statusUsageMessage);
                         return null;
                     }
                     String rawType = args[index + 1];
@@ -352,7 +366,7 @@ public final class DataProviderCommandService {
                                 "Unknown database type '" + rawType + "'. Valid types: " + String.join(", ", DATABASE_TYPE_COMPLETIONS),
                                 NamedTextColor.RED
                         ));
-                        messageSink.accept(STATUS_USAGE_MESSAGE);
+                        messageSink.accept(statusUsageMessage);
                         return null;
                     }
                     typeFilter = parsedType;
@@ -360,7 +374,7 @@ public final class DataProviderCommandService {
                 }
                 default -> {
                     messageSink.accept(Component.text("Unknown status option '" + args[index] + "'.", NamedTextColor.RED));
-                    messageSink.accept(STATUS_USAGE_MESSAGE);
+                    messageSink.accept(statusUsageMessage);
                     return null;
                 }
             }

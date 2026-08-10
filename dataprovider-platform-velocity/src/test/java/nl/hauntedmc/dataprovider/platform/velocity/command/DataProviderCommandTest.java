@@ -36,12 +36,13 @@ class DataProviderCommandTest {
 
         command.execute(new TestInvocation(source.source(), new String[0]));
         assertTrue(source.hasMessageContaining("DataProvider command help:"));
+        assertTrue(source.hasMessageContaining("/dataproviderproxy help"));
 
         command.execute(new TestInvocation(source.source(), new String[]{"status"}));
         assertTrue(source.hasMessageContaining("Missing permission: dataprovider.command.status"));
 
         command.execute(new TestInvocation(source.source(), new String[]{"unknown"}));
-        assertTrue(source.hasMessageContaining("Unknown subcommand"));
+        assertTrue(source.hasMessageContaining("Use /dataproviderproxy help for usage."));
     }
 
     @Test
@@ -90,7 +91,7 @@ class DataProviderCommandTest {
     private record TestInvocation(CommandSource source, String[] arguments) implements SimpleCommand.Invocation {
         @Override
         public String alias() {
-            return "dataprovider";
+            return DataProviderCommand.COMMAND_NAME;
         }
     }
 

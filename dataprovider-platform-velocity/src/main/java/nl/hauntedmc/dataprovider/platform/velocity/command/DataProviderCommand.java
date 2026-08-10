@@ -11,10 +11,12 @@ import java.util.concurrent.CompletableFuture;
 
 public final class DataProviderCommand implements SimpleCommand {
 
+    public static final String COMMAND_NAME = "dataproviderproxy";
+
     private final DataProviderCommandService commandService;
 
     public DataProviderCommand(DataProviderHandler dataProviderHandler) {
-        this(new DataProviderCommandService(dataProviderHandler));
+        this(new DataProviderCommandService(dataProviderHandler, COMMAND_NAME));
     }
 
     DataProviderCommand(DataProviderCommandService commandService) {
