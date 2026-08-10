@@ -28,6 +28,11 @@ public final class DataProviderCommand implements SimpleCommand {
     }
 
     @Override
+    public boolean hasPermission(Invocation invocation) {
+        return DataProviderCommandService.canUseRootCommand(invocation.source()::hasPermission);
+    }
+
+    @Override
     public CompletableFuture<List<String>> suggestAsync(Invocation invocation) {
         return CompletableFuture.completedFuture(commandService.suggest(invocation.arguments(), invocation.source()::hasPermission));
     }

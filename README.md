@@ -82,6 +82,9 @@ Permissions:
 - `dataprovider.command.config`
 - `dataprovider.command.reload`
 
+The `/dataprovider` root is only sent to players with at least one of these operational permissions. This keeps the
+administrative command out of command completion and discovery for other players on both Paper and Velocity.
+
 ## Install DataProvider (Server)
 
 1. Build or download the bundled platform jar for your server:

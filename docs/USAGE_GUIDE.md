@@ -52,6 +52,8 @@ Permission nodes:
 - `dataprovider.command.config`
 - `dataprovider.command.reload`
 
+Players without any of these permissions do not receive `/dataprovider` in their Paper or Velocity command tree.
+
 ## 2. Register a connection
 
 Basic:

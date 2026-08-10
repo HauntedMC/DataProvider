@@ -1,17 +1,17 @@
 package nl.hauntedmc.dataprovider.platform.bukkit.command;
 
+import io.papermc.paper.command.brigadier.BasicCommand;
+import io.papermc.paper.command.brigadier.CommandSourceStack;
 import nl.hauntedmc.dataprovider.core.DataProviderHandler;
 import nl.hauntedmc.dataprovider.platform.common.command.DataProviderCommandService;
-import org.bukkit.command.Command;
-import org.bukkit.command.CommandExecutor;
 import org.bukkit.command.CommandSender;
-import org.bukkit.command.TabCompleter;
-import org.jetbrains.annotations.NotNull;
+import org.bukkit.entity.Player;
 
+import java.util.Collection;
 import java.util.List;
 import java.util.Objects;
 
-public final class DataProviderCommand implements CommandExecutor, TabCompleter {
+public final class DataProviderCommand implements BasicCommand {
 
     private final DataProviderCommandService commandService;
 
@@ -24,15 +24,26 @@ public final class DataProviderCommand implements CommandExecutor, TabCompleter 
     }
 
     @Override
-    public boolean onCommand(@NotNull CommandSender sender, @NotNull Command command,
-                             @NotNull String label, String @NotNull [] args) {
+    public void execute(CommandSourceStack stack, String[] args) {
+        execute(stack.getSender(), args);
+    }
+
+    void execute(CommandSender sender, String[] args) {
         commandService.execute(args, sender::hasPermission, sender::sendMessage);
-        return true;
     }
 
     @Override
-    public List<String> onTabComplete(@NotNull CommandSender sender, @NotNull Command command,
-                                      @NotNull String alias, String[] args) {
+    public Collection<String> suggest(CommandSourceStack stack, String[] args) {
+        return suggest(stack.getSender(), args);
+    }
+
+    List<String> suggest(CommandSender sender, String[] args) {
         return commandService.suggest(args, sender::hasPermission);
+    }
+
+    @Override
+    public boolean canUse(CommandSender sender) {
+        return !(sender instanceof Player)
+                || DataProviderCommandService.canUseRootCommand(sender::hasPermission);
     }
 }

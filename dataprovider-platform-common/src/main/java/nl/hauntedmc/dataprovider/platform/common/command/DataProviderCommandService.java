@@ -33,6 +33,11 @@ public final class DataProviderCommandService {
     private static final String STATUS_PERMISSION = "dataprovider.command.status";
     private static final String CONFIG_PERMISSION = "dataprovider.command.config";
     private static final String RELOAD_PERMISSION = "dataprovider.command.reload";
+    private static final List<String> ROOT_PERMISSIONS = List.of(
+            STATUS_PERMISSION,
+            CONFIG_PERMISSION,
+            RELOAD_PERMISSION
+    );
 
     private static final Component HELP_HEADER =
             Component.text("DataProvider command help:", NamedTextColor.GOLD);
@@ -124,6 +129,16 @@ public final class DataProviderCommandService {
         }
 
         return List.of();
+    }
+
+    /**
+     * Determines whether a sender may receive the DataProvider root command in its command tree.
+     * Help is intentionally not an access grant: this administrative command is only advertised to
+     * senders that can use at least one operational subcommand.
+     */
+    public static boolean canUseRootCommand(Predicate<String> permissionChecker) {
+        Objects.requireNonNull(permissionChecker, "Permission checker cannot be null.");
+        return ROOT_PERMISSIONS.stream().anyMatch(permissionChecker);
     }
 
     private void executeStatus(

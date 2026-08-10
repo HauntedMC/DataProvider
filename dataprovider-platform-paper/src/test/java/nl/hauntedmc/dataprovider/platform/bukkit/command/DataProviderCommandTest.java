@@ -6,8 +6,8 @@ import nl.hauntedmc.dataprovider.database.DatabaseConnectionKey;
 import nl.hauntedmc.dataprovider.database.DatabaseProvider;
 import nl.hauntedmc.dataprovider.database.DatabaseType;
 import nl.hauntedmc.dataprovider.core.DataProviderHandler;
-import org.bukkit.command.Command;
 import org.bukkit.command.CommandSender;
+import org.bukkit.entity.Player;
 import org.junit.jupiter.api.Test;
 
 import java.lang.reflect.Method;
@@ -21,6 +21,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
@@ -35,7 +36,7 @@ class DataProviderCommandTest {
         DataProviderCommand command = new DataProviderCommand(handler);
         RecordingBukkitSender sender = new RecordingBukkitSender();
 
-        command.onCommand(sender.sender(), mock(Command.class), "dataprovider", new String[0]);
+        command.execute(sender.sender(), new String[0]);
 
         assertTrue(sender.hasMessageContaining("DataProvider command help:"));
         verify(handler, never()).getActiveDatabases();
@@ -47,7 +48,7 @@ class DataProviderCommandTest {
         DataProviderCommand command = new DataProviderCommand(handler);
         RecordingBukkitSender sender = new RecordingBukkitSender();
 
-        command.onCommand(sender.sender(), mock(Command.class), "dataprovider", new String[]{"status"});
+        command.execute(sender.sender(), new String[]{"status"});
 
         assertTrue(sender.hasMessageContaining("Missing permission: dataprovider.command.status"));
         verify(handler, never()).getActiveDatabases();
@@ -63,7 +64,7 @@ class DataProviderCommandTest {
         when(handler.getActiveDatabases()).thenReturn(new ConcurrentHashMap<>());
         when(handler.getActiveDatabaseReferenceCounts()).thenReturn(Map.of());
 
-        command.onCommand(sender.sender(), mock(Command.class), "dataprovider", new String[]{"status"});
+        command.execute(sender.sender(), new String[]{"status"});
         assertTrue(sender.hasMessageContaining("No active database connections found."));
 
         ConcurrentMap<DatabaseConnectionKey, DatabaseProvider> active = new ConcurrentHashMap<>();
@@ -72,7 +73,7 @@ class DataProviderCommandTest {
         when(handler.getActiveDatabases()).thenReturn(active);
         when(handler.getActiveDatabaseReferenceCounts()).thenReturn(Map.of(key, 2));
 
-        command.onCommand(sender.sender(), mock(Command.class), "dataprovider", new String[]{"status"});
+        command.execute(sender.sender(), new String[]{"status"});
 
         assertTrue(sender.hasMessageContaining("DataProvider Status"));
         assertTrue(sender.hasMessageContaining("plugin=FeatureA"));
@@ -84,7 +85,7 @@ class DataProviderCommandTest {
         DataProviderCommand command = new DataProviderCommand(handler);
         RecordingBukkitSender sender = new RecordingBukkitSender();
 
-        command.onCommand(sender.sender(), mock(Command.class), "dataprovider", new String[]{"unknown"});
+        command.execute(sender.sender(), new String[]{"unknown"});
 
         assertTrue(sender.hasMessageContaining("Unknown subcommand"));
     }
@@ -94,29 +95,24 @@ class DataProviderCommandTest {
         DataProviderCommand command = new DataProviderCommand(mock(DataProviderHandler.class));
         RecordingBukkitSender sender = new RecordingBukkitSender();
         sender.grantPermission("dataprovider.command.status");
-        List<String> completions = command.onTabComplete(
-                sender.sender(),
-                mock(Command.class),
-                "dataprovider",
-                new String[]{"s"}
-        );
+        List<String> completions = command.suggest(sender.sender(), new String[]{"s"});
         assertEquals(List.of("status"), completions);
 
-        List<String> helpCompletions = command.onTabComplete(
-                sender.sender(),
-                mock(Command.class),
-                "dataprovider",
-                new String[]{"h"}
-        );
+        List<String> helpCompletions = command.suggest(sender.sender(), new String[]{"h"});
         assertEquals(List.of("help"), helpCompletions);
 
-        List<String> none = command.onTabComplete(
-                sender.sender(),
-                mock(Command.class),
-                "dataprovider",
-                new String[]{"x"}
-        );
+        List<String> none = command.suggest(sender.sender(), new String[]{"x"});
         assertTrue(none.isEmpty());
+    }
+
+    @Test
+    void rootCommandIsHiddenFromPlayersWithoutAnOperationalPermission() {
+        DataProviderCommand command = new DataProviderCommand(mock(DataProviderHandler.class));
+        RecordingBukkitSender sender = new RecordingBukkitSender();
+
+        assertFalse(command.canUse(sender.player()));
+        sender.grantPermission("dataprovider.command.reload");
+        assertTrue(command.canUse(sender.player()));
     }
 
     private static final class RecordingBukkitSender {
@@ -184,6 +180,14 @@ class DataProviderCommandTest {
 
         private CommandSender sender() {
             return sender;
+        }
+
+        private CommandSender player() {
+            return (CommandSender) Proxy.newProxyInstance(
+                    DataProviderCommandTest.class.getClassLoader(),
+                    new Class<?>[]{Player.class},
+                    this::invoke
+            );
         }
 
         private void grantPermission(String permission) {

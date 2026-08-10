@@ -1,5 +1,7 @@
 package nl.hauntedmc.dataprovider.platform.bukkit;
 
+import io.papermc.paper.command.brigadier.Commands;
+import io.papermc.paper.plugin.lifecycle.event.types.LifecycleEvents;
 import nl.hauntedmc.dataprovider.api.DataProviderAPI;
 import nl.hauntedmc.dataprovider.core.DataProvider;
 import nl.hauntedmc.dataprovider.core.DataProviderHandler;
@@ -9,7 +11,6 @@ import nl.hauntedmc.dataprovider.platform.bukkit.command.DataProviderCommand;
 import nl.hauntedmc.dataprovider.platform.bukkit.identity.BukkitCallerContextResolver;
 import nl.hauntedmc.dataprovider.platform.common.lifecycle.PlatformDataProviderRuntime;
 import nl.hauntedmc.dataprovider.platform.common.logging.JulLoggerAdapter;
-import org.bukkit.command.PluginCommand;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.Listener;
 import org.bukkit.event.server.PluginDisableEvent;
@@ -128,14 +129,15 @@ public final class BukkitDataProvider extends JavaPlugin {
     }
 
     private void registerCommand(DataProviderHandler handler) {
-        PluginCommand command = getCommand(COMMAND_NAME);
-        if (command == null) {
-            throw new IllegalStateException("Command '" + COMMAND_NAME + "' is missing from plugin.yml.");
-        }
-
-        DataProviderCommand commandExecutor = new DataProviderCommand(handler);
-        command.setExecutor(commandExecutor);
-        command.setTabCompleter(commandExecutor);
+        DataProviderCommand command = new DataProviderCommand(handler);
+        getLifecycleManager().registerEventHandler(LifecycleEvents.COMMANDS, event -> {
+            Commands commands = event.registrar();
+            commands.register(
+                    COMMAND_NAME,
+                    "DataProvider diagnostics and runtime administration commands.",
+                    command
+            );
+        });
     }
 
     private void registerApiService(DataProviderAPI dataProviderAPI) {

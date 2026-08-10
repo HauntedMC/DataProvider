@@ -21,6 +21,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
@@ -74,6 +75,16 @@ class DataProviderCommandTest {
         assertEquals(List.of("status"), command.suggestAsync(new TestInvocation(source.source(), new String[]{"s"})).join());
         assertEquals(List.of("help"), command.suggestAsync(new TestInvocation(source.source(), new String[]{"h"})).join());
         assertTrue(command.suggestAsync(new TestInvocation(source.source(), new String[]{"x"})).join().isEmpty());
+    }
+
+    @Test
+    void rootCommandIsHiddenWithoutAnOperationalPermission() {
+        DataProviderCommand command = new DataProviderCommand(mock(DataProviderHandler.class));
+        RecordingVelocitySource source = new RecordingVelocitySource();
+
+        assertFalse(command.hasPermission(new TestInvocation(source.source(), new String[0])));
+        source.grantPermission("dataprovider.command.status");
+        assertTrue(command.hasPermission(new TestInvocation(source.source(), new String[0])));
     }
 
     private record TestInvocation(CommandSource source, String[] arguments) implements SimpleCommand.Invocation {
