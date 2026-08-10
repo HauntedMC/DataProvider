@@ -60,7 +60,7 @@ public final class VelocityAcceptanceConsumer {
             try {
                 KeyValueDatabaseProvider redis = runAcceptance(api);
                 require(await(proxy.getCommandManager().executeAsync(
-                        proxy.getConsoleCommandSource(), "dataprovider reload"
+                        proxy.getConsoleCommandSource(), "dataproviderproxy reload"
                 )), "DataProvider reload command was rejected.");
                 require("redis-ok".equals(await(redis.getDataAccess().getKey("dataprovider:acceptance:velocity"))),
                         "Registered Redis provider did not remain usable after configuration reload.");
