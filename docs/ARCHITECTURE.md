@@ -9,7 +9,7 @@ Maven modules define the architecture boundary:
 
 - `dataprovider-api`: public registration/lookup contracts, data-access interfaces, models, logging abstraction, and ORM contract/factory.
 - `dataprovider-core`: registry, configuration, caller identity, storage implementations, and ORM implementation.
-- `dataprovider-platform-common`: shared runtime lifecycle, command service, and host logger adapters.
+- `dataprovider-platform-common`: shared runtime lifecycle, command infrastructure, and host logger adapters.
 - `dataprovider-platform-paper` / `dataprovider-platform-velocity`: host-specific bootstrap, command wiring, and caller resolution.
 
 Public packages stay under `nl.hauntedmc.dataprovider.api` and `nl.hauntedmc.dataprovider.database`; implementation packages are explicitly rooted at `nl.hauntedmc.dataprovider.core` or `nl.hauntedmc.dataprovider.platform`.

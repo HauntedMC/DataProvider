@@ -37,6 +37,14 @@ class DataProviderBrigadierCommandTest {
     }
 
     @Test
+    void rootIsUnavailableWithoutAnOperationalPermissionButAllowsItsGrantedView() throws CommandSyntaxException {
+        CommandDispatcher<CommandSource> dispatcher = dispatcher(handler());
+
+        assertThrows(CommandSyntaxException.class, () -> dispatcher.execute("dataproviderproxy help", source(false, false, false)));
+        assertEquals(1, dispatcher.execute("dataproviderproxy config", source(false, true, false)));
+    }
+
+    @Test
     void diagnosticConnectionHealthAndConfigCommandsExposeOperationalViews() throws CommandSyntaxException {
         CommandSource source = source(true, true, true);
         CommandDispatcher<CommandSource> dispatcher = dispatcher(handler());
