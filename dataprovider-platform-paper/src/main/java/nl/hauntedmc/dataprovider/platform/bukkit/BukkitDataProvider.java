@@ -133,7 +133,10 @@ public final class BukkitDataProvider extends JavaPlugin {
             throw new IllegalStateException("Command '" + COMMAND_NAME + "' is missing from plugin.yml.");
         }
 
-        DataProviderCommand commandExecutor = new DataProviderCommand(handler);
+        DataProviderCommand commandExecutor = new DataProviderCommand(
+                handler,
+                task -> getServer().getScheduler().runTask(this, task)
+        );
         command.setExecutor(commandExecutor);
         command.setTabCompleter(commandExecutor);
     }

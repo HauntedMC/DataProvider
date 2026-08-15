@@ -71,10 +71,15 @@ If you maintain multiple plugins, this gives your team one standard integration 
 
 ## Admin Commands
 
-- `/dataprovider help` shows command usage.
-- `/dataprovider status [summary|connections] [unhealthy] [plugin <name>] [type <databaseType>]` shows local state plus cached remote health and its age; it never blocks on remote checks.
-- `/dataprovider config` prints current runtime config state (`orm.schema_mode` + backend enablement).
-- `/dataprovider reload` validates and atomically reloads `config.yml` plus every `databases/*.yml` file.
+On both platforms, `/dataprovider` (alias `/dp`) provides formatted live diagnostics. Velocity uses a native Brigadier
+command tree; Paper mirrors the same command surface through its plugin command adapter.
+
+- `/dp status [summary]` shows connection, health, consumer, backend, and ORM state.
+- `/dp diagnostics` adds per-connection lifecycle, circuit, failure, reconnect, and probe-age detail.
+- `/dp connections [unhealthy|plugin <name>|type <databaseType>]` filters logical database registrations.
+- `/dp health` shows connections needing attention; `/dp health check` forces a remote health probe, then displays the refreshed result.
+- `/dp config` prints the current ORM schema mode and backend enablement.
+- `/dp reload` validates and atomically reloads `config.yml` plus every `databases/*.yml` file. Existing connections retain their current settings until reconnected.
 
 Permissions:
 

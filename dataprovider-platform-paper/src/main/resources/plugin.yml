@@ -6,7 +6,8 @@ api-version: 1.21
 commands:
   dataprovider:
     description: DataProvider diagnostics and runtime administration commands.
-    usage: /dataprovider <help|status|config|reload>
+    aliases: [dp]
+    usage: /dataprovider <help|status|diagnostics|connections|health|config|reload>
 permissions:
   dataprovider.command.status:
     description: View active DataProvider connection diagnostics.

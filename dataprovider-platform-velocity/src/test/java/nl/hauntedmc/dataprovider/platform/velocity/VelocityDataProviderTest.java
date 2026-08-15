@@ -1,5 +1,8 @@
 package nl.hauntedmc.dataprovider.platform.velocity;
 
+import com.velocitypowered.api.command.BrigadierCommand;
+import com.velocitypowered.api.command.CommandManager;
+import com.velocitypowered.api.command.CommandMeta;
 import com.velocitypowered.api.event.Subscribe;
 import com.velocitypowered.api.event.proxy.ProxyInitializeEvent;
 import com.velocitypowered.api.event.proxy.ProxyShutdownEvent;
@@ -20,7 +23,10 @@ import java.util.Optional;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.same;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 class VelocityDataProviderTest {
@@ -105,5 +111,24 @@ class VelocityDataProviderTest {
         DataProviderAPI api = velocityDataProvider.dataProviderApi();
         assertNotNull(api);
         assertThrows(IllegalStateException.class, api::unregisterAllDatabases);
+    }
+
+    @Test
+    void registerCommandInstallsBrigadierTreeAndDpAlias() {
+        ProxyServer proxyServer = mock(ProxyServer.class);
+        CommandManager commandManager = mock(CommandManager.class);
+        CommandMeta.Builder commandBuilder = mock(CommandMeta.Builder.class);
+        CommandMeta commandMeta = mock(CommandMeta.class);
+        VelocityDataProvider provider = new VelocityDataProvider(proxyServer, mock(Logger.class), Path.of("."));
+
+        when(proxyServer.getCommandManager()).thenReturn(commandManager);
+        when(commandManager.metaBuilder(any(BrigadierCommand.class))).thenReturn(commandBuilder);
+        when(commandBuilder.aliases("dp")).thenReturn(commandBuilder);
+        when(commandBuilder.plugin(provider)).thenReturn(commandBuilder);
+        when(commandBuilder.build()).thenReturn(commandMeta);
+
+        provider.registerCommand(mock(nl.hauntedmc.dataprovider.core.DataProviderHandler.class));
+
+        verify(commandManager).register(same(commandMeta), any(BrigadierCommand.class));
     }
 }

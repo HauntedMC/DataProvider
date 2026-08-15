@@ -1,6 +1,7 @@
 package nl.hauntedmc.dataprovider.platform.velocity;
 
 import com.google.inject.Inject;
+import com.velocitypowered.api.command.BrigadierCommand;
 import com.velocitypowered.api.command.CommandManager;
 import com.velocitypowered.api.command.CommandMeta;
 import com.velocitypowered.api.event.proxy.ProxyInitializeEvent;
@@ -14,8 +15,9 @@ import nl.hauntedmc.dataprovider.api.DataProviderAPI;
 import nl.hauntedmc.dataprovider.core.api.DefaultDataProviderApi;
 import nl.hauntedmc.dataprovider.api.DataProviderApiSupplier;
 import nl.hauntedmc.dataprovider.core.DataProviderHandler;
+import nl.hauntedmc.dataprovider.platform.common.command.DataProviderAdminHandler;
 import nl.hauntedmc.dataprovider.platform.common.lifecycle.PlatformDataProviderRuntime;
-import nl.hauntedmc.dataprovider.platform.velocity.command.DataProviderCommand;
+import nl.hauntedmc.dataprovider.platform.velocity.command.DataProviderBrigadierCommand;
 import nl.hauntedmc.dataprovider.platform.velocity.identity.VelocityCallerContextResolver;
 import nl.hauntedmc.dataprovider.platform.common.logging.Slf4jLoggerAdapter;
 import org.slf4j.Logger;
@@ -94,10 +96,14 @@ public final class VelocityDataProvider implements DataProviderApiSupplier {
         dataProviderApi = new DefaultDataProviderApi(provider.getDataProviderHandler());
     }
 
-    private void registerCommand(DataProviderHandler handler) {
+    void registerCommand(DataProviderHandler handler) {
         CommandManager commandManager = proxyServer.getCommandManager();
-        CommandMeta meta = commandManager.metaBuilder(COMMAND_NAME).build();
-        commandManager.register(meta, new DataProviderCommand(handler));
+        BrigadierCommand command = DataProviderBrigadierCommand.create(new DataProviderAdminHandler(handler));
+        CommandMeta meta = commandManager.metaBuilder(command)
+                .aliases("dp")
+                .plugin(this)
+                .build();
+        commandManager.register(meta, command);
     }
 
     static String resolvePluginVersion(ProxyServer proxyServer, Object pluginInstance) {
