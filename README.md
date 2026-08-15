@@ -71,21 +71,25 @@ If you maintain multiple plugins, this gives your team one standard integration 
 
 ## Admin Commands
 
-On both platforms, `/dataprovider` (alias `/dp`) provides formatted live diagnostics. Velocity uses a native Brigadier
-command tree; Paper mirrors the same command surface through its plugin command adapter.
+Paper uses `/dataprovider` (alias `/dp`); Velocity uses `/dataproviderproxy` (alias `/dp`). Both use native,
+permission-aware command trees and offer the same formatted operational views.
 
-- `/dp status [summary]` shows connection, health, consumer, backend, and ORM state.
-- `/dp diagnostics` adds per-connection lifecycle, circuit, failure, reconnect, and probe-age detail.
-- `/dp connections [unhealthy|plugin <name>|type <databaseType>]` filters logical database registrations.
-- `/dp health` shows connections needing attention; `/dp health check` forces a remote health probe, then displays the refreshed result.
-- `/dp config` prints the current ORM schema mode and backend enablement.
-- `/dp reload` validates and atomically reloads `config.yml` plus every `databases/*.yml` file. Existing connections retain their current settings until reconnected.
+- `<root> help` lists the available diagnostics and the required permissions.
+- `<root> status [summary]` shows connection, health, consumer, backend, and ORM state from cached data.
+- `<root> diagnostics` adds per-connection lifecycle, circuit, failure, reconnect, and probe-age detail.
+- `<root> connections [unhealthy|plugin <name>|type <databaseType>]` filters logical database registrations.
+- `<root> health` shows connections needing attention; `<root> health check` forces remote health probes asynchronously, then displays the refreshed result.
+- `<root> config` prints the current ORM schema mode and backend enablement.
+- `<root> reload` validates and atomically reloads `config.yml` plus every `databases/*.yml` file. Existing connections retain their current settings until reconnected.
 
 Permissions:
 
 - `dataprovider.command.status`
 - `dataprovider.command.config`
 - `dataprovider.command.reload`
+
+The platform-specific command root is only sent to players with at least one of these operational permissions. This keeps the
+administrative command out of command completion and discovery for other players on both Paper and Velocity.
 
 ## Install DataProvider (Server)
 

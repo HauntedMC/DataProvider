@@ -31,7 +31,7 @@ class DataProviderBrigadierCommandTest {
         CommandSource source = source(false, false, false);
         CommandDispatcher<CommandSource> dispatcher = dispatcher(handler());
 
-        assertThrows(CommandSyntaxException.class, () -> dispatcher.execute("dataprovider status", source));
+        assertThrows(CommandSyntaxException.class, () -> dispatcher.execute("dataproviderproxy status", source));
 
         verify(source, never()).sendMessage(org.mockito.ArgumentMatchers.any());
     }
@@ -41,12 +41,12 @@ class DataProviderBrigadierCommandTest {
         CommandSource source = source(true, true, true);
         CommandDispatcher<CommandSource> dispatcher = dispatcher(handler());
 
-        assertEquals(1, dispatcher.execute("dataprovider diagnostics", source));
-        assertEquals(1, dispatcher.execute("dataprovider connections unhealthy", source));
-        assertEquals(1, dispatcher.execute("dataprovider connections type mysql", source));
-        assertEquals(1, dispatcher.execute("dataprovider health check", source));
-        assertEquals(1, dispatcher.execute("dataprovider config", source));
-        assertEquals(1, dispatcher.execute("dataprovider reload", source));
+        assertEquals(1, dispatcher.execute("dataproviderproxy diagnostics", source));
+        assertEquals(1, dispatcher.execute("dataproviderproxy connections unhealthy", source));
+        assertEquals(1, dispatcher.execute("dataproviderproxy connections type mysql", source));
+        assertEquals(1, dispatcher.execute("dataproviderproxy health check", source));
+        assertEquals(1, dispatcher.execute("dataproviderproxy config", source));
+        assertEquals(1, dispatcher.execute("dataproviderproxy reload", source));
 
         verify(source, atLeast(30)).sendMessage(org.mockito.ArgumentMatchers.any());
     }
@@ -56,15 +56,15 @@ class DataProviderBrigadierCommandTest {
         CommandSource source = source(true, false, false);
         CommandDispatcher<CommandSource> dispatcher = dispatcher(handler());
 
-        List<String> root = dispatcher.getCompletionSuggestions(dispatcher.parse("dataprovider ", source)).get()
+        List<String> root = dispatcher.getCompletionSuggestions(dispatcher.parse("dataproviderproxy ", source)).get()
                 .getList().stream().map(suggestion -> suggestion.getText()).toList();
         List<String> types = dispatcher.getCompletionSuggestions(
-                        dispatcher.parse("dataprovider connections type m", source)
+                        dispatcher.parse("dataproviderproxy connections type m", source)
                 ).get().getList().stream().map(suggestion -> suggestion.getText()).toList();
 
         assertTrue(root.containsAll(List.of("help", "status", "diagnostics", "connections", "health")));
         assertTrue(types.contains("mysql"));
-        assertThrows(CommandSyntaxException.class, () -> dispatcher.execute("dataprovider reload", source));
+        assertThrows(CommandSyntaxException.class, () -> dispatcher.execute("dataproviderproxy reload", source));
     }
 
     private static CommandDispatcher<CommandSource> dispatcher(DataProviderAdminCommand.Handler handler) {

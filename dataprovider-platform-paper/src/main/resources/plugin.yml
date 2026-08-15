@@ -3,11 +3,6 @@ main: nl.hauntedmc.dataprovider.platform.bukkit.BukkitDataProvider
 version: ${project.version}
 author: HauntedMC
 api-version: 1.21
-commands:
-  dataprovider:
-    description: DataProvider diagnostics and runtime administration commands.
-    aliases: [dp]
-    usage: /dataprovider <help|status|diagnostics|connections|health|config|reload>
 permissions:
   dataprovider.command.status:
     description: View active DataProvider connection diagnostics.

@@ -1,5 +1,7 @@
 package nl.hauntedmc.dataprovider.platform.bukkit;
 
+import io.papermc.paper.command.brigadier.Commands;
+import io.papermc.paper.plugin.lifecycle.event.types.LifecycleEvents;
 import nl.hauntedmc.dataprovider.api.DataProviderAPI;
 import nl.hauntedmc.dataprovider.core.DataProvider;
 import nl.hauntedmc.dataprovider.core.DataProviderHandler;
@@ -9,7 +11,6 @@ import nl.hauntedmc.dataprovider.platform.bukkit.command.DataProviderCommand;
 import nl.hauntedmc.dataprovider.platform.bukkit.identity.BukkitCallerContextResolver;
 import nl.hauntedmc.dataprovider.platform.common.lifecycle.PlatformDataProviderRuntime;
 import nl.hauntedmc.dataprovider.platform.common.logging.JulLoggerAdapter;
-import org.bukkit.command.PluginCommand;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.Listener;
 import org.bukkit.event.server.PluginDisableEvent;
@@ -18,6 +19,7 @@ import org.bukkit.plugin.Plugin;
 import org.bukkit.plugin.ServicePriority;
 import org.bukkit.plugin.java.JavaPlugin;
 
+import java.util.List;
 import java.util.logging.Level;
 
 public final class BukkitDataProvider extends JavaPlugin {
@@ -128,17 +130,19 @@ public final class BukkitDataProvider extends JavaPlugin {
     }
 
     private void registerCommand(DataProviderHandler handler) {
-        PluginCommand command = getCommand(COMMAND_NAME);
-        if (command == null) {
-            throw new IllegalStateException("Command '" + COMMAND_NAME + "' is missing from plugin.yml.");
-        }
-
-        DataProviderCommand commandExecutor = new DataProviderCommand(
+        DataProviderCommand command = new DataProviderCommand(
                 handler,
                 task -> getServer().getScheduler().runTask(this, task)
         );
-        command.setExecutor(commandExecutor);
-        command.setTabCompleter(commandExecutor);
+        getLifecycleManager().registerEventHandler(LifecycleEvents.COMMANDS, event -> {
+            Commands commands = event.registrar();
+            commands.register(
+                    COMMAND_NAME,
+                    "DataProvider diagnostics and runtime administration commands.",
+                    List.of("dp"),
+                    command
+            );
+        });
     }
 
     private void registerApiService(DataProviderAPI dataProviderAPI) {

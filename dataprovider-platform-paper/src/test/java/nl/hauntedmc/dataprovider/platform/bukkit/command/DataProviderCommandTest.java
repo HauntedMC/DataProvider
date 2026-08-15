@@ -7,8 +7,8 @@ import nl.hauntedmc.dataprovider.core.resilience.ConnectionHealthSnapshot;
 import nl.hauntedmc.dataprovider.database.DatabaseConnectionKey;
 import nl.hauntedmc.dataprovider.database.DatabaseProvider;
 import nl.hauntedmc.dataprovider.database.DatabaseType;
-import org.bukkit.command.Command;
 import org.bukkit.command.CommandSender;
+import org.bukkit.entity.Player;
 import org.junit.jupiter.api.Test;
 
 import java.lang.reflect.Method;
@@ -23,6 +23,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
@@ -37,10 +38,10 @@ class DataProviderCommandTest {
         DataProviderCommand command = new DataProviderCommand(handler);
         RecordingBukkitSender sender = new RecordingBukkitSender();
 
-        command.onCommand(sender.sender(), mock(Command.class), "dataprovider", new String[0]);
+        command.execute(sender.sender(), new String[0]);
 
         assertTrue(sender.hasMessageContaining("DataProvider administration"));
-        assertTrue(sender.hasMessageContaining("/dp health [check]"));
+        assertTrue(sender.hasMessageContaining("/dataprovider health [check]"));
         verify(handler, never()).getActiveDatabases();
     }
 
@@ -50,21 +51,14 @@ class DataProviderCommandTest {
         DataProviderCommand command = new DataProviderCommand(handler);
         RecordingBukkitSender sender = new RecordingBukkitSender();
 
-        command.onCommand(sender.sender(), mock(Command.class), "dataprovider", new String[]{"diagnostics"});
+        command.execute(sender.sender(), new String[]{"diagnostics"});
+
         assertTrue(sender.hasMessageContaining("Missing permission: dataprovider.command.status"));
         verify(handler, never()).getActiveDatabases();
 
         sender.grantPermission(DataProviderCommand.STATUS_PERMISSION);
-        DatabaseConnectionKey key = new DatabaseConnectionKey("FeatureA", DatabaseType.MYSQL, "default");
-        ConcurrentMap<DatabaseConnectionKey, DatabaseProvider> active = new ConcurrentHashMap<>();
-        active.put(key, mock(DatabaseProvider.class));
-        when(handler.getActiveDatabases()).thenReturn(active);
-        when(handler.getActiveDatabaseReferenceCounts()).thenReturn(Map.of(key, 2));
-        when(handler.getCachedDatabaseHealth()).thenReturn(Map.of(key, ConnectionHealthSnapshot.unprobed(false)));
-        when(handler.getConfiguredDatabaseTypeStates()).thenReturn(Map.of(DatabaseType.MYSQL, true));
-        when(handler.getConfiguredOrmSchemaMode()).thenReturn("validate");
-
-        command.onCommand(sender.sender(), mock(Command.class), "dataprovider", new String[]{"diagnostics"});
+        configureSingleConnection(handler, 2);
+        command.execute(sender.sender(), new String[]{"diagnostics"});
 
         assertTrue(sender.hasMessageContaining("DataProvider diagnostics"));
         assertTrue(sender.hasMessageContaining("FeatureA / default"));
@@ -77,23 +71,16 @@ class DataProviderCommandTest {
         DataProviderCommand command = new DataProviderCommand(handler);
         RecordingBukkitSender sender = new RecordingBukkitSender();
         sender.grantPermission(DataProviderCommand.STATUS_PERMISSION);
-        DatabaseConnectionKey key = new DatabaseConnectionKey("FeatureA", DatabaseType.MYSQL, "default");
-        ConcurrentMap<DatabaseConnectionKey, DatabaseProvider> active = new ConcurrentHashMap<>();
-        active.put(key, mock(DatabaseProvider.class));
-        when(handler.getActiveDatabases()).thenReturn(active);
-        when(handler.getActiveDatabaseReferenceCounts()).thenReturn(Map.of(key, 1));
-        when(handler.getCachedDatabaseHealth()).thenReturn(Map.of(key, ConnectionHealthSnapshot.unprobed(false)));
-        when(handler.getConfiguredDatabaseTypeStates()).thenReturn(Map.of(DatabaseType.MYSQL, true));
-        when(handler.getConfiguredOrmSchemaMode()).thenReturn("validate");
+        configureSingleConnection(handler, 1);
 
-        command.onCommand(sender.sender(), mock(Command.class), "dp", new String[]{"connections", "plugin", "FeatureA"});
+        command.execute(sender.sender(), new String[]{"connections", "plugin", "FeatureA"});
 
         assertTrue(sender.hasMessageContaining("Filtered connections"));
         assertTrue(sender.hasMessageContaining("Matches  »  1"));
-        assertEquals(List.of("connections"), command.onTabComplete(sender.sender(), mock(Command.class), "dp", new String[]{"c"}));
-        assertEquals(List.of("FeatureA"), command.onTabComplete(sender.sender(), mock(Command.class), "dp",
+        assertEquals(List.of("connections"), command.suggest(sender.sender(), new String[]{"c"}));
+        assertEquals(List.of("FeatureA"), command.suggest(sender.sender(),
                 new String[]{"connections", "plugin", "fea"}));
-        assertEquals(List.of("mysql"), command.onTabComplete(sender.sender(), mock(Command.class), "dp",
+        assertEquals(List.of("mysql"), command.suggest(sender.sender(),
                 new String[]{"connections", "type", "mys"}));
     }
 
@@ -112,24 +99,13 @@ class DataProviderCommandTest {
         RecordingBukkitSender sender = new RecordingBukkitSender();
         sender.grantPermission(DataProviderCommand.STATUS_PERMISSION);
 
-        command.onCommand(sender.sender(), mock(Command.class), "dp", new String[]{"health", "check"});
+        command.execute(sender.sender(), new String[]{"health", "check"});
         probe.complete(null);
 
         assertEquals(1, scheduled.size());
         scheduled.forEach(Runnable::run);
         assertTrue(sender.hasMessageContaining("Running remote database health checks"));
         assertTrue(sender.hasMessageContaining("Connection health"));
-    }
-
-    @Test
-    void reloadRemainsProtectedEvenWhenItIsSuggestedToOperators() {
-        DataProviderCommand command = new DataProviderCommand(mock(DataProviderHandler.class));
-        RecordingBukkitSender sender = new RecordingBukkitSender();
-
-        command.onCommand(sender.sender(), mock(Command.class), "dp", new String[]{"reload"});
-
-        assertTrue(sender.hasMessageContaining("Missing permission: dataprovider.command.reload"));
-        assertTrue(command.onTabComplete(sender.sender(), mock(Command.class), "dp", new String[]{"r"}).isEmpty());
     }
 
     @Test
@@ -140,21 +116,43 @@ class DataProviderCommandTest {
         DataProviderCommand command = new DataProviderCommand(handler);
         RecordingBukkitSender sender = new RecordingBukkitSender();
 
-        command.onCommand(sender.sender(), mock(Command.class), "dp", new String[]{"config"});
+        command.execute(sender.sender(), new String[]{"config"});
         assertTrue(sender.hasMessageContaining("Missing permission: dataprovider.command.config"));
 
         sender.grantPermission(DataProviderCommand.CONFIG_PERMISSION);
-        command.onCommand(sender.sender(), mock(Command.class), "dp", new String[]{"config"});
+        command.execute(sender.sender(), new String[]{"config"});
         assertTrue(sender.hasMessageContaining("DataProvider configuration"));
         assertTrue(sender.hasMessageContaining("MYSQL  »  ENABLED"));
         assertTrue(sender.hasMessageContaining("REDIS  »  DISABLED"));
 
-        command.onCommand(sender.sender(), mock(Command.class), "dp", new String[]{"reload"});
+        command.execute(sender.sender(), new String[]{"reload"});
         assertTrue(sender.hasMessageContaining("Missing permission: dataprovider.command.reload"));
         sender.grantPermission(DataProviderCommand.RELOAD_PERMISSION);
-        command.onCommand(sender.sender(), mock(Command.class), "dp", new String[]{"reload"});
+        command.execute(sender.sender(), new String[]{"reload"});
         verify(handler).reloadConfiguration();
         assertTrue(sender.hasMessageContaining("Reloaded the validated DataProvider configuration."));
+    }
+
+    @Test
+    void rootCommandIsHiddenFromPlayersWithoutAnOperationalPermission() {
+        DataProviderCommand command = new DataProviderCommand(mock(DataProviderHandler.class));
+        RecordingBukkitSender sender = new RecordingBukkitSender();
+
+        assertFalse(command.canUse(sender.player()));
+        assertTrue(command.canUse(sender.sender()));
+        sender.grantPermission(DataProviderCommand.RELOAD_PERMISSION);
+        assertTrue(command.canUse(sender.player()));
+    }
+
+    private static void configureSingleConnection(DataProviderHandler handler, int references) {
+        DatabaseConnectionKey key = new DatabaseConnectionKey("FeatureA", DatabaseType.MYSQL, "default");
+        ConcurrentMap<DatabaseConnectionKey, DatabaseProvider> active = new ConcurrentHashMap<>();
+        active.put(key, mock(DatabaseProvider.class));
+        when(handler.getActiveDatabases()).thenReturn(active);
+        when(handler.getActiveDatabaseReferenceCounts()).thenReturn(Map.of(key, references));
+        when(handler.getCachedDatabaseHealth()).thenReturn(Map.of(key, ConnectionHealthSnapshot.unprobed(false)));
+        when(handler.getConfiguredDatabaseTypeStates()).thenReturn(Map.of(DatabaseType.MYSQL, true));
+        when(handler.getConfiguredOrmSchemaMode()).thenReturn("validate");
     }
 
     private static final class RecordingBukkitSender {
@@ -186,9 +184,7 @@ class DataProviderCommandTest {
         }
 
         private static Object defaultValue(Class<?> returnType) {
-            if (!returnType.isPrimitive()) {
-                return null;
-            }
+            if (!returnType.isPrimitive()) return null;
             if (returnType == boolean.class) return false;
             if (returnType == byte.class) return (byte) 0;
             if (returnType == short.class) return (short) 0;
@@ -202,6 +198,14 @@ class DataProviderCommandTest {
 
         private CommandSender sender() {
             return sender;
+        }
+
+        private CommandSender player() {
+            return (CommandSender) Proxy.newProxyInstance(
+                    DataProviderCommandTest.class.getClassLoader(),
+                    new Class<?>[]{Player.class},
+                    this::invoke
+            );
         }
 
         private void grantPermission(String permission) {

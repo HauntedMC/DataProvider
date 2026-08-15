@@ -1,20 +1,20 @@
 package nl.hauntedmc.dataprovider.platform.bukkit.command;
 
+import io.papermc.paper.command.brigadier.BasicCommand;
+import io.papermc.paper.command.brigadier.CommandSourceStack;
 import nl.hauntedmc.dataprovider.core.DataProviderHandler;
 import nl.hauntedmc.dataprovider.platform.common.command.DataProviderAdminCommand;
 import nl.hauntedmc.dataprovider.platform.common.command.DataProviderAdminHandler;
-import org.bukkit.command.Command;
-import org.bukkit.command.CommandExecutor;
 import org.bukkit.command.CommandSender;
-import org.bukkit.command.TabCompleter;
-import org.jetbrains.annotations.NotNull;
+import org.bukkit.entity.Player;
 
+import java.util.Collection;
 import java.util.List;
 import java.util.Objects;
 import java.util.function.Consumer;
 
 /** Paper binding for the shared DataProvider administration command. */
-public final class DataProviderCommand implements CommandExecutor, TabCompleter {
+public final class DataProviderCommand implements BasicCommand {
 
     public static final String STATUS_PERMISSION = DataProviderAdminCommand.STATUS_PERMISSION;
     public static final String CONFIG_PERMISSION = DataProviderAdminCommand.CONFIG_PERMISSION;
@@ -28,20 +28,25 @@ public final class DataProviderCommand implements CommandExecutor, TabCompleter 
     }
 
     public DataProviderCommand(DataProviderHandler handler, Consumer<Runnable> mainThreadExecutor) {
-        this.command = new DataProviderAdminCommand(new DataProviderAdminHandler(handler));
+        this.command = new DataProviderAdminCommand(new DataProviderAdminHandler(handler), "dataprovider");
         this.mainThreadExecutor = Objects.requireNonNull(mainThreadExecutor, "mainThreadExecutor cannot be null");
     }
 
     @Override
-    public boolean onCommand(@NotNull CommandSender sender, @NotNull Command ignored,
-                             @NotNull String label, String @NotNull [] args) {
+    public void execute(CommandSourceStack stack, String[] args) {
+        execute(stack.getSender(), args);
+    }
+
+    void execute(CommandSender sender, String[] args) {
         command.execute(args, source(sender));
-        return true;
     }
 
     @Override
-    public List<String> onTabComplete(@NotNull CommandSender sender, @NotNull Command ignored,
-                                      @NotNull String alias, String @NotNull [] args) {
+    public Collection<String> suggest(CommandSourceStack stack, String[] args) {
+        return suggest(stack.getSender(), args);
+    }
+
+    List<String> suggest(CommandSender sender, String[] args) {
         return command.suggest(args, source(sender));
     }
 
@@ -62,5 +67,11 @@ public final class DataProviderCommand implements CommandExecutor, TabCompleter 
                 mainThreadExecutor.accept(task);
             }
         };
+    }
+
+    @Override
+    public boolean canUse(CommandSender sender) {
+        return !(sender instanceof Player)
+                || DataProviderAdminCommand.canUseRootCommand(sender::hasPermission);
     }
 }

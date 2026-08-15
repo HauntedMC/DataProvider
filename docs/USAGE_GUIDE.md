@@ -40,17 +40,24 @@ Treat `DataProviderAPI` as runtime-scoped, not permanent.
 
 ## 1.2 Built-in admin commands
 
-`DataProvider` ships with runtime diagnostics commands for Bukkit/Paper and Velocity:
+`DataProvider` ships with runtime diagnostics commands for Bukkit/Paper and Velocity. The root is `/dataprovider` on
+Paper and `/dataproviderproxy` on Velocity:
 
-- `/dataprovider status [summary|connections] [unhealthy] [plugin <name>] [type <databaseType>]` displays cached remote health and age without blocking the server thread; it starts refreshed probes asynchronously.
-- `/dataprovider config`
-- `/dataprovider reload`
+- `<root> help` lists the available views and permissions.
+- `<root> status [summary]` displays cached connection, health, consumer, backend, and ORM state without blocking the server thread.
+- `<root> diagnostics` adds lifecycle, circuit, failure, reconnect, and probe-age detail for each connection.
+- `<root> connections [unhealthy|plugin <name>|type <databaseType>]` filters registered logical connections.
+- `<root> health [check]` displays connections requiring attention; `check` runs remote probes asynchronously and sends the refreshed result afterwards.
+- `<root> config` displays current runtime configuration state.
+- `<root> reload` validates and atomically reloads the configuration.
 
 Permission nodes:
 
 - `dataprovider.command.status`
 - `dataprovider.command.config`
 - `dataprovider.command.reload`
+
+Players without any of these permissions do not receive the platform-specific command root in their Paper or Velocity command tree.
 
 ## 2. Register a connection
 

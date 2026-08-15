@@ -49,7 +49,7 @@ Database files receive the narrower policy above: only their `default` section i
 
 ## Reloading Configuration
 
-`/dataprovider reload` loads and validates `config.yml` and every file in `databases/` as one snapshot. If any file is missing, malformed or invalid, the reload is rejected and the active configuration remains unchanged.
+`/dataprovider reload` on Paper, or `/dataproviderproxy reload` on Velocity, loads and validates `config.yml` and every file in `databases/` as one snapshot. If any file is missing, malformed or invalid, the reload is rejected and the active configuration remains unchanged.
 
 For every active named connection whose endpoint, authentication, TLS, pool, or other backend-client setting changed, reload first constructs and validates a new physical client/pool from the candidate snapshot. It then swaps that validated generation beneath the existing logical leases and retires the old client. Existing API/provider references remain valid, and Redis messaging subscription intent is reattached to the new generation. If a replacement cannot connect, the reload is rejected and the active configuration and clients remain unchanged. Access-policy-only changes do not rebuild a backend client; a plugin whose access is removed (or made invalid) has its active lease closed immediately. Shared execution lanes are runtime-owned and are created once during DataProvider startup; changes below `execution` require a DataProvider/server restart. Changes below `resilience` take effect immediately after a successful reload.
 

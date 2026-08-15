@@ -12,6 +12,7 @@ import java.util.concurrent.CompletableFuture;
 /** Velocity-native Brigadier tree bound to the shared DataProvider administration behavior. */
 public final class DataProviderBrigadierCommand {
 
+    public static final String COMMAND_NAME = "dataproviderproxy";
     public static final String STATUS_PERMISSION = DataProviderAdminCommand.STATUS_PERMISSION;
     public static final String CONFIG_PERMISSION = DataProviderAdminCommand.CONFIG_PERMISSION;
     public static final String RELOAD_PERMISSION = DataProviderAdminCommand.RELOAD_PERMISSION;
@@ -20,8 +21,11 @@ public final class DataProviderBrigadierCommand {
     }
 
     public static BrigadierCommand create(DataProviderAdminCommand.Handler handler) {
-        DataProviderAdminCommand command = new DataProviderAdminCommand(Objects.requireNonNull(handler, "handler cannot be null"));
-        return new BrigadierCommand(BrigadierCommand.literalArgumentBuilder("dataprovider")
+        DataProviderAdminCommand command = new DataProviderAdminCommand(
+                Objects.requireNonNull(handler, "handler cannot be null"), COMMAND_NAME
+        );
+        return new BrigadierCommand(BrigadierCommand.literalArgumentBuilder(COMMAND_NAME)
+                .requires(source -> DataProviderAdminCommand.canUseRootCommand(source::hasPermission))
                 .executes(context -> execute(command, context.getSource()))
                 .then(BrigadierCommand.literalArgumentBuilder("help")
                         .executes(context -> execute(command, context.getSource(), "help")))

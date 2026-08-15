@@ -40,9 +40,24 @@ public final class DataProviderAdminCommand {
             .thenComparing(Connection::identifier, String.CASE_INSENSITIVE_ORDER);
 
     private final Handler handler;
+    private final String commandRoot;
 
     public DataProviderAdminCommand(Handler handler) {
+        this(handler, "dp");
+    }
+
+    /**
+     * Creates the shared command behavior for a platform command root.
+     *
+     * @param commandName the registered, slash-free command name used in messages
+     */
+    public DataProviderAdminCommand(Handler handler, String commandName) {
         this.handler = Objects.requireNonNull(handler, "handler cannot be null");
+        String normalizedCommandName = Objects.requireNonNull(commandName, "commandName cannot be null").trim();
+        if (normalizedCommandName.isEmpty() || normalizedCommandName.startsWith("/")) {
+            throw new IllegalArgumentException("commandName must be a non-blank, slash-free command name");
+        }
+        this.commandRoot = "/" + normalizedCommandName;
     }
 
     /** Executes the argument list and sends any result through the supplied platform source. */
@@ -60,7 +75,7 @@ public final class DataProviderAdminCommand {
             case "health" -> executeHealth(source, args);
             case "config" -> executeConfig(source, args);
             case "reload" -> executeReload(source, args);
-            default -> source.sendMessage(error("Unknown subcommand. Use /dp help for usage."));
+            default -> source.sendMessage(error("Unknown subcommand. Use " + commandRoot + " help for usage."));
         }
     }
 
@@ -107,12 +122,12 @@ public final class DataProviderAdminCommand {
         if (!requirePermission(source, STATUS_PERMISSION)) return;
         if (args.length == 1) sendSnapshot(source, "DataProvider status", SnapshotView.STATUS);
         else if (args.length == 2 && "summary".equalsIgnoreCase(args[1])) sendSnapshot(source, "DataProvider summary", SnapshotView.SUMMARY);
-        else source.sendMessage(note("Usage: /dp status [summary]"));
+        else source.sendMessage(note("Usage: " + commandRoot + " status [summary]"));
     }
 
     private void executeDiagnostics(Source source, String[] args) {
         if (!requirePermission(source, STATUS_PERMISSION)) return;
-        if (args.length != 1) source.sendMessage(note("Usage: /dp diagnostics"));
+        if (args.length != 1) source.sendMessage(note("Usage: " + commandRoot + " diagnostics"));
         else sendSnapshot(source, "DataProvider diagnostics", SnapshotView.DIAGNOSTICS);
     }
 
@@ -129,7 +144,7 @@ public final class DataProviderAdminCommand {
             if (type == null) source.sendMessage(error("Unknown database type. Use Tab for valid values."));
             else sendFilteredConnections(source, connection -> connection.type() == type);
         } else {
-            source.sendMessage(note("Usage: /dp connections [unhealthy|plugin <name>|type <type>]"));
+            source.sendMessage(note("Usage: " + commandRoot + " connections [unhealthy|plugin <name>|type <type>]"));
         }
     }
 
@@ -140,7 +155,7 @@ public final class DataProviderAdminCommand {
             return;
         }
         if (args.length != 2 || !"check".equalsIgnoreCase(args[1])) {
-            source.sendMessage(note("Usage: /dp health [check]"));
+            source.sendMessage(note("Usage: " + commandRoot + " health [check]"));
             return;
         }
         source.sendMessage(note("Running remote database health checks…"));
@@ -157,7 +172,7 @@ public final class DataProviderAdminCommand {
     private void executeConfig(Source source, String[] args) {
         if (!requirePermission(source, CONFIG_PERMISSION)) return;
         if (args.length != 1) {
-            source.sendMessage(note("Usage: /dp config"));
+            source.sendMessage(note("Usage: " + commandRoot + " config"));
             return;
         }
         try {
@@ -177,7 +192,7 @@ public final class DataProviderAdminCommand {
     private void executeReload(Source source, String[] args) {
         if (!requirePermission(source, RELOAD_PERMISSION)) return;
         if (args.length != 1) {
-            source.sendMessage(note("Usage: /dp reload"));
+            source.sendMessage(note("Usage: " + commandRoot + " reload"));
             return;
         }
         try {
@@ -191,12 +206,12 @@ public final class DataProviderAdminCommand {
 
     private void sendHelp(Source source) {
         header(source, "DataProvider administration");
-        source.sendMessage(command("/dp status [summary]", "live connection and backend overview"));
-        source.sendMessage(command("/dp diagnostics", "runtime, circuit, and recovery diagnostics"));
-        source.sendMessage(command("/dp connections [unhealthy|plugin <name>|type <type>]", "inspect logical connections"));
-        source.sendMessage(command("/dp health [check]", "cached health or force a remote health probe"));
-        source.sendMessage(command("/dp config", "configured backend switches and ORM schema mode"));
-        source.sendMessage(command("/dp reload", "reload validated configuration files"));
+        source.sendMessage(command(commandRoot + " status [summary]", "live connection and backend overview"));
+        source.sendMessage(command(commandRoot + " diagnostics", "runtime, circuit, and recovery diagnostics"));
+        source.sendMessage(command(commandRoot + " connections [unhealthy|plugin <name>|type <type>]", "inspect logical connections"));
+        source.sendMessage(command(commandRoot + " health [check]", "cached health or force a remote health probe"));
+        source.sendMessage(command(commandRoot + " config", "configured backend switches and ORM schema mode"));
+        source.sendMessage(command(commandRoot + " reload", "reload validated configuration files"));
         source.sendMessage(note("Permissions: status=" + STATUS_PERMISSION + ", config=" + CONFIG_PERMISSION
                 + ", reload=" + RELOAD_PERMISSION));
     }
@@ -269,6 +284,14 @@ public final class DataProviderAdminCommand {
         if (source.hasPermission(CONFIG_PERMISSION)) commands.add("config");
         if (source.hasPermission(RELOAD_PERMISSION)) commands.add("reload");
         return commands;
+    }
+
+    /** Returns whether a sender should receive this administrative command root at all. */
+    public static boolean canUseRootCommand(Predicate<String> permissionChecker) {
+        Objects.requireNonNull(permissionChecker, "permissionChecker cannot be null");
+        return permissionChecker.test(STATUS_PERMISSION)
+                || permissionChecker.test(CONFIG_PERMISSION)
+                || permissionChecker.test(RELOAD_PERMISSION);
     }
 
     private static List<String> complete(String prefix, List<String> candidates) {
