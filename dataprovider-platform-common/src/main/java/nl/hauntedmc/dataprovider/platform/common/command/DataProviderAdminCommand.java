@@ -4,6 +4,7 @@ import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.format.TextColor;
 import nl.hauntedmc.dataprovider.core.resilience.ConnectionHealthSnapshot;
 import nl.hauntedmc.dataprovider.database.DatabaseType;
+import nl.hauntedmc.theme.HauntedMcColor;
 
 import java.time.Duration;
 import java.time.Instant;
@@ -27,13 +28,13 @@ public final class DataProviderAdminCommand {
     public static final String RELOAD_PERMISSION = "dataprovider.command.reload";
 
     private static final int MAX_ROWS_TO_DISPLAY = 20;
-    private static final TextColor BRAND = TextColor.color(0xA855F7);
-    private static final TextColor ACCENT = TextColor.color(0x38BDF8);
-    private static final TextColor SUCCESS = TextColor.color(0x4ADE80);
-    private static final TextColor WARNING = TextColor.color(0xFACC15);
-    private static final TextColor ERROR = TextColor.color(0xFB7185);
-    private static final TextColor MUTED = TextColor.color(0x94A3B8);
-    private static final TextColor TEXT = TextColor.color(0xE2E8F0);
+    private static final TextColor BRAND = HauntedMcColor.BRAND.textColor();
+    private static final TextColor ACCENT = HauntedMcColor.ACCENT.textColor();
+    private static final TextColor SUCCESS = HauntedMcColor.SUCCESS.textColor();
+    private static final TextColor WARNING = HauntedMcColor.WARNING.textColor();
+    private static final TextColor ERROR = HauntedMcColor.ERROR.textColor();
+    private static final TextColor MUTED = HauntedMcColor.MUTED.textColor();
+    private static final TextColor TEXT = HauntedMcColor.TEXT.textColor();
     private static final Comparator<Connection> CONNECTION_COMPARATOR = Comparator
             .comparing(Connection::pluginName, String.CASE_INSENSITIVE_ORDER)
             .thenComparing(connection -> connection.type().name())

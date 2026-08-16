@@ -91,6 +91,9 @@ Permissions:
 The platform-specific command root is only sent to players with at least one of these operational permissions. This keeps the
 administrative command out of command completion and discovery for other players on both Paper and Velocity.
 
+Admin-command colours come from the separately versioned `hauntedmc-theme-palette` artifact. Both bundled platform jars
+include that palette, so server operators do not need to install another plugin.
+
 ## Install DataProvider (Server)
 
 1. Build or download the bundled platform jar for your server:
@@ -124,7 +127,7 @@ Maven:
 <dependency>
   <groupId>nl.hauntedmc.dataprovider</groupId>
   <artifactId>dataprovider-api</artifactId>
-  <version>3.0.9</version>
+  <version>3.1.16</version>
   <scope>provided</scope>
 </dependency>
 ```

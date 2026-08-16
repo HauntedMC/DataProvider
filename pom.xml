@@ -53,7 +53,7 @@
 
     <properties>
         <!-- Project identity and compiler configuration. -->
-        <revision>3.1.15</revision>
+        <revision>3.1.16</revision>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
         <java.version>25</java.version>
@@ -68,6 +68,7 @@
         <velocity.runtime.build>9</velocity.runtime.build>
         <velocity.runtime.sha256>635ffe27b4fe1b97e61479012121d4e7c61a9eec99e6bd5a1f923053c2a259ce</velocity.runtime.sha256>
         <adventure.version>5.2.0</adventure.version>
+        <hauntedmc-theme.version>1.0.0</hauntedmc-theme.version>
         <configurate.version>4.2.0</configurate.version>
         <mysql.version>9.7.0</mysql.version>
         <hikari.version>7.1.0</hikari.version>
