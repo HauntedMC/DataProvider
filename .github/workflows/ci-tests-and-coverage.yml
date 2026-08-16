@@ -12,11 +12,15 @@ on:
 
 permissions:
   contents: read
+  packages: read
 
 jobs:
   tests:
     name: Tests and Coverage
     runs-on: ubuntu-latest
+    env:
+      PACKAGES_USER: ${{ secrets.HAUNTEDMC_PACKAGES_USERNAME }}
+      PACKAGES_TOKEN: ${{ secrets.HAUNTEDMC_PACKAGES_TOKEN }}
 
     steps:
       - name: Checkout
@@ -28,6 +32,9 @@ jobs:
           distribution: temurin
           java-version: "25"
           cache: maven
+          server-id: github
+          server-username: PACKAGES_USER
+          server-password: PACKAGES_TOKEN
 
       - name: Run Unit and Backend Integration Tests
         id: tests
@@ -64,8 +71,9 @@ jobs:
     name: Bundled Platform Acceptance
     runs-on: ubuntu-latest
     timeout-minutes: 20
-    permissions:
-      contents: read
+    env:
+      PACKAGES_USER: ${{ secrets.HAUNTEDMC_PACKAGES_USERNAME }}
+      PACKAGES_TOKEN: ${{ secrets.HAUNTEDMC_PACKAGES_TOKEN }}
 
     steps:
       - name: Checkout
@@ -77,6 +85,9 @@ jobs:
           distribution: temurin
           java-version: "25"
           cache: maven
+          server-id: github
+          server-username: PACKAGES_USER
+          server-password: PACKAGES_TOKEN
 
       - name: Run bundled platform acceptance
         run: ./mvnw -U -B -ntp -Pplatform-acceptance verify

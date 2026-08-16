@@ -13,6 +13,9 @@ jobs:
     permissions:
       contents: write
       packages: write
+    env:
+      PACKAGES_USER: ${{ secrets.HAUNTEDMC_PACKAGES_USERNAME }}
+      PACKAGES_TOKEN: ${{ secrets.HAUNTEDMC_PACKAGES_TOKEN }}
 
     steps:
       - name: Checkout
@@ -27,8 +30,8 @@ jobs:
           java-version: "25"
           cache: maven
           server-id: github
-          server-username: GITHUB_ACTOR
-          server-password: GITHUB_TOKEN
+          server-username: PACKAGES_USER
+          server-password: PACKAGES_TOKEN
 
       - name: Validate release version
         id: release-version
@@ -42,7 +45,6 @@ jobs:
         # deployAtEnd prevents publication until the final runtime fixture has booted the packaged Paper and Velocity bundles.
         run: ./mvnw -U -B -ntp -Pintegration-tests,platform-acceptance deploy
         env:
-          GITHUB_TOKEN: ${{ github.token }}
           PLATFORM_ACCEPTANCE_WORK_DIRECTORY: ${{ runner.temp }}/dataprovider-platform-acceptance
           PLATFORM_ACCEPTANCE_KEEP_WORK_DIRECTORY: "true"
 
@@ -69,6 +71,7 @@ jobs:
       - name: Create GitHub release
         uses: softprops/action-gh-release@v3
         with:
+          token: ${{ github.token }}
           name: DataProvider ${{ github.ref_name }}
           draft: false
           prerelease: false
