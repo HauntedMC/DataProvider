@@ -2,8 +2,9 @@
 set -euo pipefail
 
 readonly POM_FILE="pom.xml"
-readonly API_POM_FILE="dataprovider-api/pom.xml"
+readonly README_FILE="README.md"
 readonly VELOCITY_FILE="dataprovider-platform-velocity/src/main/java/nl/hauntedmc/dataprovider/platform/velocity/VelocityDataProvider.java"
+readonly MAVEN_WRAPPER="./mvnw"
 readonly VERSION_PROPERTY="revision"
 
 die() {
@@ -15,7 +16,7 @@ usage() {
   cat >&2 <<'USAGE'
 Usage: ./update_version.sh <major|minor|patch>
 
-Bumps the Maven project version in pom.xml and keeps release metadata in sync.
+Bumps the Maven project version and keeps release metadata and dependency examples in sync.
 Then creates a local commit and a local git tag vX.Y.Z.
 USAGE
 }
@@ -32,7 +33,7 @@ require_clean_worktree() {
 resolve_maven_version() {
   local version
   version="$(
-    mvn -q -ntp -DforceStdout help:evaluate -Dexpression=project.version \
+    "$MAVEN_WRAPPER" -q -ntp -DforceStdout help:evaluate -Dexpression=project.version \
       | awk '/^[0-9]+\.[0-9]+\.[0-9]+$/ { print; exit }'
   )"
   [[ -n "$version" ]] || die "Unable to resolve a release semantic version from Maven."
@@ -99,6 +100,46 @@ update_velocity_plugin_annotation() {
   mv "$tmp_file" "$VELOCITY_FILE"
 }
 
+update_readme_dependency_versions() {
+  local new_version="$1"
+  local tmp_file
+  tmp_file="$(mktemp)"
+
+  awk -v v="$new_version" '
+    BEGIN {
+      in_api_dependency = 0
+      maven_replaced = 0
+      gradle_replaced = 0
+    }
+    {
+      if ($0 ~ /<artifactId>dataprovider-api<\/artifactId>/) {
+        in_api_dependency = 1
+      } else if (in_api_dependency && !maven_replaced && $0 ~ /<version>[^<]+<\/version>/) {
+        sub(/<version>[^<]+<\/version>/, "<version>" v "</version>")
+        maven_replaced = 1
+        in_api_dependency = 0
+      }
+
+      if (!gradle_replaced && $0 ~ /compileOnly "nl\.hauntedmc\.dataprovider:dataprovider-api:[^"]+"/) {
+        sub(/dataprovider-api:[^"]+/, "dataprovider-api:" v)
+        gradle_replaced = 1
+      }
+
+      print
+    }
+    END {
+      if (!maven_replaced || !gradle_replaced) {
+        exit 2
+      }
+    }
+  ' "$README_FILE" > "$tmp_file" || {
+    rm -f "$tmp_file"
+    die "Could not update DataProvider API dependency versions in ${README_FILE}."
+  }
+
+  mv "$tmp_file" "$README_FILE"
+}
+
 if [[ $# -eq 1 && ( "$1" == "--help" || "$1" == "-h" ) ]]; then
   usage
   exit 0
@@ -113,14 +154,13 @@ if ! git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
   die "This script must be run inside a git repository."
 fi
 
-command -v mvn >/dev/null 2>&1 || die "Maven (mvn) is required."
-
 repo_root="$(git rev-parse --show-toplevel)"
 cd "$repo_root"
 
 require_file "$POM_FILE"
-require_file "$API_POM_FILE"
+require_file "$README_FILE"
 require_file "$VELOCITY_FILE"
+[[ -x "$MAVEN_WRAPPER" ]] || die "Maven Wrapper (${MAVEN_WRAPPER}) is required and must be executable."
 require_clean_worktree
 
 bump_type="$1"
@@ -141,7 +181,10 @@ echo "Current version: ${current_version}"
 echo "Bumping to: ${new_version}"
 
 # The root POM's revision property is the single source of truth for every module.
-mvn -B -ntp versions:set-property -Dproperty="${VERSION_PROPERTY}" -DnewVersion="${new_version}" -DgenerateBackupPoms=false
+"$MAVEN_WRAPPER" -B -ntp versions:set-property \
+  -Dproperty="${VERSION_PROPERTY}" \
+  -DnewVersion="${new_version}" \
+  -DgenerateBackupPoms=false
 
 resolved_after_bump="$(resolve_maven_version)"
 [[ "$resolved_after_bump" == "$new_version" ]] || {
@@ -149,8 +192,9 @@ resolved_after_bump="$(resolve_maven_version)"
 }
 
 update_velocity_plugin_annotation "$new_version"
+update_readme_dependency_versions "$new_version"
 
-git add "$POM_FILE" "$VELOCITY_FILE"
+git add "$POM_FILE" "$README_FILE" "$VELOCITY_FILE"
 git commit -m "Bump version to ${new_tag} for release"
 git tag "$new_tag"
 

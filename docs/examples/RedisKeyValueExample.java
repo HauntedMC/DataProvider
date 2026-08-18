@@ -13,8 +13,8 @@ public final class RedisKeyValueExample {
     private KeyValueDataAccess keyValue;
 
     public void onEnable(DataProviderAPI api) {
-        KeyValueDatabaseProvider provider = (KeyValueDatabaseProvider) api.registerDatabaseOrThrow(
-                DatabaseType.REDIS, "default"
+        KeyValueDatabaseProvider provider = api.registerDatabaseOrThrow(
+                DatabaseType.REDIS, "example", KeyValueDatabaseProvider.class
         );
         keyValue = provider.getDataAccess();
     }
@@ -29,7 +29,7 @@ public final class RedisKeyValueExample {
 
     public void onDisable(DataProviderAPI api) {
         keyValue = null;
-        api.unregisterDatabase(DatabaseType.REDIS, "default");
+        api.unregisterDatabase(DatabaseType.REDIS, "example");
     }
 
     private KeyValueDataAccess dataAccess() {

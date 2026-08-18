@@ -7,6 +7,8 @@ This directory contains developer and operational notes for DataProvider.
 - [Architecture](ARCHITECTURE.md)
 - [Usage Guide](USAGE_GUIDE.md)
 - [Best Practices](BEST_PRACTICES.md)
+- [Scoped Lifecycle](SCOPED_LIFECYCLE.md)
+- [Structured Exceptions](EXCEPTIONS.md)
 - [Configuration](CONFIGURATION.md)
 - [Development](DEVELOPMENT.md)
 - [Testing and CI](TESTING_AND_CI.md)

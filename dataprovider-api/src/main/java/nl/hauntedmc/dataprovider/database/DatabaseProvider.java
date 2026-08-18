@@ -16,16 +16,26 @@ public interface DatabaseProvider {
     boolean isConnected();
 
     /**
-     * Returns a BaseDataAccess object for this database.
+     * Returns the data-access interface for this database.
      *
      * @return the data access object
      */
     DataAccess getDataAccess();
 
     /**
-     * Returns a BaseDataAccess object for this database.
+     * Reports whether this provider exposes a JDBC {@link DataSource}.
      *
-     * @return the data access object
+     * @return true for providers that support {@link #getDataSource()}
+     */
+    default boolean supportsDataSource() {
+        return false;
+    }
+
+    /**
+     * Returns the JDBC {@link DataSource} when supported by this provider.
+     *
+     * @return the data source
+     * @throws UnsupportedOperationException when {@link #supportsDataSource()} is false
      */
     DataSource getDataSource();
 

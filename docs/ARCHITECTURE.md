@@ -57,9 +57,10 @@ Public packages stay under `nl.hauntedmc.dataprovider.api` and `nl.hauntedmc.dat
 
 ## ORM Integration
 
-`ORMContext` is a public API contract for relational providers (`api.orm`). Create it through
-`DataProviderAPI.createOrmContext(...)`; the Core module supplies the Hibernate implementation.
-Schema mode is selected explicitly by the consuming plugin.
+`ORMContext` is a public API contract for relational providers (`api.orm`). New consumers should create it through
+`DataProviderAPI.createConfiguredOrmContext(...)`; the Core module supplies the Hibernate implementation.
+Schema mode is selected by the administrator through `orm.schema_mode`. The older `createOrmContext(...)` signature
+that accepts a schema-mode argument is retained for compatibility, but that argument is ignored by the DataProvider runtime.
 
 ## Security Expectations
 

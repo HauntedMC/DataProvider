@@ -4,7 +4,8 @@
 
 - Use `registerDatabaseOrThrow` and handle its structured failures at the plugin boundary.
 - Treat returned `DatabaseProvider` instances as read-only handles; lifecycle is managed through the API.
-- Cast the strict registration result to the backend-specific provider interface, then use its typed `getDataAccess()` method.
+- Prefer the typed registration and lookup overloads when you need a backend-specific provider interface; use the original two-argument methods when generic `DatabaseProvider` access is enough.
+- Use `supportsDataSource()` before requesting JDBC access from generic provider code. Only relational providers expose a `DataSource`.
 - Treat database registration as startup wiring, not ad-hoc runtime behavior in hot paths.
 
 ## Lifecycle
@@ -20,6 +21,7 @@
 - Create a scope facade from `DataProviderAPI.scope("component.name")`.
 - Register and release through that scope object so ownership remains isolated.
 - Keep scope naming stable and deterministic.
+- Each `DataProviderScope` object owns independent registrations, even when another scope has the same public owner name.
 
 ## Messaging
 
@@ -42,11 +44,13 @@
 
 - Use ORM only for relational providers.
 - Keep ORM entity sets explicit and small per context.
+- Use `createConfiguredOrmContext(...)` in new code so administrator-configured `orm.schema_mode` remains explicit in the API contract.
 - Always call `ORMContext.shutdown()` on disable.
 
 ## Configuration
 
-- Keep one connection identifier per concrete config section (for example: `default`).
+- The generated `default` backend section is a template that is replaced on startup; copy it to a named section before configuring a real connection.
+- Keep one connection identifier per concrete config section (for example: `main`).
 - Keep identifier names consistent across code and YAML sections.
 - Use separate identifiers for different operational requirements (read-only, read-write, analytics).
 

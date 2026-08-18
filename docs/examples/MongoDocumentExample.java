@@ -15,8 +15,8 @@ public final class MongoDocumentExample {
     private DocumentDataAccess documents;
 
     public void onEnable(DataProviderAPI api) {
-        DocumentDatabaseProvider provider = (DocumentDatabaseProvider) api.registerDatabaseOrThrow(
-                DatabaseType.MONGODB, "default"
+        DocumentDatabaseProvider provider = api.registerDatabaseOrThrow(
+                DatabaseType.MONGODB, "example", DocumentDatabaseProvider.class
         );
         documents = provider.getDataAccess();
     }
@@ -34,7 +34,7 @@ public final class MongoDocumentExample {
 
     public void onDisable(DataProviderAPI api) {
         documents = null;
-        api.unregisterDatabase(DatabaseType.MONGODB, "default");
+        api.unregisterDatabase(DatabaseType.MONGODB, "example");
     }
 
     private DocumentDataAccess dataAccess() {

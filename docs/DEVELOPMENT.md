@@ -30,12 +30,13 @@ The Maven Wrapper is the supported build entry point. The platform acceptance co
 
 ## Coding Guidelines
 
-- Use `registerDatabaseOrThrow` and cast only after selecting the expected backend type.
+- Use `registerDatabaseOrThrow`; prefer its typed overload when selecting a backend-specific provider contract.
 - Keep connection registration in startup lifecycle paths, not request hot paths.
 - Handle external IO failures as non-fatal where possible and log actionable context.
 - Keep platform-specific integration (`platform.bukkit`, `platform.velocity`) thin and isolated.
 - Put cross-platform wrapper behavior in `platform.common` before adding platform-local duplication.
 - Avoid leaking plugin context across module boundaries.
+- Preserve compatibility overloads and defaults when evolving the public API unless a deliberate breaking release is planned.
 
 ## Manual Validation Checklist
 

@@ -61,32 +61,41 @@ Players without any of these permissions do not receive the platform-specific co
 
 ## 2. Register a connection
 
-Basic:
+The generated `default` backend section is a template and is replaced on startup. Copy it to a named section such as `example` or `main`, configure that section, and use the same identifier in code.
+
+Use the typed overload when you need a backend-specific provider:
 
 ```java
-RelationalDatabaseProvider provider = (RelationalDatabaseProvider) api.registerDatabaseOrThrow(
-        DatabaseType.MYSQL, "example"
+RelationalDatabaseProvider provider = api.registerDatabaseOrThrow(
+        DatabaseType.MYSQL,
+        "example",
+        RelationalDatabaseProvider.class
 );
 ```
 
-Identifier guidance:
+The original two-argument method remains available when generic `DatabaseProvider` access is sufficient.
 
-- Prefer `default` for single-connection setups.
-- Use explicit names like `example` for relational read/write paths.
+For multiple connections, use explicit purpose-oriented identifiers such as `rw`, `ro`, or `analytics` and keep them aligned with the configuration sections.
 
 ## 3. Use the provider safely
 
 `DatabaseProvider` is a read-only handle. Connection lifecycle stays owned by `DataProviderAPI`,
-so acquire and release connections through `registerDatabase*` / `unregisterDatabase*`.
+so acquire and release connections through `registerDatabaseOrThrow` / `unregisterDatabase`.
 
-Cast the strict registration result to the provider interface for the requested backend:
+Backend-specific providers expose their typed data-access contract directly:
 
 ```java
-MessagingDatabaseProvider provider = (MessagingDatabaseProvider) api.registerDatabaseOrThrow(
-        DatabaseType.REDIS_MESSAGING, "example"
+MessagingDatabaseProvider provider = api.registerDatabaseOrThrow(
+        DatabaseType.REDIS_MESSAGING,
+        "example",
+        MessagingDatabaseProvider.class
 );
 MessagingDataAccess bus = provider.getDataAccess();
 ```
+
+Generic code can check `DatabaseProvider.supportsDataSource()` before requesting a JDBC `DataSource`.
+Relational providers return `true`; non-relational providers retain the existing
+`UnsupportedOperationException` behavior from `getDataSource()`.
 
 ## 4. Release connections
 
@@ -115,17 +124,20 @@ Optional advanced scoped ownership is documented in `docs/SCOPED_LIFECYCLE.md`.
 For relational providers:
 
 ```java
-ORMContext orm = api.createOrmContext(
-        dataSource,
+ORMContext orm = api.createConfiguredOrmContext(
+        provider.getDataSource(),
         loggerAdapter,
-        "validate",
         PlayerEntity.class
 );
 ```
+
+`createConfiguredOrmContext(...)` uses the administrator-configured `orm.schema_mode`. The older
+`createOrmContext(...)` signature with a schema-mode string remains for compatibility, but the
+DataProvider runtime ignores that argument.
 
 Pass the `DataSource` returned by the registered relational provider. DataProvider rejects unmanaged data sources here so ORM connection acquisition stays within the same bounded resource admission policy as JDBC and `RelationalDataAccess`.
 The ORM logging identity is always derived from the calling plugin; it cannot be supplied by the consumer.
 
 `ORMContext` is part of the public API. Add only `dataprovider-api` as `compileOnly`, import
-`nl.hauntedmc.dataprovider.api.orm.ORMContext`, and create contexts with
-`DataProviderAPI.createOrmContext(...)`.
+`nl.hauntedmc.dataprovider.api.orm.ORMContext`, and create new contexts with
+`DataProviderAPI.createConfiguredOrmContext(...)`.

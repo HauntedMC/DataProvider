@@ -59,12 +59,16 @@ if (registration == null) {
 DataProviderAPI api = registration.getProvider().forPlugin(this); // bind once during onEnable
 ```
 
+Copy the generated backend `default` template to a named connection such as `example`, configure its access policy and credentials, then register that identifier:
+
 ```java
-RelationalDatabaseProvider mysql = (RelationalDatabaseProvider) api.registerDatabaseOrThrow(
-        DatabaseType.MYSQL, "default"
+RelationalDatabaseProvider mysql = api.registerDatabaseOrThrow(
+        DatabaseType.MYSQL,
+        "example",
+        RelationalDatabaseProvider.class
 );
 
-api.unregisterDatabase(DatabaseType.MYSQL, "default");
+api.unregisterDatabase(DatabaseType.MYSQL, "example");
 ```
 
 If you maintain multiple plugins, this gives your team one standard integration model instead of backend-specific code per project.
@@ -135,7 +139,7 @@ Maven:
 Gradle (Groovy):
 
 ```groovy
-compileOnly "nl.hauntedmc.dataprovider:dataprovider-api:3.0.9"
+compileOnly "nl.hauntedmc.dataprovider:dataprovider-api:3.1.16"
 ```
 
 GitHub Packages authentication details are in the docs.

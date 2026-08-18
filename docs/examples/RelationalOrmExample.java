@@ -13,14 +13,13 @@ public final class RelationalOrmExample {
     private ORMContext ormContext;
 
     public void onEnable(DataProviderAPI api, LoggerAdapter logger) {
-        RelationalDatabaseProvider relational = (RelationalDatabaseProvider) api.registerDatabaseOrThrow(
-                DatabaseType.MYSQL, "example"
+        RelationalDatabaseProvider relational = api.registerDatabaseOrThrow(
+                DatabaseType.MYSQL, "example", RelationalDatabaseProvider.class
         );
         try {
-            ormContext = api.createOrmContext(
+            ormContext = api.createConfiguredOrmContext(
                     relational.getDataSource(),
                     logger,
-                    "validate",
                     PlayerEntity.class,
                     PlayerProfileEntity.class
             );
