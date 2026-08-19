@@ -87,7 +87,7 @@ public class RedisDatabase implements KeyValueDatabaseProvider, ManagedDatabaseP
                 throw new IllegalStateException("Redis require_secure_transport=true but tls.enabled=false");
             }
             if (!tlsEnabled) {
-                logger.warn("[RedisDatabase] Redis connection is running without TLS.");
+                logger.info("[RedisDatabase] Redis connection is running without TLS.");
             } else if (!verifyHostname || trustAllCertificates) {
                 throw new IllegalStateException("Redis hostname and certificate verification cannot be disabled.");
             }
@@ -104,6 +104,7 @@ public class RedisDatabase implements KeyValueDatabaseProvider, ManagedDatabaseP
             poolConfig.setBlockWhenExhausted(true);
 
             DefaultJedisClientConfig.Builder clientConfigBuilder = DefaultJedisClientConfig.builder()
+                    .serverDefaultProtocol()
                     .user(user.isBlank() ? null : user)
                     .password(password.isBlank() ? null : password)
                     .database(databaseIndex)
