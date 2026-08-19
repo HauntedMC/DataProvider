@@ -109,8 +109,7 @@ public class RedisDatabase implements KeyValueDatabaseProvider, ManagedDatabaseP
                     .password(password.isBlank() ? null : password)
                     .database(databaseIndex)
                     .connectionTimeoutMillis(connectionTimeoutMs)
-                    .socketTimeoutMillis(socketTimeoutMs)
-                    .ssl(tlsEnabled);
+                    .socketTimeoutMillis(socketTimeoutMs);
             if (tlsEnabled) {
                 clientConfigBuilder.sslOptions(createSslOptions(trustStorePath, trustStorePassword, trustStoreType));
             }
