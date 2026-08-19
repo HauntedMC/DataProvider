@@ -8,6 +8,7 @@ import redis.clients.jedis.RedisClient;
 import redis.clients.jedis.Response;
 import redis.clients.jedis.params.ScanParams;
 import redis.clients.jedis.params.SetParams;
+import redis.clients.jedis.params.ZRangeParams;
 import redis.clients.jedis.resps.ScanResult;
 
 import java.util.ArrayList;
@@ -218,8 +219,9 @@ final class RedisDataAccess implements KeyValueDataAccess {
     @Override
     public CompletableFuture<List<String>> zrangeByScore(String key, double min, double max) {
         String validatedKey = requireKey(key);
+        ZRangeParams params = ZRangeParams.zrangeByScoreParams(min, max);
         return AsyncTaskSupport.supplyAsync(executor, "redis.zrangeByScore",
-                () -> new ArrayList<>(redisClient.zrangeByScore(validatedKey, min, max)));
+                () -> new ArrayList<>(redisClient.zrange(validatedKey, params)));
     }
 
     private static String requireKey(String key) {
