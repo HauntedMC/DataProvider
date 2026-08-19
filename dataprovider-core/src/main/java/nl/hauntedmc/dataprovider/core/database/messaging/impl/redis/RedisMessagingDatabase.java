@@ -175,7 +175,7 @@ public final class RedisMessagingDatabase implements MessagingDatabaseProvider, 
             throw new IllegalStateException("Redis messaging require_secure_transport=true but tls.enabled=false");
         }
         if (!tlsEnabled) {
-            logger.warn("[RedisMessagingDatabase] Redis messaging is running without TLS.");
+            logger.info("[RedisMessagingDatabase] Redis messaging is running without TLS.");
         } else if (!verifyHostname || trustAllCertificates) {
             throw new IllegalStateException("Redis messaging hostname and certificate verification cannot be disabled.");
         }
@@ -196,6 +196,7 @@ public final class RedisMessagingDatabase implements MessagingDatabaseProvider, 
             poolConfig.setBlockWhenExhausted(true);
 
             DefaultJedisClientConfig.Builder clientConfigBuilder = DefaultJedisClientConfig.builder()
+                    .serverDefaultProtocol()
                     .user(user.isBlank() ? null : user)
                     .password(password.isBlank() ? null : password)
                     .database(database)
