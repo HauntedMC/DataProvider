@@ -2,24 +2,24 @@ package nl.hauntedmc.dataprovider.core.database.keyvalue.impl.redis;
 
 import nl.hauntedmc.dataprovider.core.ManagedDatabaseProvider;
 import nl.hauntedmc.dataprovider.core.concurrent.ExecutionHandle;
-import nl.hauntedmc.dataprovider.core.database.security.TlsSupport;
 import nl.hauntedmc.dataprovider.core.logging.RateLimitedLogger;
 import nl.hauntedmc.dataprovider.database.keyvalue.KeyValueDataAccess;
 import nl.hauntedmc.dataprovider.database.keyvalue.KeyValueDatabaseProvider;
 import nl.hauntedmc.dataprovider.logging.LoggerAdapter;
 import org.spongepowered.configurate.CommentedConfigurationNode;
+import redis.clients.jedis.ConnectionPoolConfig;
 import redis.clients.jedis.DefaultJedisClientConfig;
-import redis.clients.jedis.HostAndPort;
-import redis.clients.jedis.JedisPool;
-import redis.clients.jedis.JedisPoolConfig;
+import redis.clients.jedis.RedisClient;
+import redis.clients.jedis.RedisProtocol;
+import redis.clients.jedis.SslOptions;
 
-import javax.net.ssl.SSLContext;
+import java.io.File;
 import java.time.Duration;
+import java.util.Arrays;
 import java.util.Objects;
 import java.util.regex.Pattern;
 
 /** Redis key-value provider backed by the shared Redis execution lane. */
-@SuppressWarnings("deprecation")
 public class RedisDatabase implements KeyValueDatabaseProvider, ManagedDatabaseProvider {
 
     private static final Pattern HOST_PATTERN = Pattern.compile("[A-Za-z0-9._:\\-\\[\\]]+");
@@ -28,7 +28,7 @@ public class RedisDatabase implements KeyValueDatabaseProvider, ManagedDatabaseP
     private final LoggerAdapter logger;
     private final ExecutionHandle execution;
     private final RateLimitedLogger outageLogger = new RateLimitedLogger(Duration.ofSeconds(30));
-    private volatile JedisPool jedisPool;
+    private volatile RedisClient redisClient;
     private volatile RedisDataAccess dataAccess;
     private volatile boolean connected;
     private volatile Throwable lifecycleFailure;
@@ -48,11 +48,11 @@ public class RedisDatabase implements KeyValueDatabaseProvider, ManagedDatabaseP
 
     @Override
     public synchronized void connect() {
-        if (connected && jedisPool != null) {
+        if (connected && isOpen(redisClient)) {
             logger.info("[RedisDatabase] Already connected; skipping re-initialization.");
             return;
         }
-        JedisPool createdPool = null;
+        RedisClient createdClient = null;
         try {
             String host = requireHost(config.node("host").getString("localhost"));
             int port = requireInRange(config.node("port").getInt(6379), 1, 65_535, "port");
@@ -95,7 +95,7 @@ public class RedisDatabase implements KeyValueDatabaseProvider, ManagedDatabaseP
                 logger.warn("[RedisDatabase] Redis user is configured without a password.");
             }
 
-            JedisPoolConfig poolConfig = new JedisPoolConfig();
+            ConnectionPoolConfig poolConfig = new ConnectionPoolConfig();
             poolConfig.setMaxTotal(connectionPoolSize);
             poolConfig.setMaxIdle(maxIdleConnections);
             poolConfig.setMinIdle(minIdleConnections);
@@ -104,7 +104,7 @@ public class RedisDatabase implements KeyValueDatabaseProvider, ManagedDatabaseP
             poolConfig.setBlockWhenExhausted(true);
 
             DefaultJedisClientConfig.Builder clientConfigBuilder = DefaultJedisClientConfig.builder()
-                    .serverDefaultProtocol()
+                    .protocol(RedisProtocol.RESP3)
                     .user(user.isBlank() ? null : user)
                     .password(password.isBlank() ? null : password)
                     .database(databaseIndex)
@@ -112,35 +112,34 @@ public class RedisDatabase implements KeyValueDatabaseProvider, ManagedDatabaseP
                     .socketTimeoutMillis(socketTimeoutMs)
                     .ssl(tlsEnabled);
             if (tlsEnabled) {
-                SSLContext sslContext = TlsSupport.createSslContext(trustStorePath, trustStorePassword, trustStoreType);
-                clientConfigBuilder.sslSocketFactory(sslContext.getSocketFactory());
-                clientConfigBuilder.hostnameVerifier(TlsSupport.strictHostnameVerifier());
+                clientConfigBuilder.sslOptions(createSslOptions(trustStorePath, trustStorePassword, trustStoreType));
             }
 
-            createdPool = new JedisPool(poolConfig, new HostAndPort(host, port), clientConfigBuilder.build());
-            try (var jedis = createdPool.getResource()) {
-                if (!"PONG".equalsIgnoreCase(jedis.ping())) {
-                    throw new IllegalStateException("Redis ping check failed.");
-                }
+            createdClient = RedisClient.builder()
+                    .hostAndPort(host, port)
+                    .clientConfig(clientConfigBuilder.build())
+                    .poolConfig(poolConfig)
+                    .build();
+            if (!"PONG".equalsIgnoreCase(createdClient.ping())) {
+                throw new IllegalStateException("Redis ping check failed.");
             }
 
-            jedisPool = createdPool;
+            redisClient = createdClient;
             this.connectionPoolSize = connectionPoolSize;
             this.scanCount = scanCount;
             this.maxScanResults = maxScanResults;
-            dataAccess = new RedisDataAccess(jedisPool, execution, scanCount, maxScanResults);
+            dataAccess = new RedisDataAccess(redisClient, execution, scanCount, maxScanResults);
             connected = true;
             lifecycleFailure = null;
             logger.info(String.format(
-                    "[RedisDatabase] Connected to Redis at %s:%d (DB %d, auth=%s, tls=%s, connectionPool=%d)",
+                    "[RedisDatabase] Connected to Redis at %s:%d (DB %d, protocol=RESP3, auth=%s, tls=%s, connectionPool=%d)",
                     host, port, databaseIndex, !password.isBlank() ? "enabled" : "disabled",
                     tlsEnabled ? "enabled" : "disabled", connectionPoolSize));
         } catch (Exception e) {
             lifecycleFailure = e;
-            if (createdPool != null && !createdPool.isClosed()) {
-                createdPool.close();
-            }
+            closeQuietly(createdClient);
             connected = false;
+            redisClient = null;
             dataAccess = null;
             outageLogger.error(logger, "[RedisDatabase] Connection failed. (" + e.getClass().getSimpleName() + ").");
         }
@@ -149,19 +148,18 @@ public class RedisDatabase implements KeyValueDatabaseProvider, ManagedDatabaseP
     @Override
     public synchronized void disconnect() {
         execution.close();
-        if (jedisPool != null && !jedisPool.isClosed()) {
-            jedisPool.close();
-            logger.info("[RedisDatabase] JedisPool closed.");
+        if (isOpen(redisClient)) {
+            redisClient.close();
+            logger.info("[RedisDatabase] RedisClient closed.");
         }
-        jedisPool = null;
+        redisClient = null;
         dataAccess = null;
         connected = false;
     }
 
     @Override
     public boolean isConnected() {
-        JedisPool snapshot = jedisPool;
-        return connected && snapshot != null && !snapshot.isClosed();
+        return connected && isOpen(redisClient);
     }
 
     @Override
@@ -171,12 +169,12 @@ public class RedisDatabase implements KeyValueDatabaseProvider, ManagedDatabaseP
 
     @Override
     public boolean probeRemoteHealth() {
-        JedisPool snapshot = jedisPool;
-        if (!connected || snapshot == null || snapshot.isClosed()) {
+        RedisClient snapshot = redisClient;
+        if (!connected || !isOpen(snapshot)) {
             return false;
         }
-        try (var jedis = snapshot.getResource()) {
-            return "PONG".equalsIgnoreCase(jedis.ping());
+        try {
+            return "PONG".equalsIgnoreCase(snapshot.ping());
         } catch (Exception e) {
             return false;
         }
@@ -189,22 +187,55 @@ public class RedisDatabase implements KeyValueDatabaseProvider, ManagedDatabaseP
 
     public int executionCapacity() {
         if (!isConnected() || connectionPoolSize < 1) {
-            throw new IllegalStateException("[RedisDatabase] Jedis pool not initialized!");
+            throw new IllegalStateException("[RedisDatabase] Redis client not initialized!");
         }
         return connectionPoolSize;
     }
 
-    /** Creates a logical provider view without creating another Jedis pool. */
+    /** Creates a logical provider view without creating another Redis client or connection pool. */
     public KeyValueDatabaseProvider scoped(ExecutionHandle scopedExecution) {
-        JedisPool source = jedisPool;
-        if (!connected || source == null || source.isClosed()) {
-            throw new IllegalStateException("[RedisDatabase] Jedis pool not initialized!");
+        RedisClient source = redisClient;
+        if (!connected || !isOpen(source)) {
+            throw new IllegalStateException("[RedisDatabase] Redis client not initialized!");
         }
         KeyValueDataAccess accessView = new RedisDataAccess(source, scopedExecution, scanCount, maxScanResults);
         return new KeyValueDatabaseProvider() {
             @Override public boolean isConnected() { return RedisDatabase.this.isConnected() && !scopedExecution.isClosed(); }
             @Override public KeyValueDataAccess getDataAccess() { return accessView; }
         };
+    }
+
+    private static SslOptions createSslOptions(String trustStorePath, String trustStorePassword, String trustStoreType) {
+        SslOptions.Builder builder = SslOptions.builder();
+        if (trustStorePath == null || trustStorePath.isBlank()) {
+            return builder.build();
+        }
+        char[] password = trustStorePassword == null || trustStorePassword.isEmpty()
+                ? null : trustStorePassword.toCharArray();
+        try {
+            if (trustStoreType != null && !trustStoreType.isBlank()) {
+                builder.trustStoreType(trustStoreType);
+            }
+            return builder.truststore(new File(trustStorePath), password).build();
+        } finally {
+            if (password != null) {
+                Arrays.fill(password, '\0');
+            }
+        }
+    }
+
+    private static boolean isOpen(RedisClient client) {
+        return client != null && !client.getPool().isClosed();
+    }
+
+    private static void closeQuietly(RedisClient client) {
+        if (client != null) {
+            try {
+                client.close();
+            } catch (RuntimeException ignored) {
+                // Best-effort cleanup while preserving the original connection failure.
+            }
+        }
     }
 
     private static String requireNonBlank(String value, String fieldName) {
