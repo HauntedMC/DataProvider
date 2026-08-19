@@ -6,11 +6,17 @@ import nl.hauntedmc.dataprovider.core.testutil.RecordingLoggerAdapter;
 import nl.hauntedmc.dataprovider.database.messaging.api.EventMessage;
 import nl.hauntedmc.dataprovider.database.messaging.api.MessageRegistry;
 import nl.hauntedmc.dataprovider.database.messaging.api.SubscriptionState;
+import org.apache.commons.pool2.BasePooledObjectFactory;
+import org.apache.commons.pool2.PooledObject;
+import org.apache.commons.pool2.impl.DefaultPooledObject;
 import org.junit.jupiter.api.Test;
 import redis.clients.jedis.Connection;
+import redis.clients.jedis.ConnectionPoolConfig;
+import redis.clients.jedis.DefaultJedisClientConfig;
 import redis.clients.jedis.JedisPubSub;
 import redis.clients.jedis.RedisClient;
-import redis.clients.jedis.util.Pool;
+import redis.clients.jedis.RedisProtocol;
+import redis.clients.jedis.providers.PooledConnectionProvider;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -22,12 +28,12 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.Supplier;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.when;
 
 class RedisMessagingDataAccessTest {
 
@@ -35,8 +41,8 @@ class RedisMessagingDataAccessTest {
     void reconnectsAcrossPhysicalClientReplacementWithoutDuplicatingTheListener() throws Exception {
         Connection first = mock(Connection.class);
         Connection second = mock(Connection.class);
-        RedisClient firstClient = client(first);
-        RedisClient replacementClient = client(second);
+        RedisClient firstClient = client(() -> first);
+        RedisClient replacementClient = client(() -> second);
         AtomicReference<RedisClient> currentClient = new AtomicReference<>(firstClient);
         AtomicReference<JedisPubSub> recoveredListener = new AtomicReference<>();
         CountDownLatch recovered = new CountDownLatch(1);
@@ -91,6 +97,8 @@ class RedisMessagingDataAccessTest {
         assertEquals(0, access.logicalSubscriptionCount());
         assertEquals(0, execution.activeSubscriptions.get());
         assertEquals(1, execution.releasedSubscriptions.get());
+        firstClient.close();
+        replacementClient.close();
     }
 
     @Test
@@ -106,9 +114,10 @@ class RedisMessagingDataAccessTest {
 
         assertThrows(CompletionException.class, subscription.completion()::join);
         assertTrue(subscription.snapshot().reconnectCount() >= 1);
-        assertTrue(subscription.snapshot().lastFailure().contains("redis unavailable"));
+        assertTrue(subscription.snapshot().lastFailure().contains("Could not get a resource from the pool"));
         await(() -> execution.activeSubscriptions.get() == 0);
         assertEquals(1, execution.releasedSubscriptions.get());
+        client.close();
     }
 
     @Test
@@ -141,12 +150,13 @@ class RedisMessagingDataAccessTest {
         assertEquals(SubscriptionState.CLOSED, subscription.state());
         assertEquals(0, execution.activeSubscriptions.get());
         assertEquals(1, execution.releasedSubscriptions.get());
+        client.close();
     }
 
     @Test
     void shutdownDoesNotNeedTheSaturatedCommandExecutorToStopSubscriptions() throws Exception {
         Connection connection = mock(Connection.class);
-        RedisClient client = client(connection);
+        RedisClient client = client(() -> connection);
         CountDownLatch listening = new CountDownLatch(1);
         CountDownLatch releaseListener = new CountDownLatch(1);
         RedisMessagingDataAccess.PubSubRunner runner = (ignored, listener, destination) -> {
@@ -177,12 +187,13 @@ class RedisMessagingDataAccessTest {
         shutdown.get(2, TimeUnit.SECONDS);
         assertTrue(shutdown.isDone());
         releaseListener.countDown();
+        client.close();
     }
 
     @Test
     void repeatedConcurrentShutdownSharesOneIncompleteOperationAndReleasesTheListenerOnce() throws Exception {
         Connection connection = mock(Connection.class);
-        RedisClient client = client(connection);
+        RedisClient client = client(() -> connection);
         CountDownLatch listening = new CountDownLatch(1);
         CountDownLatch releaseListener = new CountDownLatch(1);
         RedisMessagingDataAccess.PubSubRunner runner = (ignored, listener, destination) -> {
@@ -223,13 +234,14 @@ class RedisMessagingDataAccessTest {
         } finally {
             releaseListener.countDown();
             callers.shutdownNow();
+            client.close();
         }
     }
 
     @Test
     void handlerAssertionErrorDoesNotWedgeLaterDispatch() throws Exception {
         Connection connection = mock(Connection.class);
-        RedisClient client = client(connection);
+        RedisClient client = client(() -> connection);
         AtomicReference<JedisPubSub> listener = new AtomicReference<>();
         CountDownLatch listening = new CountDownLatch(1);
         CountDownLatch releaseListener = new CountDownLatch(1);
@@ -264,6 +276,7 @@ class RedisMessagingDataAccessTest {
         assertTrue(logger.errorMessages().stream().anyMatch(message -> message.contains("AssertionError")));
         access.shutdown().get(2, TimeUnit.SECONDS);
         releaseListener.countDown();
+        client.close();
     }
 
     private static RedisMessagingDataAccess access(
@@ -291,24 +304,26 @@ class RedisMessagingDataAccessTest {
         );
     }
 
-    @SuppressWarnings("unchecked")
-    private static RedisClient client(Connection connection) {
-        RedisClient client = mock(RedisClient.class);
-        Pool<Connection> pool = mock(Pool.class);
-        when(client.getPool()).thenReturn(pool);
-        when(pool.isClosed()).thenReturn(false);
-        when(pool.getResource()).thenReturn(connection);
-        return client;
+    private static RedisClient client(Supplier<Connection> connections) {
+        BasePooledObjectFactory<Connection> factory = new BasePooledObjectFactory<>() {
+            @Override public Connection create() { return connections.get(); }
+            @Override public PooledObject<Connection> wrap(Connection connection) {
+                return new DefaultPooledObject<>(connection);
+            }
+            @Override public boolean validateObject(PooledObject<Connection> pooled) { return true; }
+        };
+        ConnectionPoolConfig poolConfig = new ConnectionPoolConfig();
+        poolConfig.setMaxTotal(16);
+        poolConfig.setMaxIdle(16);
+        PooledConnectionProvider provider = new PooledConnectionProvider(factory, poolConfig);
+        return RedisClient.builder()
+                .clientConfig(DefaultJedisClientConfig.builder().protocol(RedisProtocol.RESP3).build())
+                .connectionProvider(provider)
+                .build();
     }
 
-    @SuppressWarnings("unchecked")
     private static RedisClient unavailableClient() {
-        RedisClient client = mock(RedisClient.class);
-        Pool<Connection> pool = mock(Pool.class);
-        when(client.getPool()).thenReturn(pool);
-        when(pool.isClosed()).thenReturn(false);
-        when(pool.getResource()).thenThrow(new IllegalStateException("redis unavailable"));
-        return client;
+        return client(() -> { throw new IllegalStateException("redis unavailable"); });
     }
 
     private static RedisMessagingDataAccess.PubSubRunner noOpRunner() {
