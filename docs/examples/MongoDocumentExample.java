@@ -3,6 +3,7 @@ import nl.hauntedmc.dataprovider.database.DatabaseType;
 import nl.hauntedmc.dataprovider.database.document.DocumentDataAccess;
 import nl.hauntedmc.dataprovider.database.document.DocumentDatabaseProvider;
 import nl.hauntedmc.dataprovider.database.document.model.DocumentQuery;
+import nl.hauntedmc.dataprovider.database.document.model.DocumentUpdate;
 
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
@@ -30,6 +31,14 @@ public final class MongoDocumentExample {
 
     public CompletableFuture<Map<String, Object>> findProfile(String uuid) {
         return dataAccess().findOne("profiles", new DocumentQuery().eq("uuid", uuid));
+    }
+
+    public CompletableFuture<Void> updateProfile(String uuid, String name, int level) {
+        return dataAccess().updateOne(
+                "profiles",
+                new DocumentQuery().eq("uuid", uuid),
+                new DocumentUpdate().setAll(Map.of("name", name, "level", level))
+        );
     }
 
     public void onDisable(DataProviderAPI api) {

@@ -14,8 +14,10 @@ import javax.sql.DataSource;
 
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class DataProviderApiConvenienceTest {
 
@@ -80,6 +82,31 @@ class DataProviderApiConvenienceTest {
     }
 
     @Test
+    void scopeLifecyclePredicatesReflectLifecycleState() {
+        StubScope open = new StubScope(RELATIONAL_PROVIDER, DataProviderScope.LifecycleState.OPEN);
+        StubScope closing = new StubScope(RELATIONAL_PROVIDER, DataProviderScope.LifecycleState.CLOSING);
+        StubScope closed = new StubScope(RELATIONAL_PROVIDER, DataProviderScope.LifecycleState.CLOSED);
+
+        assertTrue(open.isOpen());
+        assertFalse(open.isClosing());
+        assertFalse(open.isClosed());
+        assertTrue(closing.isClosing());
+        assertFalse(closing.isOpen());
+        assertTrue(closed.isClosed());
+        assertFalse(closed.isOpen());
+    }
+
+    @Test
+    void apiSupplierCanBindFacadeInOneCall() {
+        StubApi api = new StubApi(RELATIONAL_PROVIDER);
+        DataProviderApiSupplier supplier = () -> api;
+        Object platformPlugin = new Object();
+
+        assertSame(api, supplier.dataProviderApiFor(platformPlugin));
+        assertSame(platformPlugin, api.boundPlugin);
+    }
+
+    @Test
     void configuredOrmConvenienceMethodDelegatesThroughLegacySignature() {
         StubApi api = new StubApi(RELATIONAL_PROVIDER);
 
@@ -90,11 +117,18 @@ class DataProviderApiConvenienceTest {
 
     private static final class StubApi implements DataProviderAPI {
         private final DatabaseProvider provider;
+        private Object boundPlugin;
         private String schemaMode;
         private Class<?>[] entityClasses;
 
         private StubApi(DatabaseProvider provider) {
             this.provider = provider;
+        }
+
+        @Override
+        public DataProviderAPI forPlugin(Object platformPlugin) {
+            boundPlugin = platformPlugin;
+            return this;
         }
 
         @Override
@@ -139,14 +173,25 @@ class DataProviderApiConvenienceTest {
 
     private static final class StubScope implements DataProviderScope {
         private final DatabaseProvider provider;
+        private final LifecycleState state;
 
         private StubScope(DatabaseProvider provider) {
+            this(provider, LifecycleState.OPEN);
+        }
+
+        private StubScope(DatabaseProvider provider, LifecycleState state) {
             this.provider = provider;
+            this.state = state;
         }
 
         @Override
         public OwnerScope ownerScope() {
             return OwnerScope.of("test");
+        }
+
+        @Override
+        public LifecycleState lifecycleState() {
+            return state;
         }
 
         @Override

@@ -28,6 +28,14 @@ public record DurableEvent<T extends EventMessage>(String eventId, String proces
         return new DurableEvent<>(id, id, payload);
     }
 
+    /**
+     * Creates an event with a generated producer ID and caller-owned business processing key.
+     * Create the envelope once and reuse that same instance for uncertain publish retries.
+     */
+    public static <T extends EventMessage> DurableEvent<T> create(String processingKey, T payload) {
+        return new DurableEvent<>(UUID.randomUUID().toString(), processingKey, payload);
+    }
+
     private static void requireKey(String value, String name) {
         if (value == null || !KEY_PATTERN.matcher(value).matches()) {
             throw new IllegalArgumentException(name + " must match " + KEY_PATTERN.pattern());

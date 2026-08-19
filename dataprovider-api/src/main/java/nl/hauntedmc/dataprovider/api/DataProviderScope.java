@@ -20,6 +20,21 @@ public interface DataProviderScope extends AutoCloseable {
         return LifecycleState.OPEN;
     }
 
+    /** Whether this scope still accepts normal work. */
+    default boolean isOpen() {
+        return lifecycleState() == LifecycleState.OPEN;
+    }
+
+    /** Whether this scope has started its shutdown sequence but has not fully closed yet. */
+    default boolean isClosing() {
+        return lifecycleState() == LifecycleState.CLOSING;
+    }
+
+    /** Whether this scope has fully completed shutdown. */
+    default boolean isClosed() {
+        return lifecycleState() == LifecycleState.CLOSED;
+    }
+
     DatabaseProvider registerDatabaseOrThrow(DatabaseType databaseType, String connectionIdentifier);
 
     /**

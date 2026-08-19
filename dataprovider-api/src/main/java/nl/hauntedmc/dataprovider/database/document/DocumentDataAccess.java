@@ -30,16 +30,39 @@ public interface DocumentDataAccess extends DataAccess {
                                       DocumentUpdate update,
                                       DocumentUpdateOptions options);
 
+    /** Updates one document using the default update options. */
+    default CompletableFuture<Void> updateOne(
+            String collection,
+            DocumentQuery query,
+            DocumentUpdate update
+    ) {
+        return updateOne(collection, query, update, new DocumentUpdateOptions());
+    }
+
     CompletableFuture<Void> updateMany(String collection,
                                        DocumentQuery query,
                                        DocumentUpdate update,
                                        DocumentUpdateOptions options);
+
+    /** Updates matching documents using the default update options. */
+    default CompletableFuture<Void> updateMany(
+            String collection,
+            DocumentQuery query,
+            DocumentUpdate update
+    ) {
+        return updateMany(collection, query, update, new DocumentUpdateOptions());
+    }
 
     CompletableFuture<Void> deleteOne(String collection, DocumentQuery query);
 
     CompletableFuture<Void> deleteMany(String collection, DocumentQuery query);
 
     CompletableFuture<Void> createIndex(String collection, Map<String, Object> indexSpec, Map<String, Object> indexOptions);
+
+    /** Creates an index without backend-specific index options. */
+    default CompletableFuture<Void> createIndex(String collection, Map<String, Object> indexSpec) {
+        return createIndex(collection, indexSpec, Map.of());
+    }
 
     CompletableFuture<Void> dropIndex(String collection, String indexName);
 }

@@ -3,12 +3,15 @@ import nl.hauntedmc.dataprovider.database.DatabaseType;
 import nl.hauntedmc.dataprovider.database.keyvalue.KeyValueDataAccess;
 import nl.hauntedmc.dataprovider.database.keyvalue.KeyValueDatabaseProvider;
 
+import java.time.Duration;
 import java.util.concurrent.CompletableFuture;
 
 /**
  * Example: Redis key-value access.
  */
 public final class RedisKeyValueExample {
+
+    private static final Duration LANGUAGE_CACHE_TTL = Duration.ofHours(12);
 
     private KeyValueDataAccess keyValue;
 
@@ -20,11 +23,11 @@ public final class RedisKeyValueExample {
     }
 
     public CompletableFuture<Void> cachePlayerLanguage(String playerUuid, String languageCode) {
-        return dataAccess().setKey("player:lang:" + playerUuid, languageCode);
+        return dataAccess().setKeyWithExpiry("player:lang:" + playerUuid, languageCode, LANGUAGE_CACHE_TTL);
     }
 
     public CompletableFuture<String> loadPlayerLanguage(String playerUuid) {
-        return dataAccess().getKey("player:lang:" + playerUuid);
+        return dataAccess().getKeyOrDefault("player:lang:" + playerUuid, "en");
     }
 
     public void onDisable(DataProviderAPI api) {

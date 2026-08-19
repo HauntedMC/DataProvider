@@ -27,7 +27,7 @@ public final class RedisDurableMessagingExample {
         return durable.consume(VOTE_STREAM, GROUP, CONSUMER, "vote_received", VoteReceived.class, delivery -> {
             // In one database transaction: INSERT processing_key with a UNIQUE constraint, then apply the vote.
             // If the key already exists, the transaction makes this a no-op.
-            applyVoteIdempotently(delivery.event().processingKey(), delivery.event().payload());
+            applyVoteIdempotently(delivery.processingKey(), delivery.payload());
             delivery.acknowledge().join(); // Only after the transaction commits.
         });
     }
@@ -37,7 +37,7 @@ public final class RedisDurableMessagingExample {
     }
 
     void recordVote(DurableMessagingDataAccess durable, VoteReceived vote) {
-        DurableEvent<VoteReceived> event = new DurableEvent<>(vote.voteId(), "vote:" + vote.voteId(), vote);
+        DurableEvent<VoteReceived> event = DurableEvent.create("vote:" + vote.voteId(), vote);
         durable.publish(VOTE_STREAM, event);
     }
 

@@ -14,10 +14,25 @@ import org.junit.jupiter.api.Test;
 import javax.sql.DataSource;
 
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class DatabaseProviderInterfaceContractTest {
+
+    @Test
+    void genericProviderCanReturnTypedDataAccessWithoutManualCast() {
+        TestDataAccess access = new TestDataAccess() { };
+        DatabaseProvider provider = new DatabaseProvider() {
+            @Override public boolean isConnected() { return true; }
+            @Override public DataAccess getDataAccess() { return access; }
+            @Override public DataSource getDataSource() { return null; }
+        };
+
+        assertSame(access, provider.getDataAccess(TestDataAccess.class));
+        assertThrows(NullPointerException.class, () -> provider.getDataAccess(null));
+        assertThrows(ClassCastException.class, () -> provider.getDataAccess(OtherDataAccess.class));
+    }
 
     @Test
     void relationalProviderAdvertisesDataSourceSupport() {
@@ -98,5 +113,11 @@ class DatabaseProviderInterfaceContractTest {
 
         assertFalse(provider.supportsDataSource());
         assertThrows(UnsupportedOperationException.class, provider::getDataSource);
+    }
+
+    private interface TestDataAccess extends DataAccess {
+    }
+
+    private interface OtherDataAccess extends DataAccess {
     }
 }

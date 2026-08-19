@@ -29,12 +29,17 @@ public class DocumentQuery {
      * @return this query instance for chaining
      */
     public DocumentQuery eq(String field, Object value) {
-        String validatedField = requireFieldName(field);
-        explicitMatchAll = false;
-        Map<String, Object> op = new HashMap<>();
-        op.put("$eq", DocumentValueSnapshot.value(value));
-        criteria.put(validatedField, op);
-        return this;
+        return comparison(field, "$eq", value, null);
+    }
+
+    /** Adds a not-equal condition for a field. */
+    public DocumentQuery ne(String field, Object value) {
+        return comparison(field, "$ne", value, null);
+    }
+
+    /** Adds a greater-than condition for a field. */
+    public DocumentQuery gt(String field, Object value) {
+        return comparison(field, "$gt", value, "Greater-than value cannot be null.");
     }
 
     /**
@@ -45,13 +50,17 @@ public class DocumentQuery {
      * @return this query instance for chaining
      */
     public DocumentQuery gte(String field, Object value) {
-        String validatedField = requireFieldName(field);
-        Objects.requireNonNull(value, "Greater-than-or-equal value cannot be null.");
-        explicitMatchAll = false;
-        Map<String, Object> op = new HashMap<>();
-        op.put("$gte", DocumentValueSnapshot.value(value));
-        criteria.put(validatedField, op);
-        return this;
+        return comparison(field, "$gte", value, "Greater-than-or-equal value cannot be null.");
+    }
+
+    /** Adds a less-than condition for a field. */
+    public DocumentQuery lt(String field, Object value) {
+        return comparison(field, "$lt", value, "Less-than value cannot be null.");
+    }
+
+    /** Adds a less-than-or-equal condition for a field. */
+    public DocumentQuery lte(String field, Object value) {
+        return comparison(field, "$lte", value, "Less-than-or-equal value cannot be null.");
     }
 
     /**
@@ -63,9 +72,26 @@ public class DocumentQuery {
         return DocumentValueSnapshot.map(criteria);
     }
 
+    /** Whether at least one field criterion is present. */
+    public boolean hasCriteria() {
+        return !criteria.isEmpty();
+    }
+
     /** Whether this empty query was deliberately constructed through {@link #all()}. */
     public boolean isExplicitMatchAll() {
         return explicitMatchAll && criteria.isEmpty();
+    }
+
+    private DocumentQuery comparison(String field, String operator, Object value, String nullMessage) {
+        String validatedField = requireFieldName(field);
+        if (nullMessage != null) {
+            Objects.requireNonNull(value, nullMessage);
+        }
+        explicitMatchAll = false;
+        Map<String, Object> expression = new HashMap<>();
+        expression.put(operator, DocumentValueSnapshot.value(value));
+        criteria.put(validatedField, expression);
+        return this;
     }
 
     private static String requireFieldName(String field) {

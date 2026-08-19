@@ -28,6 +28,13 @@ public class DocumentUpdate {
         return this;
     }
 
+    /** Sets every supplied field using the same validation and snapshot rules as {@link #set(String, Object)}. */
+    public DocumentUpdate setAll(Map<String, ?> fields) {
+        Objects.requireNonNull(fields, "Fields cannot be null.");
+        fields.forEach(this::set);
+        return this;
+    }
+
     /**
      * Increments a field by a given amount.
      *
@@ -43,6 +50,11 @@ public class DocumentUpdate {
         Map<String, Object> incMap = (Map<String, Object>) operations.get("$inc");
         incMap.put(validatedField, DocumentValueSnapshot.value(amount));
         return this;
+    }
+
+    /** Whether this update currently contains at least one operation. */
+    public boolean hasOperations() {
+        return !operations.isEmpty();
     }
 
     /**

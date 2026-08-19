@@ -6,4 +6,9 @@ package nl.hauntedmc.dataprovider.api;
 public interface DataProviderApiSupplier {
 
     DataProviderAPI dataProviderApi();
+
+    /** Returns a DataProvider facade bound to the supplied platform plugin instance. */
+    default DataProviderAPI dataProviderApiFor(Object platformPlugin) {
+        return dataProviderApi().forPlugin(platformPlugin);
+    }
 }

@@ -1,6 +1,7 @@
 package nl.hauntedmc.dataprovider.database;
 
 import javax.sql.DataSource;
+import java.util.Objects;
 
 /**
  * Read-only database handle exposed to plugin consumers.
@@ -21,6 +22,12 @@ public interface DatabaseProvider {
      * @return the data access object
      */
     DataAccess getDataAccess();
+
+    /** Returns the data-access handle cast to the requested backend-specific interface. */
+    default <T extends DataAccess> T getDataAccess(Class<T> accessType) {
+        Objects.requireNonNull(accessType, "Data-access type cannot be null.");
+        return accessType.cast(getDataAccess());
+    }
 
     /**
      * Reports whether this provider exposes a JDBC {@link DataSource}.

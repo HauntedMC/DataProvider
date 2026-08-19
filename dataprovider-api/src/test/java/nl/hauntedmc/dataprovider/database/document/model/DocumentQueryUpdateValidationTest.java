@@ -2,9 +2,9 @@ package nl.hauntedmc.dataprovider.database.document.model;
 
 import org.junit.jupiter.api.Test;
 
-import java.util.Map;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -41,6 +41,30 @@ class DocumentQueryUpdateValidationTest {
     }
 
     @Test
+    void comparisonConveniencesProduceExpectedOperators() {
+        assertEquals(Map.of("$ne", "banned"), new DocumentQuery().ne("status", "banned").toMap().get("status"));
+        assertEquals(Map.of("$gt", 10), new DocumentQuery().gt("score", 10).toMap().get("score"));
+        assertEquals(Map.of("$lt", 20), new DocumentQuery().lt("score", 20).toMap().get("score"));
+        assertEquals(Map.of("$lte", 30), new DocumentQuery().lte("score", 30).toMap().get("score"));
+        assertThrows(NullPointerException.class, () -> new DocumentQuery().gt("score", null));
+        assertThrows(NullPointerException.class, () -> new DocumentQuery().lt("score", null));
+        assertThrows(NullPointerException.class, () -> new DocumentQuery().lte("score", null));
+    }
+
+    @Test
+    void bulkSetAndUpsertFactoryReduceBuilderBoilerplate() {
+        DocumentUpdate update = new DocumentUpdate().setAll(Map.of("name", "Remy", "level", 5));
+
+        assertTrue(update.hasOperations());
+        @SuppressWarnings("unchecked")
+        Map<String, Object> setMap = (Map<String, Object>) update.toMap().get("$set");
+        assertEquals("Remy", setMap.get("name"));
+        assertEquals(5, setMap.get("level"));
+        assertTrue(DocumentUpdateOptions.upsert().isUpsert());
+        assertThrows(NullPointerException.class, () -> new DocumentUpdate().setAll(null));
+    }
+
+    @Test
     void validQueryAndUpdateBuildersProduceExpectedMaps() {
         DocumentQuery query = new DocumentQuery()
                 .eq("uuid", "abc")
@@ -60,8 +84,10 @@ class DocumentQueryUpdateValidationTest {
         Map<String, Object> activeExpression = (Map<String, Object>) queryMap.get("active");
         assertEquals("abc", uuidExpression.get("$eq"));
         assertEquals(true, activeExpression.get("$eq"));
+        assertTrue(query.hasCriteria());
         assertTrue(queryMap.containsKey("score"));
         assertTrue(queryMap.containsKey("active"));
+        assertTrue(update.hasOperations());
         assertTrue(updateMap.containsKey("$set"));
         assertTrue(updateMap.containsKey("$inc"));
 
@@ -103,9 +129,11 @@ class DocumentQueryUpdateValidationTest {
         DocumentQuery empty = new DocumentQuery();
         DocumentQuery all = DocumentQuery.all();
 
+        assertFalse(empty.hasCriteria());
         assertFalse(empty.isExplicitMatchAll());
         assertTrue(all.isExplicitMatchAll());
         all.eq("status", "active");
         assertFalse(all.isExplicitMatchAll());
+        assertTrue(all.hasCriteria());
     }
 }
