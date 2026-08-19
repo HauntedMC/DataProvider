@@ -41,6 +41,9 @@ jobs:
           server-username: PACKAGES_USER
           server-password: PACKAGES_TOKEN
 
+      - name: Discard cached Paper API
+        run: rm -rf "$HOME/.m2/repository/io/papermc/paper/paper-api"
+
       - name: Run Unit and Backend Integration Tests
         id: tests
         run: ./mvnw -U -B -ntp -Pintegration-tests verify
@@ -93,6 +96,9 @@ jobs:
           server-id: github
           server-username: PACKAGES_USER
           server-password: PACKAGES_TOKEN
+
+      - name: Discard cached Paper API
+        run: rm -rf "$HOME/.m2/repository/io/papermc/paper/paper-api"
 
       - name: Run bundled platform acceptance
         run: ./mvnw -U -B -ntp -Pplatform-acceptance verify
