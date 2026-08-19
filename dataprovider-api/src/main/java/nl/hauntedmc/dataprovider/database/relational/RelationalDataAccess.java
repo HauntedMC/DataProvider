@@ -5,6 +5,7 @@ import nl.hauntedmc.dataprovider.database.DataAccess;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 
 /**
@@ -20,6 +21,14 @@ public interface RelationalDataAccess extends DataAccess {
 
     CompletableFuture<Map<String, Object>> queryForSingle(String query, Object... params);
 
+    /** Returns the first matching row as an {@link Optional}. */
+    default CompletableFuture<Optional<Map<String, Object>>> queryForSingleOptional(
+            String query,
+            Object... params
+    ) {
+        return queryForSingle(query, params).thenApply(Optional::ofNullable);
+    }
+
     CompletableFuture<List<Map<String, Object>>> queryForList(String query, Object... params);
 
     CompletableFuture<Object> queryForSingleValue(String query, Object... params);
@@ -34,6 +43,16 @@ public interface RelationalDataAccess extends DataAccess {
     ) {
         Objects.requireNonNull(resultType, "Result type cannot be null.");
         return queryForSingleValue(query, params).thenApply(resultType::cast);
+    }
+
+    /** Queries one scalar value as an {@link Optional} of the requested type. */
+    default <T> CompletableFuture<Optional<T>> queryForSingleValueOptionalAs(
+            Class<T> resultType,
+            String query,
+            Object... params
+    ) {
+        Objects.requireNonNull(resultType, "Result type cannot be null.");
+        return queryForSingleValue(query, params).thenApply(value -> Optional.ofNullable(resultType.cast(value)));
     }
 
     CompletableFuture<Void> executeBatchUpdate(String query, List<Object[]> batchParams);
@@ -52,5 +71,15 @@ public interface RelationalDataAccess extends DataAccess {
     ) {
         Objects.requireNonNull(generatedKeyType, "Generated key type cannot be null.");
         return executeInsert(query, params).thenApply(generatedKeyType::cast);
+    }
+
+    /** Executes an insert and returns the generated key as an {@link Optional}. */
+    default <T> CompletableFuture<Optional<T>> executeInsertOptionalAs(
+            Class<T> generatedKeyType,
+            String query,
+            Object... params
+    ) {
+        Objects.requireNonNull(generatedKeyType, "Generated key type cannot be null.");
+        return executeInsert(query, params).thenApply(value -> Optional.ofNullable(generatedKeyType.cast(value)));
     }
 }

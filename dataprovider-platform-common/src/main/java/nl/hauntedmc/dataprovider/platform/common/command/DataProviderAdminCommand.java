@@ -97,7 +97,7 @@ public final class DataProviderAdminCommand {
         if (args.length == 2) {
             return switch (root) {
                 case "status" -> complete(args[1], List.of("summary"));
-                case "connections" -> complete(args[1], List.of("unhealthy", "plugin", "type"));
+                case "connections" -> complete(args[1], List.of("unhealthy", "plugin", "type", "page"));
                 case "health" -> complete(args[1], List.of("check"));
                 default -> List.of();
             };
@@ -113,7 +113,14 @@ public final class DataProviderAdminCommand {
             }
             if ("type".equalsIgnoreCase(args[1])) {
                 return complete(args[2], List.of(DatabaseType.values()).stream()
-                        .map(type -> type.name().toLowerCase(Locale.ROOT)).toList());
+                        .map(DatabaseType::configKey).toList());
+            }
+            if ("page".equalsIgnoreCase(args[1])) {
+                try {
+                    return complete(args[2], pageSuggestions(handler.snapshot().connections().size()));
+                } catch (RuntimeException ignored) {
+                    return List.of();
+                }
             }
         }
         return List.of();
@@ -144,8 +151,13 @@ public final class DataProviderAdminCommand {
             DatabaseType type = parseType(args[2]);
             if (type == null) source.sendMessage(error("Unknown database type. Use Tab for valid values."));
             else sendFilteredConnections(source, connection -> connection.type() == type);
+        } else if (args.length == 3 && "page".equalsIgnoreCase(args[1])) {
+            Integer page = parsePage(args[2]);
+            if (page == null) source.sendMessage(error("Page must be a positive whole number."));
+            else sendConnectionPage(source, page);
         } else {
-            source.sendMessage(note("Usage: " + commandRoot + " connections [unhealthy|plugin <name>|type <type>]"));
+            source.sendMessage(note("Usage: " + commandRoot
+                    + " connections [unhealthy|plugin <name>|type <type>|page <number>]"));
         }
     }
 
@@ -207,12 +219,26 @@ public final class DataProviderAdminCommand {
 
     private void sendHelp(Source source) {
         header(source, "DataProvider administration");
-        source.sendMessage(command(commandRoot + " status [summary]", "live connection and backend overview"));
-        source.sendMessage(command(commandRoot + " diagnostics", "runtime, circuit, and recovery diagnostics"));
-        source.sendMessage(command(commandRoot + " connections [unhealthy|plugin <name>|type <type>]", "inspect logical connections"));
-        source.sendMessage(command(commandRoot + " health [check]", "cached health or force a remote health probe"));
-        source.sendMessage(command(commandRoot + " config", "configured backend switches and ORM schema mode"));
-        source.sendMessage(command(commandRoot + " reload", "reload validated configuration files"));
+        boolean anyVisible = false;
+        if (source.hasPermission(STATUS_PERMISSION)) {
+            anyVisible = true;
+            source.sendMessage(command(commandRoot + " status [summary]", "live connection and backend overview"));
+            source.sendMessage(command(commandRoot + " diagnostics", "runtime, circuit, and recovery diagnostics"));
+            source.sendMessage(command(commandRoot
+                    + " connections [unhealthy|plugin <name>|type <type>|page <number>]", "inspect logical connections"));
+            source.sendMessage(command(commandRoot + " health [check]", "cached health or force a remote health probe"));
+        }
+        if (source.hasPermission(CONFIG_PERMISSION)) {
+            anyVisible = true;
+            source.sendMessage(command(commandRoot + " config", "configured backend switches and ORM schema mode"));
+        }
+        if (source.hasPermission(RELOAD_PERMISSION)) {
+            anyVisible = true;
+            source.sendMessage(command(commandRoot + " reload", "reload validated configuration files"));
+        }
+        if (!anyVisible) {
+            source.sendMessage(note("No administrative subcommands are available to this sender."));
+        }
         source.sendMessage(note("Permissions: status=" + STATUS_PERMISSION + ", config=" + CONFIG_PERMISSION
                 + ", reload=" + RELOAD_PERMISSION));
     }
@@ -232,7 +258,9 @@ public final class DataProviderAdminCommand {
                     + DatabaseType.values().length + " backend type(s) enabled", ACCENT));
             source.sendMessage(field("ORM schema", snapshot.ormSchemaMode(), TEXT));
             if (view == SnapshotView.STATUS || view == SnapshotView.SUMMARY) {
-                if (unhealthy > 0) source.sendMessage(note("Use /dp health check to refresh probes, or /dp connections unhealthy for details."));
+                if (unhealthy > 0) source.sendMessage(note("Use " + commandRoot
+                        + " health check to refresh probes, or " + commandRoot
+                        + " connections unhealthy for details."));
             } else if (view == SnapshotView.HEALTH) {
                 sendConnectionRows(source, connections.stream().filter(connection -> !connection.healthy()).toList(), true);
             } else {
@@ -240,6 +268,28 @@ public final class DataProviderAdminCommand {
             }
         } catch (RuntimeException failure) {
             source.sendMessage(error("Unable to collect " + title.toLowerCase(Locale.ROOT) + ": " + describeFailure(failure)));
+        }
+    }
+
+    private void sendConnectionPage(Source source, int page) {
+        try {
+            List<Connection> connections = handler.snapshot().connections().stream().sorted(CONNECTION_COMPARATOR).toList();
+            header(source, "Active connections");
+            if (connections.isEmpty()) {
+                source.sendMessage(note("No active connections are registered."));
+                return;
+            }
+            int pageCount = pageCount(connections.size());
+            if (page > pageCount) {
+                source.sendMessage(note("Page " + page + " does not exist. Available pages: 1-" + pageCount + "."));
+                return;
+            }
+            int fromIndex = (page - 1) * MAX_ROWS_TO_DISPLAY;
+            int toIndex = Math.min(connections.size(), fromIndex + MAX_ROWS_TO_DISPLAY);
+            source.sendMessage(field("Page", page + "/" + pageCount + " · " + connections.size() + " connection(s)", ACCENT));
+            connections.subList(fromIndex, toIndex).forEach(connection -> sendConnectionRow(source, connection, true));
+        } catch (RuntimeException failure) {
+            source.sendMessage(error("Unable to inspect connection page: " + describeFailure(failure)));
         }
     }
 
@@ -264,19 +314,25 @@ public final class DataProviderAdminCommand {
             return;
         }
         for (Connection connection : connections.subList(0, Math.min(connections.size(), MAX_ROWS_TO_DISPLAY))) {
-            ConnectionHealthSnapshot health = connection.health();
-            source.sendMessage(field(connection.pluginName() + " / " + connection.identifier(), connection.type().name()
-                    + " · refs=" + connection.references() + " · " + health.remoteHealth() + " · " + health.runtimeHealth(), healthColor(health)));
-            if (detailed) {
-                source.sendMessage(field("  resilience", "local=" + health.localState() + " · circuit=" + health.circuit()
-                        + " · failures=" + health.consecutiveFailures() + " · reconnects=" + health.reconnectAttempts()
-                        + " · checked " + formatAge(health.checkedAt()), MUTED));
-                if (health.lastFailureSummary() != null && !health.lastFailureSummary().isBlank()) {
-                    source.sendMessage(field("  last failure", health.lastFailureSummary(), ERROR));
-                }
+            sendConnectionRow(source, connection, detailed);
+        }
+        if (connections.size() > MAX_ROWS_TO_DISPLAY) {
+            source.sendMessage(note("… and " + (connections.size() - MAX_ROWS_TO_DISPLAY) + " more."));
+        }
+    }
+
+    private static void sendConnectionRow(Source source, Connection connection, boolean detailed) {
+        ConnectionHealthSnapshot health = connection.health();
+        source.sendMessage(field(connection.pluginName() + " / " + connection.identifier(), connection.type().name()
+                + " · refs=" + connection.references() + " · " + health.remoteHealth() + " · " + health.runtimeHealth(), healthColor(health)));
+        if (detailed) {
+            source.sendMessage(field("  resilience", "local=" + health.localState() + " · circuit=" + health.circuit()
+                    + " · failures=" + health.consecutiveFailures() + " · reconnects=" + health.reconnectAttempts()
+                    + " · checked " + formatAge(health.checkedAt()), MUTED));
+            if (health.lastFailureSummary() != null && !health.lastFailureSummary().isBlank()) {
+                source.sendMessage(field("  last failure", health.lastFailureSummary(), ERROR));
             }
         }
-        if (connections.size() > MAX_ROWS_TO_DISPLAY) source.sendMessage(note("… and " + (connections.size() - MAX_ROWS_TO_DISPLAY) + " more."));
     }
 
     private static List<String> visibleRootCommands(Source source) {
@@ -299,6 +355,19 @@ public final class DataProviderAdminCommand {
         return candidates.stream().filter(candidate -> candidate.regionMatches(true, 0, prefix, 0, prefix.length())).toList();
     }
 
+    private static List<String> pageSuggestions(int connectionCount) {
+        int pages = pageCount(connectionCount);
+        List<String> suggestions = new ArrayList<>(pages);
+        for (int page = 1; page <= pages; page++) {
+            suggestions.add(Integer.toString(page));
+        }
+        return suggestions;
+    }
+
+    private static int pageCount(int itemCount) {
+        return Math.max(1, Math.ceilDiv(itemCount, MAX_ROWS_TO_DISPLAY));
+    }
+
     private static boolean requirePermission(Source source, String permission) {
         if (source.hasPermission(permission)) return true;
         source.sendMessage(error("Missing permission: " + permission));
@@ -306,9 +375,14 @@ public final class DataProviderAdminCommand {
     }
 
     private static DatabaseType parseType(String value) {
+        return DatabaseType.parse(value).orElse(null);
+    }
+
+    private static Integer parsePage(String value) {
         try {
-            return DatabaseType.valueOf(value.toUpperCase(Locale.ROOT).replace('-', '_'));
-        } catch (IllegalArgumentException exception) {
+            int page = Integer.parseInt(value);
+            return page > 0 ? page : null;
+        } catch (NumberFormatException exception) {
             return null;
         }
     }
@@ -327,7 +401,12 @@ public final class DataProviderAdminCommand {
     private static String formatAge(Instant checkedAt) {
         if (checkedAt == null) return "never";
         long seconds = Math.max(0L, Duration.between(checkedAt, Instant.now()).toSeconds());
-        return seconds < 60 ? seconds + "s ago" : (seconds / 60) + "m ago";
+        if (seconds < 60) return seconds + "s ago";
+        long minutes = seconds / 60;
+        if (minutes < 60) return minutes + "m ago";
+        long hours = minutes / 60;
+        if (hours < 24) return hours + "h ago";
+        return (hours / 24) + "d ago";
     }
 
     private static String describeFailure(Throwable failure) {

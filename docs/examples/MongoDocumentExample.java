@@ -6,6 +6,7 @@ import nl.hauntedmc.dataprovider.database.document.model.DocumentQuery;
 import nl.hauntedmc.dataprovider.database.document.model.DocumentUpdate;
 
 import java.util.Map;
+import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 
 /**
@@ -29,8 +30,8 @@ public final class MongoDocumentExample {
         ));
     }
 
-    public CompletableFuture<Map<String, Object>> findProfile(String uuid) {
-        return dataAccess().findOne("profiles", new DocumentQuery().eq("uuid", uuid));
+    public CompletableFuture<Optional<Map<String, Object>>> findProfile(String uuid) {
+        return dataAccess().findOneOptional("profiles", new DocumentQuery().eq("uuid", uuid));
     }
 
     public CompletableFuture<Void> updateProfile(String uuid, String name, int level) {

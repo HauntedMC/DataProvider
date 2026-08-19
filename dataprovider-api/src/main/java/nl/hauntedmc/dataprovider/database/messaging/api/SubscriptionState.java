@@ -7,5 +7,15 @@ public enum SubscriptionState {
     RECONNECTING,
     CLOSING,
     CLOSED,
-    FAILED
+    FAILED;
+
+    /** Whether the logical subscription is currently delivering messages. */
+    public boolean isActive() {
+        return this == ACTIVE;
+    }
+
+    /** Whether no further automatic lifecycle transition is expected. */
+    public boolean isTerminal() {
+        return this == CLOSED || this == FAILED;
+    }
 }

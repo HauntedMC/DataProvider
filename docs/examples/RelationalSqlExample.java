@@ -3,6 +3,7 @@ import nl.hauntedmc.dataprovider.database.DatabaseType;
 import nl.hauntedmc.dataprovider.database.relational.RelationalDataAccess;
 import nl.hauntedmc.dataprovider.database.relational.RelationalDatabaseProvider;
 
+import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 
 /**
@@ -30,6 +31,14 @@ public final class RelationalSqlExample {
 
     public CompletableFuture<String> loadPlayerName(String uuid) {
         return dataAccess().queryForSingleValueAs(
+                String.class,
+                "SELECT name FROM player_profile WHERE uuid = ?",
+                uuid
+        );
+    }
+
+    public CompletableFuture<Optional<String>> findPlayerName(String uuid) {
+        return dataAccess().queryForSingleValueOptionalAs(
                 String.class,
                 "SELECT name FROM player_profile WHERE uuid = ?",
                 uuid

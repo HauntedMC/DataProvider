@@ -18,9 +18,16 @@ public interface MessagingDatabaseProvider extends DatabaseProvider {
     @Override
     MessagingDataAccess getDataAccess();
 
+    /** Reports whether this provider exposes durable acknowledged messaging. */
+    default boolean supportsDurableMessaging() {
+        return false;
+    }
+
     /**
      * Durable Streams-backed access for authoritative events. Pub/Sub remains available from
      * {@link #getDataAccess()} for disposable notifications.
+     *
+     * @throws UnsupportedOperationException when {@link #supportsDurableMessaging()} is false
      */
     default DurableMessagingDataAccess getDurableDataAccess() {
         throw new UnsupportedOperationException("This messaging provider does not support durable messaging");

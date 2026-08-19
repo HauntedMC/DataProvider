@@ -17,6 +17,16 @@ public interface SchemaManager {
 
     CompletableFuture<Void> addIndex(String tableName, String column, boolean unique);
 
+    /** Adds a non-unique index without an ambiguous boolean argument. */
+    default CompletableFuture<Void> addIndex(String tableName, String column) {
+        return addIndex(tableName, column, false);
+    }
+
+    /** Adds a unique index without an ambiguous boolean argument. */
+    default CompletableFuture<Void> addUniqueIndex(String tableName, String column) {
+        return addIndex(tableName, column, true);
+    }
+
     CompletableFuture<Void> removeIndex(String tableName, String indexName);
 
     CompletableFuture<Void> addForeignKey(String table, String column, String referenceTable, String referenceColumn);

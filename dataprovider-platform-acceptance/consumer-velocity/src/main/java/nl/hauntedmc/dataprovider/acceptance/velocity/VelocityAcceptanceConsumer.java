@@ -91,7 +91,7 @@ public final class VelocityAcceptanceConsumer {
         if (!(plugin instanceof DataProviderApiSupplier supplier)) {
             throw new IllegalStateException("DataProvider plugin does not expose DataProviderApiSupplier.");
         }
-        return supplier.dataProviderApi().forPlugin(this);
+        return supplier.dataProviderApiFor(this);
     }
 
     private static KeyValueDatabaseProvider runAcceptance(DataProviderAPI api) throws Exception {
@@ -142,6 +142,8 @@ public final class VelocityAcceptanceConsumer {
                 CONNECTION,
                 MessagingDatabaseProvider.class
         );
+        require(messaging.supportsDurableMessaging(),
+                "Bound Redis messaging provider did not advertise durable messaging support.");
         CountDownLatch received = new CountDownLatch(1);
         Subscription subscription = messaging.getDataAccess().subscribe(
                 CHANNEL, "dataprovider.platform.acceptance", AcceptanceMessage.class, message -> {
@@ -169,7 +171,7 @@ public final class VelocityAcceptanceConsumer {
     private static void awaitActiveSubscription(Subscription subscription) throws InterruptedException {
         long deadline = System.nanoTime() + OPERATION_TIMEOUT.toNanos();
         while (System.nanoTime() < deadline) {
-            if (subscription.state() == SubscriptionState.ACTIVE) {
+            if (subscription.isActive()) {
                 return;
             }
             Thread.sleep(25L);

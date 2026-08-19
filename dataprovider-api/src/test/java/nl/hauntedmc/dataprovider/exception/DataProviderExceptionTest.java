@@ -10,6 +10,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class DataProviderExceptionTest {
 
@@ -35,9 +36,20 @@ class DataProviderExceptionTest {
         assertEquals(DataProviderErrorCode.REGISTRATION_FAILED, exception.errorCode());
         assertFalse(exception.retryable());
         assertEquals("23000", exception.diagnostics().get("sqlState"));
+        assertEquals("23000", exception.diagnostic("sqlState").orElseThrow());
+        assertTrue(exception.diagnostic("missing").isEmpty());
         assertThrows(UnsupportedOperationException.class,
                 () -> exception.diagnostics().put("other", "value"));
         assertNotNull(exception.diagnosticId());
+
+        DataProviderFailureContext reconstructed = exception.failureContext();
+        assertEquals(exception.backendType(), reconstructed.backendType());
+        assertEquals(exception.connectionIdentifier(), reconstructed.connectionIdentifier());
+        assertEquals(exception.operationName(), reconstructed.operationName());
+        assertEquals(exception.retryAdvice(), reconstructed.retryAdvice());
+        assertEquals(exception.executionOutcome(), reconstructed.executionOutcome());
+        assertEquals(exception.diagnostics(), reconstructed.diagnostics());
+        assertEquals(exception.diagnosticId(), reconstructed.diagnosticId());
     }
 
     @Test

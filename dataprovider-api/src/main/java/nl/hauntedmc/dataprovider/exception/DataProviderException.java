@@ -6,6 +6,7 @@ import java.util.LinkedHashMap;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.UUID;
 import java.util.regex.Pattern;
 
@@ -104,8 +105,26 @@ public abstract class DataProviderException extends RuntimeException {
         return diagnostics;
     }
 
+    /** Looks up one safe diagnostic value without exposing a nullable map lookup. */
+    public final Optional<String> diagnostic(String key) {
+        return Optional.ofNullable(diagnostics.get(Objects.requireNonNull(key, "Diagnostic key cannot be null.")));
+    }
+
     public final String diagnosticId() {
         return diagnosticId;
+    }
+
+    /** Reconstructs the normalized safe failure context represented by this exception. */
+    public final DataProviderFailureContext failureContext() {
+        return new DataProviderFailureContext(
+                backendType,
+                connectionIdentifier,
+                operationName,
+                retryAdvice,
+                executionOutcome,
+                diagnostics,
+                diagnosticId
+        );
     }
 
     private static Map<String, String> sanitizeDiagnostics(Map<String, String> source) {

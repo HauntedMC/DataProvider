@@ -6,6 +6,7 @@ import java.time.Duration;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 
@@ -17,6 +18,11 @@ public interface KeyValueDataAccess extends DataAccess {
     CompletableFuture<Void> setKey(String key, String value);
 
     CompletableFuture<String> getKey(String key);
+
+    /** Returns the stored value as an {@link Optional}, avoiding nullable cache-miss handling. */
+    default CompletableFuture<Optional<String>> getKeyOptional(String key) {
+        return getKey(key).thenApply(Optional::ofNullable);
+    }
 
     /**
      * Returns the stored value or the supplied fallback when the key does not exist.

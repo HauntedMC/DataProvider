@@ -18,9 +18,9 @@ import java.util.concurrent.CompletableFuture;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.Mockito.atLeast;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
-import static org.mockito.Mockito.atLeast;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -52,6 +52,7 @@ class DataProviderBrigadierCommandTest {
         assertEquals(1, dispatcher.execute("dataproviderproxy diagnostics", source));
         assertEquals(1, dispatcher.execute("dataproviderproxy connections unhealthy", source));
         assertEquals(1, dispatcher.execute("dataproviderproxy connections type mysql", source));
+        assertEquals(1, dispatcher.execute("dataproviderproxy connections page 1", source));
         assertEquals(1, dispatcher.execute("dataproviderproxy health check", source));
         assertEquals(1, dispatcher.execute("dataproviderproxy config", source));
         assertEquals(1, dispatcher.execute("dataproviderproxy reload", source));
@@ -60,7 +61,7 @@ class DataProviderBrigadierCommandTest {
     }
 
     @Test
-    void commandTreeOffersAdminSubcommandsAndBackendTypes() throws Exception {
+    void commandTreeOffersAdminSubcommandsBackendTypesAndConnectionPages() throws Exception {
         CommandSource source = source(true, false, false);
         CommandDispatcher<CommandSource> dispatcher = dispatcher(handler());
 
@@ -69,9 +70,13 @@ class DataProviderBrigadierCommandTest {
         List<String> types = dispatcher.getCompletionSuggestions(
                         dispatcher.parse("dataproviderproxy connections type m", source)
                 ).get().getList().stream().map(suggestion -> suggestion.getText()).toList();
+        List<String> pages = dispatcher.getCompletionSuggestions(
+                        dispatcher.parse("dataproviderproxy connections page ", source)
+                ).get().getList().stream().map(suggestion -> suggestion.getText()).toList();
 
         assertTrue(root.containsAll(List.of("help", "status", "diagnostics", "connections", "health")));
         assertTrue(types.contains("mysql"));
+        assertEquals(List.of("1"), pages);
         assertThrows(CommandSyntaxException.class, () -> dispatcher.execute("dataproviderproxy reload", source));
     }
 

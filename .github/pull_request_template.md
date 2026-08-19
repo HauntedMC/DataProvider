@@ -1,20 +1,28 @@
 ## What Changed
 
-Describe the change in a few sentences.
+Describe the change in a few sentences. Keep the scope focused and call out public API, configuration, runtime, or packaging changes explicitly.
 
 ## Why
 
-Why is this needed?
+Why is this needed, and what developer/operator problem does it solve?
 
 ## Validation
 
-- [ ] `mvn -q -DskipTests compile`
-- [ ] `mvn -q test` (or explain why skipped)
+- [ ] `./mvnw -q -DskipTests compile`
+- [ ] `./mvnw -q test`
+- [ ] `./mvnw -B -ntp -Pintegration-tests verify` (backend/runtime changes, or explain why not applicable)
+- [ ] `./mvnw -B -ntp -Pplatform-acceptance verify` (platform/bundle changes, or explain why not applicable)
 - [ ] Manual testing done (if applicable)
+
+## Compatibility
+
+- [ ] Existing public API signatures remain compatible, or migration notes are included.
+- [ ] Existing configuration remains valid, or migration/default reconciliation is documented.
+- [ ] Storage/wire formats remain compatible, or the compatibility impact is documented.
 
 ## Related Issues
 
-List related issues (example: `Closes #123`).
+List related issues (example: `Closes #123`), or write `None`.
 
 ## Notes
 

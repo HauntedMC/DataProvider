@@ -4,6 +4,7 @@ import nl.hauntedmc.dataprovider.database.keyvalue.KeyValueDataAccess;
 import nl.hauntedmc.dataprovider.database.keyvalue.KeyValueDatabaseProvider;
 
 import java.time.Duration;
+import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 
 /**
@@ -28,6 +29,10 @@ public final class RedisKeyValueExample {
 
     public CompletableFuture<String> loadPlayerLanguage(String playerUuid) {
         return dataAccess().getKeyOrDefault("player:lang:" + playerUuid, "en");
+    }
+
+    public CompletableFuture<Optional<String>> findCachedPlayerLanguage(String playerUuid) {
+        return dataAccess().getKeyOptional("player:lang:" + playerUuid);
     }
 
     public void onDisable(DataProviderAPI api) {

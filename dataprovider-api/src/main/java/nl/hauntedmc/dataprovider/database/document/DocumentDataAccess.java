@@ -7,6 +7,7 @@ import nl.hauntedmc.dataprovider.database.document.model.DocumentUpdateOptions;
 
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 
 /**
@@ -22,6 +23,14 @@ public interface DocumentDataAccess extends DataAccess {
     CompletableFuture<Void> insertOne(String collection, Map<String, Object> document);
 
     CompletableFuture<Map<String, Object>> findOne(String collection, DocumentQuery query);
+
+    /** Returns the first matching document as an {@link Optional}. */
+    default CompletableFuture<Optional<Map<String, Object>>> findOneOptional(
+            String collection,
+            DocumentQuery query
+    ) {
+        return findOne(collection, query).thenApply(Optional::ofNullable);
+    }
 
     CompletableFuture<List<Map<String, Object>>> findMany(String collection, DocumentQuery query);
 

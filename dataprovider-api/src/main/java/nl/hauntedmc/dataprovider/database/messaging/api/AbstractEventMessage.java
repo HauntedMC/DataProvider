@@ -1,5 +1,6 @@
 package nl.hauntedmc.dataprovider.database.messaging.api;
 
+import java.time.Instant;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.regex.Pattern;
 
@@ -32,6 +33,11 @@ public abstract class AbstractEventMessage implements EventMessage {
     /** Epoch millis when this object was created. */
     public long getTimestamp() {
         return timestamp;
+    }
+
+    /** Creation timestamp as a Java time value. */
+    public Instant getTimestampInstant() {
+        return Instant.ofEpochMilli(timestamp);
     }
 
     private static long monotonicEpochMillis() {

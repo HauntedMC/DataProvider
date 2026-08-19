@@ -83,7 +83,7 @@ class DatabaseProviderInterfaceContractTest {
     }
 
     @Test
-    void messagingProviderDoesNotExposeDataSource() {
+    void messagingProviderAdvertisesUnsupportedOptionalCapabilitiesByDefault() {
         MessagingDatabaseProvider provider = new MessagingDatabaseProvider() {
             @Override
             public boolean isConnected() {
@@ -97,6 +97,8 @@ class DatabaseProviderInterfaceContractTest {
         };
 
         assertFalse(provider.supportsDataSource());
+        assertFalse(provider.supportsDurableMessaging());
         assertThrows(UnsupportedOperationException.class, provider::getDataSource);
+        assertThrows(UnsupportedOperationException.class, provider::getDurableDataAccess);
     }
 }

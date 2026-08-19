@@ -73,6 +73,21 @@ public final class MessageRegistry {
         types.clear();
     }
 
+    /** Whether a dynamic message type is currently registered. */
+    public boolean isRegistered(String type) {
+        return types.containsKey(validateType(type));
+    }
+
+    /** Number of currently registered dynamic message types. */
+    public int registrationCount() {
+        return types.size();
+    }
+
+    /** Returns an immutable snapshot of the current dynamic type registry. */
+    public Map<String, Class<? extends EventMessage>> registeredTypes() {
+        return Map.copyOf(types);
+    }
+
     /** Serialize any EventMessage to JSON. */
     public String toJson(EventMessage msg) {
         Objects.requireNonNull(msg, "Message cannot be null.");

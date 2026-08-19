@@ -29,6 +29,7 @@ class DataAccessConvenienceTest {
         AtomicInteger ttlSeconds = new AtomicInteger();
         KeyValueDataAccess access = new StubKeyValueDataAccess(ttlSeconds);
 
+        assertTrue(access.getKeyOptional("missing").join().isEmpty());
         assertEquals("fallback", access.getKeyOrDefault("missing", "fallback").join());
         access.setKeyWithExpiry("key", "value", Duration.ofMillis(1)).join();
         assertEquals(1, ttlSeconds.get());
@@ -46,23 +47,34 @@ class DataAccessConvenienceTest {
     }
 
     @Test
-    void relationalTypedResultsDelegateWithoutChangingExistingMethods() {
+    void relationalTypedAndOptionalResultsDelegateWithoutChangingExistingMethods() {
         RelationalDataAccess access = new StubRelationalDataAccess();
 
         assertEquals(42L, access.queryForSingleValueAs(Long.class, "SELECT 42").join());
+        assertEquals(42L, access.queryForSingleValueOptionalAs(Long.class, "SELECT 42").join().orElseThrow());
+        assertTrue(access.queryForSingleValueOptionalAs(Long.class, "missing").join().isEmpty());
+        assertTrue(access.queryForSingleOptional("missing").join().isEmpty());
         assertEquals(7L, access.executeInsertAs(Long.class, "INSERT INTO example VALUES (?)", "value").join());
+        assertEquals(7L, access.executeInsertOptionalAs(Long.class, "INSERT INTO example VALUES (?)", "value")
+                .join().orElseThrow());
+        assertTrue(access.executeInsertOptionalAs(Long.class, "missing").join().isEmpty());
         assertThrows(NullPointerException.class,
                 () -> access.queryForSingleValueAs(null, "SELECT 42"));
         assertThrows(NullPointerException.class,
+                () -> access.queryForSingleValueOptionalAs(null, "SELECT 42"));
+        assertThrows(NullPointerException.class,
                 () -> access.executeInsertAs(null, "INSERT INTO example VALUES (1)"));
+        assertThrows(NullPointerException.class,
+                () -> access.executeInsertOptionalAs(null, "INSERT INTO example VALUES (1)"));
     }
 
     @Test
-    void documentConveniencesSupplyDefaultOptions() {
+    void documentConveniencesSupplyDefaultOptionsAndOptionalReads() {
         RecordingDocumentDataAccess access = new RecordingDocumentDataAccess();
         DocumentQuery query = new DocumentQuery().eq("id", 1);
         DocumentUpdate update = new DocumentUpdate().set("name", "example");
 
+        assertTrue(access.findOneOptional("players", query).join().isEmpty());
         access.updateOne("players", query, update).join();
         assertFalse(access.lastOptions.get().isUpsert());
         access.updateMany("players", query, update).join();
@@ -125,13 +137,13 @@ class DataAccessConvenienceTest {
             return CompletableFuture.completedFuture(null);
         }
         @Override public CompletableFuture<Map<String, Object>> queryForSingle(String query, Object... params) {
-            return CompletableFuture.completedFuture(Map.of());
+            return CompletableFuture.completedFuture("missing".equals(query) ? null : Map.of("value", 42L));
         }
         @Override public CompletableFuture<List<Map<String, Object>>> queryForList(String query, Object... params) {
             return CompletableFuture.completedFuture(List.of());
         }
         @Override public CompletableFuture<Object> queryForSingleValue(String query, Object... params) {
-            return CompletableFuture.completedFuture(42L);
+            return CompletableFuture.completedFuture("missing".equals(query) ? null : 42L);
         }
         @Override public CompletableFuture<Void> executeBatchUpdate(String query, List<Object[]> batchParams) {
             return CompletableFuture.completedFuture(null);
@@ -140,7 +152,7 @@ class DataAccessConvenienceTest {
             return CompletableFuture.failedFuture(new UnsupportedOperationException("Not used."));
         }
         @Override public CompletableFuture<Object> executeInsert(String query, Object... params) {
-            return CompletableFuture.completedFuture(7L);
+            return CompletableFuture.completedFuture("missing".equals(query) ? null : 7L);
         }
     }
 
@@ -152,7 +164,7 @@ class DataAccessConvenienceTest {
             return CompletableFuture.completedFuture(null);
         }
         @Override public CompletableFuture<Map<String, Object>> findOne(String collection, DocumentQuery query) {
-            return CompletableFuture.completedFuture(Map.of());
+            return CompletableFuture.completedFuture(null);
         }
         @Override public CompletableFuture<List<Map<String, Object>>> findMany(String collection, DocumentQuery query) {
             return CompletableFuture.completedFuture(List.of());

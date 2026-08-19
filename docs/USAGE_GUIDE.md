@@ -5,14 +5,13 @@
 Velocity:
 
 ```java
-DataProviderAPI api = proxyServer.getPluginManager()
+DataProviderApiSupplier supplier = proxyServer.getPluginManager()
         .getPlugin("dataprovider")
         .flatMap(container -> container.getInstance()
                 .filter(DataProviderApiSupplier.class::isInstance)
-                .map(DataProviderApiSupplier.class::cast)
-                .map(DataProviderApiSupplier::dataProviderApi))
-        .orElseThrow(() -> new IllegalStateException("DataProvider is unavailable."))
-        .forPlugin(this);
+                .map(DataProviderApiSupplier.class::cast))
+        .orElseThrow(() -> new IllegalStateException("DataProvider is unavailable."));
+DataProviderAPI api = supplier.dataProviderApiFor(this);
 ```
 
 Bukkit/Paper:
@@ -43,10 +42,10 @@ Treat `DataProviderAPI` as runtime-scoped, not permanent.
 `DataProvider` ships with runtime diagnostics commands for Bukkit/Paper and Velocity. The root is `/dataprovider` on
 Paper and `/dataproviderproxy` on Velocity:
 
-- `<root> help` lists the available views and permissions.
+- `<root> help` lists only views the sender has permission to use.
 - `<root> status [summary]` displays cached connection, health, consumer, backend, and ORM state without blocking the server thread.
 - `<root> diagnostics` adds lifecycle, circuit, failure, reconnect, and probe-age detail for each connection.
-- `<root> connections [unhealthy|plugin <name>|type <databaseType>]` filters registered logical connections.
+- `<root> connections [unhealthy|plugin <name>|type <databaseType>|page <number>]` filters or pages through registered logical connections.
 - `<root> health [check]` displays connections requiring attention; `check` runs remote probes asynchronously and sends the refreshed result afterwards.
 - `<root> config` displays current runtime configuration state.
 - `<root> reload` validates and atomically reloads the configuration.
@@ -77,6 +76,8 @@ The original two-argument method remains available when generic `DatabaseProvide
 
 For multiple connections, use explicit purpose-oriented identifiers such as `rw`, `ro`, or `analytics` and keep them aligned with the configuration sections.
 
+`DatabaseType.parse(...)` accepts case-insensitive names and either `redis_messaging` or `redis-messaging` when user/config input must be converted safely. `DatabaseType.configKey()` exposes the stable lower-case configuration key.
+
 ## 3. Use the provider safely
 
 `DatabaseProvider` is a read-only handle. Connection lifecycle stays owned by `DataProviderAPI`,
@@ -97,6 +98,49 @@ Generic code can check `DatabaseProvider.supportsDataSource()` before requesting
 Relational providers return `true`; non-relational providers retain the existing
 `UnsupportedOperationException` behavior from `getDataSource()`.
 
+For messaging, capability-check durable delivery instead of probing the accessor:
+
+```java
+if (provider.supportsDurableMessaging()) {
+    DurableMessagingDataAccess durable = provider.getDurableDataAccess();
+}
+```
+
+The Redis messaging provider advertises durable support independently of its current connection state.
+
+### 3.1 Optional reads
+
+The original nullable read methods remain available for compatibility. New code can avoid null handling with the Optional helpers:
+
+```java
+Optional<String> cached = redis.getDataAccess().getKeyOptional("player:language:" + uuid).join();
+Optional<Map<String, Object>> profile = mongo.getDataAccess()
+        .findOneOptional("profiles", new DocumentQuery().eq("uuid", uuid))
+        .join();
+Optional<Long> count = mysql.getDataAccess()
+        .queryForSingleValueOptionalAs(Long.class, "SELECT COUNT(*) FROM player_entity")
+        .join();
+```
+
+Relational access also provides `queryForSingleOptional(...)` and `executeInsertOptionalAs(...)` when an absent row or generated key is expected.
+
+### 3.2 Messaging lifecycle diagnostics
+
+`SubscriptionState` exposes `isActive()` and `isTerminal()`, and both ephemeral and durable subscription handles provide direct lifecycle predicates. Dynamic message registries expose immutable registration snapshots through `registeredTypes()` plus `isRegistered(...)` and `registrationCount()`.
+
+`PublishedDurableEvent.wasDeduplicated()` distinguishes a reused idempotent publish result from a newly appended stream entry.
+
+### 3.3 Schema conveniences
+
+The original `SchemaManager.addIndex(table, column, unique)` method remains available. Prefer the intent-named helpers in new code:
+
+```java
+schema.addIndex("players", "name");
+schema.addUniqueIndex("players", "uuid");
+```
+
+This avoids boolean arguments whose meaning is unclear at call sites.
+
 ## 4. Release connections
 
 Release a specific connection:
@@ -116,6 +160,8 @@ For full plugin/software shutdown when registrations may come from multiple clas
 ```java
 api.unregisterAllDatabasesForPlugin();
 ```
+
+For an explicit `DataProviderScope`, `isOpen()`, `isClosing()`, and `isClosed()` provide readable lifecycle checks without comparing enum values directly.
 
 Optional advanced scoped ownership is documented in `docs/SCOPED_LIFECYCLE.md`.
 
