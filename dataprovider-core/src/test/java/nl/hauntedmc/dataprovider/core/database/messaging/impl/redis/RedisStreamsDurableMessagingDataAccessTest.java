@@ -6,13 +6,19 @@ import nl.hauntedmc.dataprovider.core.testutil.RecordingLoggerAdapter;
 import nl.hauntedmc.dataprovider.database.messaging.api.EventMessage;
 import nl.hauntedmc.dataprovider.database.messaging.api.MessageRegistry;
 import nl.hauntedmc.dataprovider.database.messaging.api.SubscriptionState;
+import org.apache.commons.pool2.BasePooledObjectFactory;
+import org.apache.commons.pool2.PooledObject;
+import org.apache.commons.pool2.impl.DefaultPooledObject;
 import org.junit.jupiter.api.Test;
 import redis.clients.jedis.Connection;
+import redis.clients.jedis.ConnectionPoolConfig;
+import redis.clients.jedis.DefaultJedisClientConfig;
 import redis.clients.jedis.RedisClient;
-import redis.clients.jedis.StreamEntryID;
+import redis.clients.jedis.RedisProtocol;
 import redis.clients.jedis.exceptions.JedisAccessControlException;
 import redis.clients.jedis.exceptions.JedisDataException;
-import redis.clients.jedis.util.Pool;
+import redis.clients.jedis.executors.CommandExecutor;
+import redis.clients.jedis.providers.PooledConnectionProvider;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -28,21 +34,20 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.anyString;
-import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.doAnswer;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.when;
 
 class RedisStreamsDurableMessagingDataAccessTest {
 
     @Test
     void authenticationFailureIsTerminalAndCompletesTheHandleExceptionally() throws Exception {
-        RedisClient client = client();
-        when(client.xgroupCreate(anyString(), anyString(), any(StreamEntryID.class), eq(true)))
-                .thenThrow(new JedisAccessControlException("WRONGPASS invalid username-password pair"));
+        TestClient testClient = client();
+        doThrow(new JedisAccessControlException("WRONGPASS invalid username-password pair"))
+                .when(testClient.executor()).executeCommand(any());
         CountingExecution execution = new CountingExecution();
         RecordingLoggerAdapter logger = new RecordingLoggerAdapter();
-        RedisStreamsDurableMessagingDataAccess access = access(client, execution, logger, 20L, 20L, 0.0D, 0);
+        RedisStreamsDurableMessagingDataAccess access = access(testClient.client(), execution, logger, 20L, 20L, 0.0D, 0);
 
         var subscription = access.consume("terminal-stream", "terminal-group", "terminal-consumer",
                 "test.terminal", TestEvent.class, ignored -> { });
@@ -54,21 +59,22 @@ class RedisStreamsDurableMessagingDataAccessTest {
         assertEquals(1, execution.releasedSubscriptions.get());
         assertEquals(0, logger.warnMessages().size());
         assertEquals(1, logger.errorMessages().size());
+        testClient.close();
     }
 
     @Test
     void transientOutageUsesBackoffAndRateLimitsWarnings() throws Exception {
-        RedisClient client = client();
+        TestClient testClient = client();
         List<Long> attempts = new ArrayList<>();
-        when(client.xgroupCreate(anyString(), anyString(), any(StreamEntryID.class), eq(true))).thenAnswer(ignored -> {
+        doAnswer(ignored -> {
             synchronized (attempts) {
                 attempts.add(System.nanoTime());
             }
             throw new IllegalStateException("Redis durable messaging client is temporarily unavailable.");
-        });
+        }).when(testClient.executor()).executeCommand(any());
         CountingExecution execution = new CountingExecution();
         RecordingLoggerAdapter logger = new RecordingLoggerAdapter();
-        RedisStreamsDurableMessagingDataAccess access = access(client, execution, logger, 30L, 30L, 0.0D, 0);
+        RedisStreamsDurableMessagingDataAccess access = access(testClient.client(), execution, logger, 30L, 30L, 0.0D, 0);
 
         var subscription = access.consume("outage-stream", "outage-group", "outage-consumer",
                 "test.outage", TestEvent.class, ignored -> { });
@@ -91,16 +97,17 @@ class RedisStreamsDurableMessagingDataAccessTest {
         subscription.closeAsync().get(1, TimeUnit.SECONDS);
         assertEquals(SubscriptionState.CLOSED, subscription.state());
         assertEquals(1, execution.releasedSubscriptions.get());
+        testClient.close();
     }
 
     @Test
     void deterministicRedisCommandFailureIsTerminal() throws Exception {
-        RedisClient client = client();
-        when(client.xgroupCreate(anyString(), anyString(), any(StreamEntryID.class), eq(true)))
-                .thenThrow(new JedisDataException("ERR unknown command 'XAUTOCLAIM'"));
+        TestClient testClient = client();
+        doThrow(new JedisDataException("ERR unknown command 'XAUTOCLAIM'"))
+                .when(testClient.executor()).executeCommand(any());
         CountingExecution execution = new CountingExecution();
         RecordingLoggerAdapter logger = new RecordingLoggerAdapter();
-        RedisStreamsDurableMessagingDataAccess access = access(client, execution, logger, 20L, 20L, 0.0D, 0);
+        RedisStreamsDurableMessagingDataAccess access = access(testClient.client(), execution, logger, 20L, 20L, 0.0D, 0);
 
         var subscription = access.consume("invalid-stream", "invalid-group", "invalid-consumer",
                 "test.invalid", TestEvent.class, ignored -> { });
@@ -110,17 +117,19 @@ class RedisStreamsDurableMessagingDataAccessTest {
         assertEquals(0L, subscription.snapshot().reconnectCount());
         assertTrue(subscription.snapshot().lastFailure().contains("unknown command"));
         assertEquals(1, execution.releasedSubscriptions.get());
+        testClient.close();
     }
 
     @Test
     void closeWakesAConsumerWaitingForLongReconnectBackoff() throws Exception {
-        RedisClient client = client();
-        when(client.xgroupCreate(anyString(), anyString(), any(StreamEntryID.class), eq(true)))
-                .thenThrow(new IllegalStateException("Redis durable messaging client is temporarily unavailable."));
+        TestClient testClient = client();
+        doThrow(new IllegalStateException("Redis durable messaging client is temporarily unavailable."))
+                .when(testClient.executor()).executeCommand(any());
         CountingExecution execution = new CountingExecution();
         RecordingLoggerAdapter logger = new RecordingLoggerAdapter();
         RedisStreamsDurableMessagingDataAccess access = access(
-                client, execution, logger, TimeUnit.MINUTES.toMillis(1L), TimeUnit.MINUTES.toMillis(1L), 0.0D, 0
+                testClient.client(), execution, logger, TimeUnit.MINUTES.toMillis(1L),
+                TimeUnit.MINUTES.toMillis(1L), 0.0D, 0
         );
 
         var subscription = access.consume("close-stream", "close-group", "close-consumer",
@@ -132,16 +141,17 @@ class RedisStreamsDurableMessagingDataAccessTest {
         assertTrue(System.nanoTime() - startedAt < TimeUnit.MILLISECONDS.toNanos(500L));
         assertEquals(SubscriptionState.CLOSED, subscription.state());
         assertEquals(1, execution.releasedSubscriptions.get());
+        testClient.close();
     }
 
     @Test
     void repeatedConcurrentShutdownSharesTheDurableTeardownOperation() throws Exception {
-        RedisClient client = client();
-        when(client.xgroupCreate(anyString(), anyString(), any(StreamEntryID.class), eq(true)))
-                .thenThrow(new IllegalStateException("Redis durable messaging client is temporarily unavailable."));
+        TestClient testClient = client();
+        doThrow(new IllegalStateException("Redis durable messaging client is temporarily unavailable."))
+                .when(testClient.executor()).executeCommand(any());
         CountingExecution execution = new CountingExecution();
         RedisStreamsDurableMessagingDataAccess access = access(
-                client, execution, new RecordingLoggerAdapter(), TimeUnit.MINUTES.toMillis(1L),
+                testClient.client(), execution, new RecordingLoggerAdapter(), TimeUnit.MINUTES.toMillis(1L),
                 TimeUnit.MINUTES.toMillis(1L), 0.0D, 0
         );
         var subscription = access.consume("concurrent-close", "close-group", "close-consumer",
@@ -169,6 +179,7 @@ class RedisStreamsDurableMessagingDataAccessTest {
             assertEquals(1, execution.releasedSubscriptions.get());
         } finally {
             callers.shutdownNow();
+            testClient.close();
         }
     }
 
@@ -183,13 +194,26 @@ class RedisStreamsDurableMessagingDataAccessTest {
         );
     }
 
-    @SuppressWarnings("unchecked")
-    private static RedisClient client() {
-        RedisClient client = mock(RedisClient.class);
-        Pool<Connection> pool = mock(Pool.class);
-        when(client.getPool()).thenReturn(pool);
-        when(pool.isClosed()).thenReturn(false);
-        return client;
+    private static TestClient client() {
+        Connection connection = mock(Connection.class);
+        BasePooledObjectFactory<Connection> factory = new BasePooledObjectFactory<>() {
+            @Override public Connection create() { return connection; }
+            @Override public PooledObject<Connection> wrap(Connection value) {
+                return new DefaultPooledObject<>(value);
+            }
+            @Override public boolean validateObject(PooledObject<Connection> pooled) { return true; }
+        };
+        ConnectionPoolConfig poolConfig = new ConnectionPoolConfig();
+        poolConfig.setMaxTotal(2);
+        poolConfig.setMaxIdle(2);
+        PooledConnectionProvider provider = new PooledConnectionProvider(factory, poolConfig);
+        CommandExecutor executor = mock(CommandExecutor.class);
+        RedisClient client = RedisClient.builder()
+                .clientConfig(DefaultJedisClientConfig.builder().protocol(RedisProtocol.RESP3).build())
+                .connectionProvider(provider)
+                .commandExecutor(executor)
+                .build();
+        return new TestClient(client, executor, provider);
     }
 
     private static void await(CheckedCondition condition) throws Exception {
@@ -208,6 +232,17 @@ class RedisStreamsDurableMessagingDataAccessTest {
         } catch (InterruptedException interrupted) {
             Thread.currentThread().interrupt();
             throw new AssertionError(interrupted);
+        }
+    }
+
+    private record TestClient(
+            RedisClient client,
+            CommandExecutor executor,
+            PooledConnectionProvider provider
+    ) implements AutoCloseable {
+        @Override public void close() {
+            client.close();
+            provider.close();
         }
     }
 
