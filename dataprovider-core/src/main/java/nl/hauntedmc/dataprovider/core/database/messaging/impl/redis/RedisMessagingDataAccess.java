@@ -44,6 +44,8 @@ final class RedisMessagingDataAccess implements MessagingDataAccess {
     private static final long DEFAULT_INITIAL_BACKOFF_MS = 250L;
     private static final long DEFAULT_MAX_BACKOFF_MS = 10_000L;
     private static final double DEFAULT_JITTER = 0.20D;
+    private static final PubSubRunner DEFAULT_PUB_SUB_RUNNER =
+            (connection, listener, destination) -> listener.proceed(connection, destination);
 
     private final Supplier<RedisClient> clientSupplier;
     private final Executor workers;
@@ -58,6 +60,7 @@ final class RedisMessagingDataAccess implements MessagingDataAccess {
     private final long maxBackoffMs;
     private final double reconnectJitter;
     private final int maxReconnectAttempts;
+    private final PubSubRunner pubSubRunner;
     private final Map<String, ChannelSubscription> channelSubscriptions = new ConcurrentHashMap<>();
     private final Object subscriptionLock = new Object();
     private final AtomicBoolean shuttingDown = new AtomicBoolean(false);
@@ -75,7 +78,7 @@ final class RedisMessagingDataAccess implements MessagingDataAccess {
     ) {
         this(() -> client, workers, null, logger, messageRegistry, maxSubscriptions, maxPayloadChars,
                 maxQueuedMessagesPerHandler, 64, DEFAULT_INITIAL_BACKOFF_MS,
-                DEFAULT_MAX_BACKOFF_MS, DEFAULT_JITTER, 0);
+                DEFAULT_MAX_BACKOFF_MS, DEFAULT_JITTER, 0, DEFAULT_PUB_SUB_RUNNER);
     }
 
     RedisMessagingDataAccess(
@@ -90,7 +93,7 @@ final class RedisMessagingDataAccess implements MessagingDataAccess {
     ) {
         this(() -> client, workers, workers, logger, messageRegistry, maxSubscriptions, maxPayloadChars,
                 maxQueuedMessagesPerHandler, handlerBatchSize, DEFAULT_INITIAL_BACKOFF_MS,
-                DEFAULT_MAX_BACKOFF_MS, DEFAULT_JITTER, 0);
+                DEFAULT_MAX_BACKOFF_MS, DEFAULT_JITTER, 0, DEFAULT_PUB_SUB_RUNNER);
     }
 
     RedisMessagingDataAccess(
@@ -109,7 +112,27 @@ final class RedisMessagingDataAccess implements MessagingDataAccess {
     ) {
         this(clientSupplier, workers, workers, logger, messageRegistry, maxSubscriptions, maxPayloadChars,
                 maxQueuedMessagesPerHandler, handlerBatchSize, initialBackoffMs, maxBackoffMs,
-                reconnectJitter, maxReconnectAttempts);
+                reconnectJitter, maxReconnectAttempts, DEFAULT_PUB_SUB_RUNNER);
+    }
+
+    RedisMessagingDataAccess(
+            Supplier<RedisClient> clientSupplier,
+            ExecutionHandle workers,
+            LoggerAdapter logger,
+            MessageRegistry messageRegistry,
+            int maxSubscriptions,
+            int maxPayloadChars,
+            int maxQueuedMessagesPerHandler,
+            int handlerBatchSize,
+            long initialBackoffMs,
+            long maxBackoffMs,
+            double reconnectJitter,
+            int maxReconnectAttempts,
+            PubSubRunner pubSubRunner
+    ) {
+        this(clientSupplier, workers, workers, logger, messageRegistry, maxSubscriptions, maxPayloadChars,
+                maxQueuedMessagesPerHandler, handlerBatchSize, initialBackoffMs, maxBackoffMs,
+                reconnectJitter, maxReconnectAttempts, pubSubRunner);
     }
 
     private RedisMessagingDataAccess(
@@ -125,7 +148,8 @@ final class RedisMessagingDataAccess implements MessagingDataAccess {
             long initialBackoffMs,
             long maxBackoffMs,
             double reconnectJitter,
-            int maxReconnectAttempts
+            int maxReconnectAttempts,
+            PubSubRunner pubSubRunner
     ) {
         this.clientSupplier = Objects.requireNonNull(clientSupplier, "Client supplier cannot be null");
         this.workers = Objects.requireNonNull(workers, "Workers cannot be null");
@@ -147,6 +171,7 @@ final class RedisMessagingDataAccess implements MessagingDataAccess {
             throw new IllegalArgumentException("maxReconnectAttempts cannot be negative");
         }
         this.maxReconnectAttempts = maxReconnectAttempts;
+        this.pubSubRunner = Objects.requireNonNull(pubSubRunner, "Pub/Sub runner cannot be null");
     }
 
     @Override
@@ -366,7 +391,7 @@ final class RedisMessagingDataAccess implements MessagingDataAccess {
                         if (closing.get() || !isCurrent(attempt)) {
                             continue;
                         }
-                        attempt.pubSub.proceed(connection, destination);
+                        pubSubRunner.subscribe(connection, attempt.pubSub, destination);
                         if (!closing.get() && isCurrent(attempt)) {
                             throw new IllegalStateException("Redis Pub/Sub listener ended unexpectedly.");
                         }
@@ -877,6 +902,11 @@ final class RedisMessagingDataAccess implements MessagingDataAccess {
             throw new IllegalArgumentException("Destination contains unsupported characters.");
         }
         return destination;
+    }
+
+    @FunctionalInterface
+    interface PubSubRunner {
+        void subscribe(Connection connection, JedisPubSub listener, String destination) throws Exception;
     }
 
     private record QueuedMessage(String channel, String raw) {
