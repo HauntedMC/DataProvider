@@ -2,7 +2,6 @@ package nl.hauntedmc.dataprovider.core.database.messaging.impl.redis;
 
 import nl.hauntedmc.dataprovider.core.ManagedDatabaseProvider;
 import nl.hauntedmc.dataprovider.core.concurrent.ExecutionHandle;
-import nl.hauntedmc.dataprovider.core.database.security.TlsSupport;
 import nl.hauntedmc.dataprovider.core.logging.RateLimitedLogger;
 import nl.hauntedmc.dataprovider.database.messaging.MessagingDataAccess;
 import nl.hauntedmc.dataprovider.database.messaging.MessagingDatabaseProvider;
@@ -14,15 +13,16 @@ import nl.hauntedmc.dataprovider.database.messaging.api.SubscriptionState;
 import nl.hauntedmc.dataprovider.database.messaging.durable.DurableMessagingDataAccess;
 import nl.hauntedmc.dataprovider.logging.LoggerAdapter;
 import org.spongepowered.configurate.CommentedConfigurationNode;
+import redis.clients.jedis.ConnectionPoolConfig;
 import redis.clients.jedis.DefaultJedisClientConfig;
-import redis.clients.jedis.HostAndPort;
-import redis.clients.jedis.Jedis;
-import redis.clients.jedis.JedisPool;
-import redis.clients.jedis.JedisPoolConfig;
+import redis.clients.jedis.RedisClient;
+import redis.clients.jedis.RedisProtocol;
+import redis.clients.jedis.SslOptions;
 
-import javax.net.ssl.SSLContext;
+import java.io.File;
 import java.time.Duration;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Objects;
@@ -37,7 +37,6 @@ import java.util.function.Consumer;
 import java.util.regex.Pattern;
 
 /** Redis messaging provider backed by the shared messaging execution lane. */
-@SuppressWarnings("deprecation")
 public final class RedisMessagingDatabase implements MessagingDatabaseProvider, ManagedDatabaseProvider {
 
     private static final Pattern HOST_PATTERN = Pattern.compile("[A-Za-z0-9._:\\-\\[\\]]+");
@@ -50,7 +49,7 @@ public final class RedisMessagingDatabase implements MessagingDatabaseProvider, 
     private final ConcurrentMap<Object, MessagingDataAccess> scopedAccess = new ConcurrentHashMap<>();
     private final ConcurrentMap<Object, DurableMessagingDataAccess> scopedDurableAccess = new ConcurrentHashMap<>();
     private final AtomicLong accessSequence = new AtomicLong();
-    private volatile JedisPool pool;
+    private volatile RedisClient redisClient;
     private volatile MessagingDataAccess bus;
     private volatile DurableMessagingDataAccess durableBus;
     private volatile boolean connected;
@@ -91,7 +90,7 @@ public final class RedisMessagingDatabase implements MessagingDatabaseProvider, 
 
     @Override
     public synchronized void connect() {
-        if (connected) {
+        if (connected && isOpen(redisClient)) {
             return;
         }
 
@@ -183,11 +182,11 @@ public final class RedisMessagingDatabase implements MessagingDatabaseProvider, 
             logger.warn("[RedisMessagingDatabase] Redis messaging user is configured without a password.");
         }
 
-        JedisPool createdPool = null;
+        RedisClient createdClient = null;
         try {
             int totalPoolCapacity = Math.addExact(commandPoolSize, maxSubscriptions);
-            JedisPoolConfig poolConfig = new JedisPoolConfig();
-            // Each subscription owns one long-lived connection. Extra capacity keeps command operations isolated.
+            ConnectionPoolConfig poolConfig = new ConnectionPoolConfig();
+            // Each Pub/Sub subscription owns one long-lived pooled connection.
             poolConfig.setMaxTotal(totalPoolCapacity);
             poolConfig.setMaxIdle(maxIdleConnections);
             poolConfig.setMinIdle(minIdleConnections);
@@ -196,7 +195,7 @@ public final class RedisMessagingDatabase implements MessagingDatabaseProvider, 
             poolConfig.setBlockWhenExhausted(true);
 
             DefaultJedisClientConfig.Builder clientConfigBuilder = DefaultJedisClientConfig.builder()
-                    .serverDefaultProtocol()
+                    .protocol(RedisProtocol.RESP3)
                     .user(user.isBlank() ? null : user)
                     .password(password.isBlank() ? null : password)
                     .database(database)
@@ -204,19 +203,19 @@ public final class RedisMessagingDatabase implements MessagingDatabaseProvider, 
                     .socketTimeoutMillis(socketTimeoutMs)
                     .ssl(tlsEnabled);
             if (tlsEnabled) {
-                SSLContext sslContext = TlsSupport.createSslContext(trustStorePath, trustStorePassword, trustStoreType);
-                clientConfigBuilder.sslSocketFactory(sslContext.getSocketFactory());
-                clientConfigBuilder.hostnameVerifier(TlsSupport.strictHostnameVerifier());
+                clientConfigBuilder.sslOptions(createSslOptions(trustStorePath, trustStorePassword, trustStoreType));
             }
 
-            createdPool = new JedisPool(poolConfig, new HostAndPort(host, port), clientConfigBuilder.build());
-            try (Jedis jedis = createdPool.getResource()) {
-                if (!"PONG".equalsIgnoreCase(jedis.ping())) {
-                    throw new IllegalStateException("Redis messaging ping check failed.");
-                }
+            createdClient = RedisClient.builder()
+                    .hostAndPort(host, port)
+                    .clientConfig(clientConfigBuilder.build())
+                    .poolConfig(poolConfig)
+                    .build();
+            if (!"PONG".equalsIgnoreCase(createdClient.ping())) {
+                throw new IllegalStateException("Redis messaging ping check failed.");
             }
 
-            pool = createdPool;
+            redisClient = createdClient;
             this.commandPoolSize = commandPoolSize;
             this.maxSubscriptions = maxSubscriptions;
             this.maxPayloadChars = maxPayloadChars;
@@ -240,16 +239,14 @@ public final class RedisMessagingDatabase implements MessagingDatabaseProvider, 
             connected = true;
             lifecycleFailure = null;
             logger.info(String.format(
-                    "[RedisMessagingDatabase] Connected at %s:%d (db=%d, auth=%s, tls=%s, commandCapacity=%d, subscriptionCapacity=%d)",
+                    "[RedisMessagingDatabase] Connected at %s:%d (db=%d, protocol=RESP3, auth=%s, tls=%s, commandCapacity=%d, subscriptionCapacity=%d)",
                     host, port, database, password.isBlank() ? "disabled" : "enabled",
                     tlsEnabled ? "enabled" : "disabled", commandPoolSize, maxSubscriptions));
         } catch (Exception failure) {
             lifecycleFailure = failure;
             connected = false;
-            if (createdPool != null && !createdPool.isClosed()) {
-                createdPool.close();
-            }
-            pool = null;
+            closeQuietly(createdClient);
+            redisClient = null;
             bus = null;
             durableBus = null;
             outageLogger.error(logger, "[RedisMessagingDatabase] Connection failed. ("
@@ -277,10 +274,8 @@ public final class RedisMessagingDatabase implements MessagingDatabaseProvider, 
                     + "unacknowledged durable entries remain reclaimable.");
         } finally {
             execution.close();
-            if (pool != null && !pool.isClosed()) {
-                pool.close();
-            }
-            pool = null;
+            closeQuietly(redisClient);
+            redisClient = null;
             bus = null;
             durableBus = null;
             scopedAccess.clear();
@@ -291,8 +286,7 @@ public final class RedisMessagingDatabase implements MessagingDatabaseProvider, 
 
     @Override
     public boolean isConnected() {
-        JedisPool snapshot = pool;
-        return connected && snapshot != null && !snapshot.isClosed();
+        return connected && isOpen(redisClient);
     }
 
     @Override
@@ -302,12 +296,12 @@ public final class RedisMessagingDatabase implements MessagingDatabaseProvider, 
 
     @Override
     public boolean probeRemoteHealth() {
-        JedisPool snapshot = pool;
-        if (!connected || snapshot == null || snapshot.isClosed()) {
+        RedisClient snapshot = redisClient;
+        if (!connected || !isOpen(snapshot)) {
             return false;
         }
-        try (Jedis jedis = snapshot.getResource()) {
-            return "PONG".equalsIgnoreCase(jedis.ping());
+        try {
+            return "PONG".equalsIgnoreCase(snapshot.ping());
         } catch (Exception failure) {
             return false;
         }
@@ -330,15 +324,15 @@ public final class RedisMessagingDatabase implements MessagingDatabaseProvider, 
 
     public int executionCapacity() {
         if (!isConnected() || commandPoolSize < 1) {
-            throw new IllegalStateException("[RedisMessagingDatabase] Jedis pool not initialized!");
+            throw new IllegalStateException("[RedisMessagingDatabase] Redis client not initialized!");
         }
         return commandPoolSize;
     }
 
-    /** Number of long-lived subscription connections reserved by this physical pool. */
+    /** Number of long-lived Pub/Sub connections reserved by this physical client pool. */
     public int subscriptionCapacity() {
         if (!isConnected() || maxSubscriptions < 1) {
-            throw new IllegalStateException("[RedisMessagingDatabase] Jedis pool not initialized!");
+            throw new IllegalStateException("[RedisMessagingDatabase] Redis client not initialized!");
         }
         return maxSubscriptions;
     }
@@ -346,7 +340,7 @@ public final class RedisMessagingDatabase implements MessagingDatabaseProvider, 
     /** Creates or reuses one durable logical provider view for an execution scope. */
     public MessagingDatabaseProvider scoped(ExecutionHandle scopedExecution) {
         if (!isConnected()) {
-            throw new IllegalStateException("[RedisMessagingDatabase] Jedis pool not initialized!");
+            throw new IllegalStateException("[RedisMessagingDatabase] Redis client not initialized!");
         }
         Object scopeIdentity = scopedExecution.scopeIdentity();
         MessagingDataAccess accessView = scopedAccess.computeIfAbsent(
@@ -377,7 +371,7 @@ public final class RedisMessagingDatabase implements MessagingDatabaseProvider, 
 
     private MessagingDataAccess newAccess(ExecutionHandle accessExecution, MessageRegistry registry) {
         RedisMessagingDataAccess delegate = new RedisMessagingDataAccess(
-                () -> pool,
+                () -> redisClient,
                 accessExecution,
                 logger,
                 registry,
@@ -396,7 +390,7 @@ public final class RedisMessagingDatabase implements MessagingDatabaseProvider, 
 
     private DurableMessagingDataAccess newDurableAccess(ExecutionHandle accessExecution, MessageRegistry registry) {
         return new RedisStreamsDurableMessagingDataAccess(
-                () -> pool,
+                () -> redisClient,
                 accessExecution,
                 logger,
                 registry,
@@ -542,6 +536,39 @@ public final class RedisMessagingDatabase implements MessagingDatabaseProvider, 
 
     private static String compositeId(String accessId, String destination, String handlerId) {
         return accessId + ":" + destination + ":" + handlerId;
+    }
+
+    private static SslOptions createSslOptions(String trustStorePath, String trustStorePassword, String trustStoreType) {
+        SslOptions.Builder builder = SslOptions.builder();
+        if (trustStorePath == null || trustStorePath.isBlank()) {
+            return builder.build();
+        }
+        char[] password = trustStorePassword == null || trustStorePassword.isEmpty()
+                ? null : trustStorePassword.toCharArray();
+        try {
+            if (trustStoreType != null && !trustStoreType.isBlank()) {
+                builder.trustStoreType(trustStoreType);
+            }
+            return builder.truststore(new File(trustStorePath), password).build();
+        } finally {
+            if (password != null) {
+                Arrays.fill(password, '\0');
+            }
+        }
+    }
+
+    private static boolean isOpen(RedisClient client) {
+        return client != null && !client.getPool().isClosed();
+    }
+
+    private static void closeQuietly(RedisClient client) {
+        if (client != null) {
+            try {
+                client.close();
+            } catch (RuntimeException ignored) {
+                // Best-effort cleanup while preserving the original connection or shutdown failure.
+            }
+        }
     }
 
     private static String requireNonBlank(String value, String fieldName) {
