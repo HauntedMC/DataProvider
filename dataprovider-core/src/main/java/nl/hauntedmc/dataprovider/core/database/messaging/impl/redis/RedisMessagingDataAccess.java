@@ -12,9 +12,9 @@ import nl.hauntedmc.dataprovider.database.messaging.api.Subscription;
 import nl.hauntedmc.dataprovider.database.messaging.api.SubscriptionSnapshot;
 import nl.hauntedmc.dataprovider.database.messaging.api.SubscriptionState;
 import nl.hauntedmc.dataprovider.logging.LoggerAdapter;
-import redis.clients.jedis.Jedis;
-import redis.clients.jedis.JedisPool;
+import redis.clients.jedis.Connection;
 import redis.clients.jedis.JedisPubSub;
+import redis.clients.jedis.RedisClient;
 
 import java.time.Duration;
 import java.time.Instant;
@@ -37,21 +37,17 @@ import java.util.function.Consumer;
 import java.util.function.Supplier;
 import java.util.regex.Pattern;
 
-/**
- * Redis Pub/Sub access with durable logical subscriptions over replaceable physical listeners.
- *
- * <p>The deprecated Jedis pool type is retained deliberately because each listener owns a
- * borrowable connection that must be interrupted independently during shutdown and recovery.
- */
-@SuppressWarnings("deprecation")
+/** Redis Pub/Sub access with durable logical subscriptions over replaceable physical listeners. */
 final class RedisMessagingDataAccess implements MessagingDataAccess {
 
     private static final Pattern DESTINATION_PATTERN = Pattern.compile("[A-Za-z0-9_.:-]{1,128}");
     private static final long DEFAULT_INITIAL_BACKOFF_MS = 250L;
     private static final long DEFAULT_MAX_BACKOFF_MS = 10_000L;
     private static final double DEFAULT_JITTER = 0.20D;
+    private static final PubSubRunner DEFAULT_PUB_SUB_RUNNER =
+            (connection, listener, destination) -> listener.proceed(connection, destination);
 
-    private final Supplier<JedisPool> poolSupplier;
+    private final Supplier<RedisClient> clientSupplier;
     private final Executor workers;
     private final ExecutionHandle executionBudget;
     private final LoggerAdapter logger;
@@ -64,6 +60,7 @@ final class RedisMessagingDataAccess implements MessagingDataAccess {
     private final long maxBackoffMs;
     private final double reconnectJitter;
     private final int maxReconnectAttempts;
+    private final PubSubRunner pubSubRunner;
     private final Map<String, ChannelSubscription> channelSubscriptions = new ConcurrentHashMap<>();
     private final Object subscriptionLock = new Object();
     private final AtomicBoolean shuttingDown = new AtomicBoolean(false);
@@ -71,7 +68,7 @@ final class RedisMessagingDataAccess implements MessagingDataAccess {
     private final AtomicLong logicalSequence = new AtomicLong();
 
     RedisMessagingDataAccess(
-            JedisPool pool,
+            RedisClient client,
             ExecutorService workers,
             LoggerAdapter logger,
             MessageRegistry messageRegistry,
@@ -79,13 +76,13 @@ final class RedisMessagingDataAccess implements MessagingDataAccess {
             int maxPayloadChars,
             int maxQueuedMessagesPerHandler
     ) {
-        this(() -> pool, workers, null, logger, messageRegistry, maxSubscriptions, maxPayloadChars,
+        this(() -> client, workers, null, logger, messageRegistry, maxSubscriptions, maxPayloadChars,
                 maxQueuedMessagesPerHandler, 64, DEFAULT_INITIAL_BACKOFF_MS,
-                DEFAULT_MAX_BACKOFF_MS, DEFAULT_JITTER, 0);
+                DEFAULT_MAX_BACKOFF_MS, DEFAULT_JITTER, 0, DEFAULT_PUB_SUB_RUNNER);
     }
 
     RedisMessagingDataAccess(
-            JedisPool pool,
+            RedisClient client,
             ExecutionHandle workers,
             LoggerAdapter logger,
             MessageRegistry messageRegistry,
@@ -94,13 +91,13 @@ final class RedisMessagingDataAccess implements MessagingDataAccess {
             int maxQueuedMessagesPerHandler,
             int handlerBatchSize
     ) {
-        this(() -> pool, workers, workers, logger, messageRegistry, maxSubscriptions, maxPayloadChars,
+        this(() -> client, workers, workers, logger, messageRegistry, maxSubscriptions, maxPayloadChars,
                 maxQueuedMessagesPerHandler, handlerBatchSize, DEFAULT_INITIAL_BACKOFF_MS,
-                DEFAULT_MAX_BACKOFF_MS, DEFAULT_JITTER, 0);
+                DEFAULT_MAX_BACKOFF_MS, DEFAULT_JITTER, 0, DEFAULT_PUB_SUB_RUNNER);
     }
 
     RedisMessagingDataAccess(
-            Supplier<JedisPool> poolSupplier,
+            Supplier<RedisClient> clientSupplier,
             ExecutionHandle workers,
             LoggerAdapter logger,
             MessageRegistry messageRegistry,
@@ -113,13 +110,33 @@ final class RedisMessagingDataAccess implements MessagingDataAccess {
             double reconnectJitter,
             int maxReconnectAttempts
     ) {
-        this(poolSupplier, workers, workers, logger, messageRegistry, maxSubscriptions, maxPayloadChars,
+        this(clientSupplier, workers, workers, logger, messageRegistry, maxSubscriptions, maxPayloadChars,
                 maxQueuedMessagesPerHandler, handlerBatchSize, initialBackoffMs, maxBackoffMs,
-                reconnectJitter, maxReconnectAttempts);
+                reconnectJitter, maxReconnectAttempts, DEFAULT_PUB_SUB_RUNNER);
+    }
+
+    RedisMessagingDataAccess(
+            Supplier<RedisClient> clientSupplier,
+            ExecutionHandle workers,
+            LoggerAdapter logger,
+            MessageRegistry messageRegistry,
+            int maxSubscriptions,
+            int maxPayloadChars,
+            int maxQueuedMessagesPerHandler,
+            int handlerBatchSize,
+            long initialBackoffMs,
+            long maxBackoffMs,
+            double reconnectJitter,
+            int maxReconnectAttempts,
+            PubSubRunner pubSubRunner
+    ) {
+        this(clientSupplier, workers, workers, logger, messageRegistry, maxSubscriptions, maxPayloadChars,
+                maxQueuedMessagesPerHandler, handlerBatchSize, initialBackoffMs, maxBackoffMs,
+                reconnectJitter, maxReconnectAttempts, pubSubRunner);
     }
 
     private RedisMessagingDataAccess(
-            Supplier<JedisPool> poolSupplier,
+            Supplier<RedisClient> clientSupplier,
             Executor workers,
             ExecutionHandle executionBudget,
             LoggerAdapter logger,
@@ -131,9 +148,10 @@ final class RedisMessagingDataAccess implements MessagingDataAccess {
             long initialBackoffMs,
             long maxBackoffMs,
             double reconnectJitter,
-            int maxReconnectAttempts
+            int maxReconnectAttempts,
+            PubSubRunner pubSubRunner
     ) {
-        this.poolSupplier = Objects.requireNonNull(poolSupplier, "Pool supplier cannot be null");
+        this.clientSupplier = Objects.requireNonNull(clientSupplier, "Client supplier cannot be null");
         this.workers = Objects.requireNonNull(workers, "Workers cannot be null");
         this.executionBudget = executionBudget;
         this.logger = Objects.requireNonNull(logger, "Logger cannot be null");
@@ -153,6 +171,7 @@ final class RedisMessagingDataAccess implements MessagingDataAccess {
             throw new IllegalArgumentException("maxReconnectAttempts cannot be negative");
         }
         this.maxReconnectAttempts = maxReconnectAttempts;
+        this.pubSubRunner = Objects.requireNonNull(pubSubRunner, "Pub/Sub runner cannot be null");
     }
 
     @Override
@@ -176,11 +195,8 @@ final class RedisMessagingDataAccess implements MessagingDataAccess {
                     "redis.messaging.serialize"
             ));
         }
-        return AsyncTaskSupport.runAsync(workers, "redis.messaging.publish", () -> {
-            try (Jedis jedis = requirePool().getResource()) {
-                jedis.publish(validatedDestination, json);
-            }
-        });
+        return AsyncTaskSupport.runAsync(workers, "redis.messaging.publish",
+                () -> requireClient().publish(validatedDestination, json));
     }
 
     @Override
@@ -246,9 +262,6 @@ final class RedisMessagingDataAccess implements MessagingDataAccess {
                 return existing;
             }
             shuttingDown.set(true);
-            // Publish the shared future before beginning any asynchronous listener teardown.
-            // A concurrent caller must observe this same lifecycle operation, rather than an
-            // already-completed placeholder while shutdown is still releasing subscriptions.
             created = new CompletableFuture<>();
             shutdownFuture.set(created);
         }
@@ -295,12 +308,12 @@ final class RedisMessagingDataAccess implements MessagingDataAccess {
         );
     }
 
-    private JedisPool requirePool() {
-        JedisPool pool = poolSupplier.get();
-        if (pool == null || pool.isClosed()) {
-            throw new IllegalStateException("Redis messaging pool is temporarily unavailable.");
+    private RedisClient requireClient() {
+        RedisClient client = clientSupplier.get();
+        if (client == null || client.getPool().isClosed()) {
+            throw new IllegalStateException("Redis messaging client is temporarily unavailable.");
         }
-        return pool;
+        return client;
     }
 
     private final class ChannelSubscription {
@@ -373,12 +386,12 @@ final class RedisMessagingDataAccess implements MessagingDataAccess {
                     long attemptGeneration = generation.incrementAndGet();
                     ListenerAttempt attempt = new ListenerAttempt(attemptGeneration);
                     listenerAttempt.set(attempt);
-                    try (Jedis jedis = requirePool().getResource()) {
-                        attempt.connection.set(jedis);
+                    try (Connection connection = requireClient().getPool().getResource()) {
+                        attempt.connection.set(connection);
                         if (closing.get() || !isCurrent(attempt)) {
                             continue;
                         }
-                        jedis.subscribe(attempt.pubSub, destination);
+                        pubSubRunner.subscribe(connection, attempt.pubSub, destination);
                         if (!closing.get() && isCurrent(attempt)) {
                             throw new IllegalStateException("Redis Pub/Sub listener ended unexpectedly.");
                         }
@@ -617,7 +630,7 @@ final class RedisMessagingDataAccess implements MessagingDataAccess {
 
         private final class ListenerAttempt {
             private final long generation;
-            private final AtomicReference<Jedis> connection = new AtomicReference<>();
+            private final AtomicReference<Connection> connection = new AtomicReference<>();
             private final AtomicBoolean active = new AtomicBoolean(false);
             private final JedisPubSub pubSub = new JedisPubSub() {
                 @Override
@@ -659,14 +672,14 @@ final class RedisMessagingDataAccess implements MessagingDataAccess {
                 try {
                     pubSub.unsubscribe();
                 } catch (Exception ignored) {
-                    // Closing the socket below is the final interruption mechanism.
+                    // Force-disconnecting the connection below is the final interruption mechanism.
                 }
-                Jedis listener = connection.getAndSet(null);
+                Connection listener = connection.getAndSet(null);
                 if (listener != null) {
                     try {
-                        listener.close();
+                        listener.forceDisconnect();
                     } catch (Exception ignored) {
-                        // The supervisor owns final resource cleanup.
+                        // The supervisor owns final resource cleanup and pool invalidation.
                     }
                 }
             }
@@ -841,7 +854,6 @@ final class RedisMessagingDataAccess implements MessagingDataAccess {
         }
     }
 
-
     private void recordDropped(long count) {
         if (count > 0 && executionBudget != null) {
             executionBudget.recordDroppedMessages(count);
@@ -890,6 +902,11 @@ final class RedisMessagingDataAccess implements MessagingDataAccess {
             throw new IllegalArgumentException("Destination contains unsupported characters.");
         }
         return destination;
+    }
+
+    @FunctionalInterface
+    interface PubSubRunner {
+        void subscribe(Connection connection, JedisPubSub listener, String destination) throws Exception;
     }
 
     private record QueuedMessage(String channel, String raw) {
