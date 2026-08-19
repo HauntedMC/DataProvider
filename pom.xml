@@ -73,7 +73,7 @@
         <mysql.version>9.7.0</mysql.version>
         <hikari.version>7.1.0</hikari.version>
         <mongodb.driver.version>5.9.1</mongodb.driver.version>
-        <jedis.version>7.5.3</jedis.version>
+        <jedis.version>8.0.0</jedis.version>
         <hibernate.version>7.4.5.Final</hibernate.version>
         <jakarta.persistence.version>3.2.0</jakarta.persistence.version>
         <jakarta.xml.bind.version>4.0.5</jakarta.xml.bind.version>
