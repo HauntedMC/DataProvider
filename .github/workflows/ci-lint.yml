@@ -10,9 +10,13 @@ on:
     branches:
       - main
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   lint:
-    name: Checkstyle
+    name: Static checks
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -31,5 +35,5 @@ jobs:
       - name: Run Checkstyle
         run: ./mvnw -U -B -ntp -DskipTests checkstyle:check
 
-      - name: Lint platform acceptance runner
-        run: shellcheck dataprovider-platform-acceptance/run-platform-acceptance.sh
+      - name: Lint shell scripts
+        run: shellcheck update_version.sh dataprovider-platform-acceptance/run-platform-acceptance.sh

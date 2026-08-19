@@ -37,6 +37,7 @@ class DataProviderCommandTest {
         DataProviderHandler handler = mock(DataProviderHandler.class);
         DataProviderCommand command = new DataProviderCommand(handler);
         RecordingBukkitSender sender = new RecordingBukkitSender();
+        sender.grantPermission(DataProviderCommand.STATUS_PERMISSION);
 
         command.execute(sender.sender(), new String[0]);
 

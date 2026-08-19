@@ -1,3 +1,5 @@
+# The `default` entry is a generated template and may be refreshed on startup.
+# Copy it to a named connection before adding credentials or granting plugin access.
 default:
   # Set this to the exact Paper plugin name or Velocity plugin id allowed to use this connection.
   # No plugin can use this connection until it has been configured.

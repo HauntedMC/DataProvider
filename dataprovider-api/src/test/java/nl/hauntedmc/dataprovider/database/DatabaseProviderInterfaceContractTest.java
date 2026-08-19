@@ -6,11 +6,46 @@ import nl.hauntedmc.dataprovider.database.keyvalue.KeyValueDataAccess;
 import nl.hauntedmc.dataprovider.database.keyvalue.KeyValueDatabaseProvider;
 import nl.hauntedmc.dataprovider.database.messaging.MessagingDataAccess;
 import nl.hauntedmc.dataprovider.database.messaging.MessagingDatabaseProvider;
+import nl.hauntedmc.dataprovider.database.messaging.durable.DurableMessagingDataAccess;
+import nl.hauntedmc.dataprovider.database.relational.RelationalDataAccess;
+import nl.hauntedmc.dataprovider.database.relational.RelationalDatabaseProvider;
+import nl.hauntedmc.dataprovider.database.relational.schema.SchemaManager;
 import org.junit.jupiter.api.Test;
 
+import javax.sql.DataSource;
+
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class DatabaseProviderInterfaceContractTest {
+
+    @Test
+    void relationalProviderAdvertisesDataSourceSupport() {
+        RelationalDatabaseProvider provider = new RelationalDatabaseProvider() {
+            @Override
+            public boolean isConnected() {
+                return true;
+            }
+
+            @Override
+            public SchemaManager getSchemaManager() {
+                return null;
+            }
+
+            @Override
+            public RelationalDataAccess getDataAccess() {
+                return null;
+            }
+
+            @Override
+            public DataSource getDataSource() {
+                return null;
+            }
+        };
+
+        assertTrue(provider.supportsDataSource());
+    }
 
     @Test
     void documentProviderDoesNotExposeDataSource() {
@@ -26,6 +61,7 @@ class DatabaseProviderInterfaceContractTest {
             }
         };
 
+        assertFalse(provider.supportsDataSource());
         assertThrows(UnsupportedOperationException.class, provider::getDataSource);
     }
 
@@ -43,11 +79,12 @@ class DatabaseProviderInterfaceContractTest {
             }
         };
 
+        assertFalse(provider.supportsDataSource());
         assertThrows(UnsupportedOperationException.class, provider::getDataSource);
     }
 
     @Test
-    void messagingProviderDoesNotExposeDataSource() {
+    void messagingProviderAdvertisesUnsupportedOptionalCapabilitiesByDefault() {
         MessagingDatabaseProvider provider = new MessagingDatabaseProvider() {
             @Override
             public boolean isConnected() {
@@ -60,6 +97,31 @@ class DatabaseProviderInterfaceContractTest {
             }
         };
 
+        assertFalse(provider.supportsDataSource());
+        assertFalse(provider.supportsDurableMessaging());
         assertThrows(UnsupportedOperationException.class, provider::getDataSource);
+        assertThrows(UnsupportedOperationException.class, provider::getDurableDataAccess);
+    }
+
+    @Test
+    void messagingProviderAutomaticallyAdvertisesImplementedDurableAccessor() {
+        MessagingDatabaseProvider provider = new MessagingDatabaseProvider() {
+            @Override
+            public boolean isConnected() {
+                return true;
+            }
+
+            @Override
+            public MessagingDataAccess getDataAccess() {
+                return null;
+            }
+
+            @Override
+            public DurableMessagingDataAccess getDurableDataAccess() {
+                return null;
+            }
+        };
+
+        assertTrue(provider.supportsDurableMessaging());
     }
 }

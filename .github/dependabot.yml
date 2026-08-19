@@ -8,6 +8,13 @@ updates:
       time: "06:00"
       timezone: "Europe/Amsterdam"
     open-pull-requests-limit: 10
+    groups:
+      routine-maven-updates:
+        patterns:
+          - "*"
+        update-types:
+          - "minor"
+          - "patch"
     labels:
       - "dependencies"
       - "java"
@@ -20,6 +27,13 @@ updates:
       time: "06:15"
       timezone: "Europe/Amsterdam"
     open-pull-requests-limit: 5
+    groups:
+      routine-action-updates:
+        patterns:
+          - "*"
+        update-types:
+          - "minor"
+          - "patch"
     labels:
       - "dependencies"
       - "ci"

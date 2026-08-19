@@ -8,4 +8,9 @@ public record PublishedDurableEvent(String eventId, String streamEntryId, boolea
         Objects.requireNonNull(eventId, "eventId cannot be null");
         Objects.requireNonNull(streamEntryId, "streamEntryId cannot be null");
     }
+
+    /** Whether this publish reused the existing result of an earlier idempotent publish. */
+    public boolean wasDeduplicated() {
+        return !newlyPublished;
+    }
 }

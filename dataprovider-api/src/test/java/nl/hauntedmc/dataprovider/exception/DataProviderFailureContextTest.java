@@ -7,8 +7,10 @@ import java.util.HashMap;
 import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class DataProviderFailureContextTest {
 
@@ -20,6 +22,7 @@ class DataProviderFailureContextTest {
         assertEquals(RetryAdvice.NEVER, context.retryAdvice());
         assertEquals(ExecutionOutcome.UNKNOWN, context.executionOutcome());
         assertEquals(Map.of(), context.diagnostics());
+        assertFalse(context.hasDiagnostics());
         assertNull(context.diagnosticId());
     }
 
@@ -59,8 +62,30 @@ class DataProviderFailureContextTest {
         diagnostics.put("sqlState", "changed");
 
         assertEquals("23000", context.diagnostics().get("sqlState"));
+        assertTrue(context.hasDiagnostics());
         assertThrows(UnsupportedOperationException.class,
                 () -> context.diagnostics().put("vendorCode", "1"));
+    }
+
+    @Test
+    void withDiagnosticBuildsIncrementallyWithoutMutatingOriginalContext() {
+        DataProviderFailureContext original = DataProviderFailureContext.of(
+                DatabaseType.REDIS,
+                "cache",
+                "get",
+                RetryAdvice.SAFE,
+                ExecutionOutcome.NOT_STARTED
+        );
+
+        DataProviderFailureContext changed = original
+                .withDiagnostic("cacheState", "miss")
+                .withDiagnostic("attempt", "1");
+
+        assertFalse(original.hasDiagnostics());
+        assertEquals(Map.of("cacheState", "miss", "attempt", "1"), changed.diagnostics());
+        assertTrue(changed.hasDiagnostics());
+        assertThrows(NullPointerException.class, () -> original.withDiagnostic(null, "value"));
+        assertThrows(NullPointerException.class, () -> original.withDiagnostic("key", null));
     }
 
     @Test

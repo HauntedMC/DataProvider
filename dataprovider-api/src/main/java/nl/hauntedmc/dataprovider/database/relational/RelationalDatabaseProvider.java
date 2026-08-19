@@ -6,8 +6,8 @@ import nl.hauntedmc.dataprovider.database.relational.schema.SchemaManager;
 import javax.sql.DataSource;
 
 /**
- * A database provider interface for relational databases (e.g. MySQL).
- * Extends BaseDatabaseProvider and adds relational–specific features like a SchemaManager.
+ * Provider contract for relational databases such as MySQL.
+ * Adds relational-specific features such as schema management and JDBC data-source access.
  */
 public interface RelationalDatabaseProvider extends DatabaseProvider {
 
@@ -19,5 +19,11 @@ public interface RelationalDatabaseProvider extends DatabaseProvider {
     @Override
     RelationalDataAccess getDataAccess();
 
+    @Override
+    default boolean supportsDataSource() {
+        return true;
+    }
+
+    @Override
     DataSource getDataSource();
 }

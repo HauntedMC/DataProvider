@@ -3,6 +3,8 @@ import nl.hauntedmc.dataprovider.database.DatabaseType;
 import nl.hauntedmc.dataprovider.database.keyvalue.KeyValueDataAccess;
 import nl.hauntedmc.dataprovider.database.keyvalue.KeyValueDatabaseProvider;
 
+import java.time.Duration;
+import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 
 /**
@@ -10,26 +12,32 @@ import java.util.concurrent.CompletableFuture;
  */
 public final class RedisKeyValueExample {
 
+    private static final Duration LANGUAGE_CACHE_TTL = Duration.ofHours(12);
+
     private KeyValueDataAccess keyValue;
 
     public void onEnable(DataProviderAPI api) {
-        KeyValueDatabaseProvider provider = (KeyValueDatabaseProvider) api.registerDatabaseOrThrow(
-                DatabaseType.REDIS, "default"
+        KeyValueDatabaseProvider provider = api.registerDatabaseOrThrow(
+                DatabaseType.REDIS, "example", KeyValueDatabaseProvider.class
         );
         keyValue = provider.getDataAccess();
     }
 
     public CompletableFuture<Void> cachePlayerLanguage(String playerUuid, String languageCode) {
-        return dataAccess().setKey("player:lang:" + playerUuid, languageCode);
+        return dataAccess().setKeyWithExpiry("player:lang:" + playerUuid, languageCode, LANGUAGE_CACHE_TTL);
     }
 
     public CompletableFuture<String> loadPlayerLanguage(String playerUuid) {
-        return dataAccess().getKey("player:lang:" + playerUuid);
+        return dataAccess().getKeyOrDefault("player:lang:" + playerUuid, "en");
+    }
+
+    public CompletableFuture<Optional<String>> findCachedPlayerLanguage(String playerUuid) {
+        return dataAccess().getKeyOptional("player:lang:" + playerUuid);
     }
 
     public void onDisable(DataProviderAPI api) {
         keyValue = null;
-        api.unregisterDatabase(DatabaseType.REDIS, "default");
+        api.unregisterDatabase(DatabaseType.REDIS, "example");
     }
 
     private KeyValueDataAccess dataAccess() {

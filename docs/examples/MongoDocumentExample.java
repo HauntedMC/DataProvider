@@ -3,8 +3,10 @@ import nl.hauntedmc.dataprovider.database.DatabaseType;
 import nl.hauntedmc.dataprovider.database.document.DocumentDataAccess;
 import nl.hauntedmc.dataprovider.database.document.DocumentDatabaseProvider;
 import nl.hauntedmc.dataprovider.database.document.model.DocumentQuery;
+import nl.hauntedmc.dataprovider.database.document.model.DocumentUpdate;
 
 import java.util.Map;
+import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 
 /**
@@ -15,8 +17,8 @@ public final class MongoDocumentExample {
     private DocumentDataAccess documents;
 
     public void onEnable(DataProviderAPI api) {
-        DocumentDatabaseProvider provider = (DocumentDatabaseProvider) api.registerDatabaseOrThrow(
-                DatabaseType.MONGODB, "default"
+        DocumentDatabaseProvider provider = api.registerDatabaseOrThrow(
+                DatabaseType.MONGODB, "example", DocumentDatabaseProvider.class
         );
         documents = provider.getDataAccess();
     }
@@ -28,13 +30,21 @@ public final class MongoDocumentExample {
         ));
     }
 
-    public CompletableFuture<Map<String, Object>> findProfile(String uuid) {
-        return dataAccess().findOne("profiles", new DocumentQuery().eq("uuid", uuid));
+    public CompletableFuture<Optional<Map<String, Object>>> findProfile(String uuid) {
+        return dataAccess().findOneOptional("profiles", new DocumentQuery().eq("uuid", uuid));
+    }
+
+    public CompletableFuture<Void> updateProfile(String uuid, String name, int level) {
+        return dataAccess().updateOne(
+                "profiles",
+                new DocumentQuery().eq("uuid", uuid),
+                new DocumentUpdate().setAll(Map.of("name", name, "level", level))
+        );
     }
 
     public void onDisable(DataProviderAPI api) {
         documents = null;
-        api.unregisterDatabase(DatabaseType.MONGODB, "default");
+        api.unregisterDatabase(DatabaseType.MONGODB, "example");
     }
 
     private DocumentDataAccess dataAccess() {

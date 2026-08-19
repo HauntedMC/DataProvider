@@ -18,14 +18,11 @@ Use `update_version.sh` to bump `major`, `minor`, or `patch`:
 ./update_version.sh patch
 ```
 
-The script updates:
+The script uses the repository Maven Wrapper and updates:
 
 - `pom.xml` (`revision` via Maven `versions:set-property`; source of truth for every module)
 - `dataprovider-platform-velocity/src/main/java/nl/hauntedmc/dataprovider/platform/velocity/VelocityDataProvider.java`
-
-Manual step:
-
-- Update README dependency version examples if needed.
+- the Maven and Gradle `dataprovider-api` dependency examples in `README.md`
 
 Then it commits and tags (`vX.Y.Z`) locally.
 Push when ready:
@@ -61,7 +58,7 @@ The platform acceptance runner is at
 build properties and SHA-256 checksums in the root POM; update the corresponding version,
 build, and checksum together whenever the Paper or Velocity API dependency is advanced.
 
-## 4.  Artifacts
+## 4. Artifacts
 
 - Repository: `https://maven.pkg.github.com/HauntedMC/DataProvider`
 - GroupId: `nl.hauntedmc.dataprovider`

@@ -66,9 +66,10 @@ public final class PaperAcceptanceConsumer extends JavaPlugin {
             if (passed) {
                 try {
                     DataProviderScope scope = api.scope("paper-shutdown-cleanup");
-                    KeyValueDatabaseProvider shutdownRedis = (KeyValueDatabaseProvider) scope.registerDatabaseOrThrow(
+                    KeyValueDatabaseProvider shutdownRedis = scope.registerDatabaseOrThrow(
                             DatabaseType.REDIS,
-                            CONNECTION
+                            CONNECTION,
+                            KeyValueDatabaseProvider.class
                     );
                     await(shutdownRedis.getDataAccess().setKey(
                             "dataprovider:acceptance:paper:shutdown",
@@ -92,8 +93,7 @@ public final class PaperAcceptanceConsumer extends JavaPlugin {
         }
         try {
             scope.close();
-            require(scope.lifecycleState() == DataProviderScope.LifecycleState.CLOSED,
-                    "Shutdown scope did not enter CLOSED state.");
+            require(scope.isClosed(), "Shutdown scope did not enter CLOSED state.");
             getLogger().info("DATAPROVIDER_ACCEPTANCE_SHUTDOWN_CLEANUP_PASS platform=paper");
         } catch (RuntimeException | Error failure) {
             getLogger().severe("DATAPROVIDER_ACCEPTANCE_FAIL platform=paper shutdown-cleanup=" + failure);
@@ -110,8 +110,10 @@ public final class PaperAcceptanceConsumer extends JavaPlugin {
     }
 
     private static KeyValueDatabaseProvider runAcceptance(DataProviderAPI api) throws Exception {
-        RelationalDatabaseProvider mysql = (RelationalDatabaseProvider) api.registerDatabaseOrThrow(
-                DatabaseType.MYSQL, CONNECTION
+        RelationalDatabaseProvider mysql = api.registerDatabaseOrThrow(
+                DatabaseType.MYSQL,
+                CONNECTION,
+                RelationalDatabaseProvider.class
         );
         await(mysql.getDataAccess().executeUpdate(
                 "CREATE TABLE IF NOT EXISTS dataprovider_acceptance (id VARCHAR(64) PRIMARY KEY, value_text VARCHAR(64) NOT NULL)"
@@ -121,12 +123,16 @@ public final class PaperAcceptanceConsumer extends JavaPlugin {
                         + "ON DUPLICATE KEY UPDATE value_text = VALUES(value_text)",
                 "paper", "mysql-ok"
         ));
-        require("mysql-ok".equals(await(mysql.getDataAccess().queryForSingleValue(
-                "SELECT value_text FROM dataprovider_acceptance WHERE id = ?", "paper"
+        require("mysql-ok".equals(await(mysql.getDataAccess().queryForSingleValueAs(
+                String.class,
+                "SELECT value_text FROM dataprovider_acceptance WHERE id = ?",
+                "paper"
         ))), "MySQL round trip did not return the inserted value.");
 
-        DocumentDatabaseProvider mongodb = (DocumentDatabaseProvider) api.registerDatabaseOrThrow(
-                DatabaseType.MONGODB, CONNECTION
+        DocumentDatabaseProvider mongodb = api.registerDatabaseOrThrow(
+                DatabaseType.MONGODB,
+                CONNECTION,
+                DocumentDatabaseProvider.class
         );
         await(mongodb.getDataAccess().deleteOne("dataprovider_acceptance", new DocumentQuery().eq("_id", "paper")));
         await(mongodb.getDataAccess().insertOne(
@@ -137,16 +143,22 @@ public final class PaperAcceptanceConsumer extends JavaPlugin {
         ));
         require("mongodb-ok".equals(document.get("value")), "MongoDB round trip did not return the inserted value.");
 
-        KeyValueDatabaseProvider redis = (KeyValueDatabaseProvider) api.registerDatabaseOrThrow(
-                DatabaseType.REDIS, CONNECTION
+        KeyValueDatabaseProvider redis = api.registerDatabaseOrThrow(
+                DatabaseType.REDIS,
+                CONNECTION,
+                KeyValueDatabaseProvider.class
         );
         await(redis.getDataAccess().setKey("dataprovider:acceptance:paper", "redis-ok"));
         require("redis-ok".equals(await(redis.getDataAccess().getKey("dataprovider:acceptance:paper"))),
                 "Redis round trip did not return the inserted value.");
 
-        MessagingDatabaseProvider messaging = (MessagingDatabaseProvider) api.registerDatabaseOrThrow(
-                DatabaseType.REDIS_MESSAGING, CONNECTION
+        MessagingDatabaseProvider messaging = api.registerDatabaseOrThrow(
+                DatabaseType.REDIS_MESSAGING,
+                CONNECTION,
+                MessagingDatabaseProvider.class
         );
+        require(messaging.supportsDurableMessaging(),
+                "Bound Redis messaging provider did not advertise durable messaging support.");
         CountDownLatch received = new CountDownLatch(1);
         Subscription subscription = messaging.getDataAccess().subscribe(
                 CHANNEL, "dataprovider.platform.acceptance", AcceptanceMessage.class, message -> {
@@ -174,7 +186,7 @@ public final class PaperAcceptanceConsumer extends JavaPlugin {
     private static void awaitActiveSubscription(Subscription subscription) throws InterruptedException {
         long deadline = System.nanoTime() + OPERATION_TIMEOUT.toNanos();
         while (System.nanoTime() < deadline) {
-            if (subscription.state() == SubscriptionState.ACTIVE) {
+            if (subscription.isActive()) {
                 return;
             }
             Thread.sleep(25L);

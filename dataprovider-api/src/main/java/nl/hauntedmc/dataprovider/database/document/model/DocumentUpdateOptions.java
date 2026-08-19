@@ -8,6 +8,11 @@ public class DocumentUpdateOptions {
 
     private boolean upsert;
 
+    /** Creates update options with upsert enabled. */
+    public static DocumentUpdateOptions upsert() {
+        return new DocumentUpdateOptions().setUpsert(true);
+    }
+
     public boolean isUpsert() {
         return upsert;
     }

@@ -24,8 +24,8 @@ public final class RedisMessagingExample {
     private Subscription subscription;
 
     public void onEnable(DataProviderAPI api, Consumer<StaffChatMessage> messageHandler) {
-        MessagingDatabaseProvider provider = (MessagingDatabaseProvider) api.registerDatabaseOrThrow(
-                DatabaseType.REDIS_MESSAGING, "default"
+        MessagingDatabaseProvider provider = api.registerDatabaseOrThrow(
+                DatabaseType.REDIS_MESSAGING, "example", MessagingDatabaseProvider.class
         );
         try {
             bus = provider.getDataAccess();
@@ -33,7 +33,7 @@ public final class RedisMessagingExample {
                     Objects.requireNonNull(messageHandler, "Message handler cannot be null."));
         } catch (RuntimeException exception) {
             bus = null;
-            api.unregisterDatabase(DatabaseType.REDIS_MESSAGING, "default");
+            api.unregisterDatabase(DatabaseType.REDIS_MESSAGING, "example");
             throw exception;
         }
     }
@@ -51,7 +51,7 @@ public final class RedisMessagingExample {
                 awaitShutdown(current.unsubscribe());
             }
         } finally {
-            api.unregisterDatabase(DatabaseType.REDIS_MESSAGING, "default");
+            api.unregisterDatabase(DatabaseType.REDIS_MESSAGING, "example");
         }
     }
 

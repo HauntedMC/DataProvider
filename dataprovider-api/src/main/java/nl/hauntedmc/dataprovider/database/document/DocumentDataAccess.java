@@ -7,6 +7,7 @@ import nl.hauntedmc.dataprovider.database.document.model.DocumentUpdateOptions;
 
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 
 /**
@@ -23,6 +24,14 @@ public interface DocumentDataAccess extends DataAccess {
 
     CompletableFuture<Map<String, Object>> findOne(String collection, DocumentQuery query);
 
+    /** Returns the first matching document as an {@link Optional}. */
+    default CompletableFuture<Optional<Map<String, Object>>> findOneOptional(
+            String collection,
+            DocumentQuery query
+    ) {
+        return findOne(collection, query).thenApply(Optional::ofNullable);
+    }
+
     CompletableFuture<List<Map<String, Object>>> findMany(String collection, DocumentQuery query);
 
     CompletableFuture<Void> updateOne(String collection,
@@ -30,16 +39,39 @@ public interface DocumentDataAccess extends DataAccess {
                                       DocumentUpdate update,
                                       DocumentUpdateOptions options);
 
+    /** Updates one document using the default update options. */
+    default CompletableFuture<Void> updateOne(
+            String collection,
+            DocumentQuery query,
+            DocumentUpdate update
+    ) {
+        return updateOne(collection, query, update, new DocumentUpdateOptions());
+    }
+
     CompletableFuture<Void> updateMany(String collection,
                                        DocumentQuery query,
                                        DocumentUpdate update,
                                        DocumentUpdateOptions options);
+
+    /** Updates matching documents using the default update options. */
+    default CompletableFuture<Void> updateMany(
+            String collection,
+            DocumentQuery query,
+            DocumentUpdate update
+    ) {
+        return updateMany(collection, query, update, new DocumentUpdateOptions());
+    }
 
     CompletableFuture<Void> deleteOne(String collection, DocumentQuery query);
 
     CompletableFuture<Void> deleteMany(String collection, DocumentQuery query);
 
     CompletableFuture<Void> createIndex(String collection, Map<String, Object> indexSpec, Map<String, Object> indexOptions);
+
+    /** Creates an index without backend-specific index options. */
+    default CompletableFuture<Void> createIndex(String collection, Map<String, Object> indexSpec) {
+        return createIndex(collection, indexSpec, Map.of());
+    }
 
     CompletableFuture<Void> dropIndex(String collection, String indexName);
 }

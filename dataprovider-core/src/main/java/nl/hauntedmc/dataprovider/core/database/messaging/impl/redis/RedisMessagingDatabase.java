@@ -318,6 +318,11 @@ public final class RedisMessagingDatabase implements MessagingDatabaseProvider, 
     }
 
     @Override
+    public boolean supportsDurableMessaging() {
+        return true;
+    }
+
+    @Override
     public DurableMessagingDataAccess getDurableDataAccess() {
         return durableBus;
     }
@@ -356,6 +361,7 @@ public final class RedisMessagingDatabase implements MessagingDatabaseProvider, 
                 return RedisMessagingDatabase.this.isConnected() && !scopedExecution.isClosed();
             }
             @Override public MessagingDataAccess getDataAccess() { return accessView; }
+            @Override public boolean supportsDurableMessaging() { return true; }
             @Override public DurableMessagingDataAccess getDurableDataAccess() { return durableAccessView; }
         };
     }

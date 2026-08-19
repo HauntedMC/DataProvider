@@ -21,8 +21,10 @@ Scope names must be stable, non-blank, and use safe identifier characters.
 ## Register Through the Scope
 
 ```java
-MessagingDatabaseProvider provider = (MessagingDatabaseProvider) chatScope.registerDatabaseOrThrow(
-        DatabaseType.REDIS_MESSAGING, "hauntedmc"
+MessagingDatabaseProvider provider = chatScope.registerDatabaseOrThrow(
+        DatabaseType.REDIS_MESSAGING,
+        "hauntedmc",
+        MessagingDatabaseProvider.class
 );
 MessagingDataAccess bus = provider.getDataAccess();
 ```
@@ -30,13 +32,15 @@ MessagingDataAccess bus = provider.getDataAccess();
 Look up a provider that is owned by the same scope:
 
 ```java
-MessagingDatabaseProvider provider = (MessagingDatabaseProvider) chatScope.requireRegisteredDatabase(
-        DatabaseType.REDIS_MESSAGING, "hauntedmc"
+MessagingDatabaseProvider provider = chatScope.requireRegisteredDatabase(
+        DatabaseType.REDIS_MESSAGING,
+        "hauntedmc",
+        MessagingDatabaseProvider.class
 );
 MessagingDataAccess bus = provider.getDataAccess();
 ```
 
-Scoped lookups do not expose a connection that is registered only by another owner scope.
+Scoped lookups do not expose a connection that is registered only by another scope.
 
 ## Release Only That Scope
 
@@ -48,7 +52,7 @@ chatScope.unregisterAllDatabases();
 
 ```java
 try (DataProviderScope tempScope = api.scope("component.temp")) {
-    tempScope.registerDatabaseOrThrow(DatabaseType.MYSQL, "default");
+    tempScope.registerDatabaseOrThrow(DatabaseType.MYSQL, "example");
 }
 ```
 
@@ -57,8 +61,9 @@ Closing a DataProvider-provided scope is thread-safe and terminal. Its state tra
 and unregistration operations are rejected after closure, so create a new scope if the component
 is started again.
 
-Scopes with the same owner name continue to share ownership for the current release. Closing one
-therefore releases all registrations held under that owner name.
+Each `DataProviderScope` instance owns an independent internal registration scope, even when two
+scope objects expose the same `OwnerScope` value. Closing one scope therefore releases only that
+scope object's registrations.
 
 ## Full Plugin/Process Shutdown
 

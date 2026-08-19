@@ -33,7 +33,23 @@ All structured exceptions expose:
 - `retryAdvice()` — `NEVER`, `SAFE`, or `CONDITIONAL`
 - `executionOutcome()` — whether the operation started or may already have applied
 - `diagnostics()` — immutable allowlisted metadata
+- `diagnostic(key)` — Optional lookup for one diagnostic entry
 - `diagnosticId()` — validated correlation identifier for operational support
+- `failureContext()` — normalized immutable context suitable for passing through another structured boundary
+
+When constructing a failure context incrementally, `withDiagnostic(key, value)` adds or replaces one entry without rebuilding the whole diagnostics map. The existing `withDiagnostics(...)` and `withDiagnosticId(...)` copy methods remain available.
+
+```java
+DataProviderFailureContext context = DataProviderFailureContext.of(
+        DatabaseType.REDIS,
+        "cache",
+        "player.lookup",
+        RetryAdvice.SAFE,
+        ExecutionOutcome.NOT_STARTED
+).withDiagnostic("cacheState", "miss");
+```
+
+Diagnostic entries are still validated and redacted at the structured exception boundary; convenience methods do not relax the existing safety rules.
 
 ## Retry safety
 

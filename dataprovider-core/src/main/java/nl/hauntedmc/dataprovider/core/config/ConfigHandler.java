@@ -76,10 +76,11 @@ public class ConfigHandler {
             CommentedConfigurationNode candidate = loader.load();
             EnumMap<DatabaseType, Boolean> enabledTypes = new EnumMap<>(DatabaseType.class);
             for (DatabaseType type : DatabaseType.values()) {
-                CommentedConfigurationNode enabledNode = candidate.node("databases", type.name().toLowerCase(), "enabled");
+                String configKey = type.configKey();
+                CommentedConfigurationNode enabledNode = candidate.node("databases", configKey, "enabled");
                 Object rawValue = enabledNode.raw();
                 if (rawValue != null && !(rawValue instanceof Boolean)) {
-                    throw new IllegalArgumentException("databases." + type.name().toLowerCase() + ".enabled must be boolean.");
+                    throw new IllegalArgumentException("databases." + configKey + ".enabled must be boolean.");
                 }
                 enabledTypes.put(type, rawValue == null || (Boolean) rawValue);
             }

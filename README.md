@@ -16,7 +16,7 @@ It gives you one clean API for MySQL, MongoDB, Redis, and Redis messaging so you
 - Faster development: stop rewriting connection, pooling, and lifecycle code in every plugin.
 - Consistent developer experience: same registration and access flow across multiple backends.
 - Safer multi-plugin setup: caller-scoped access rules prevent cross-plugin misuse.
-- Cleaner codebase: typed APIs reduce casting and repetitive boilerplate.
+- Cleaner codebase: typed APIs, Optional read helpers, and capability checks reduce casting and repetitive boilerplate.
 - Better runtime behavior: connection reuse and lifecycle cleanup are handled centrally.
 
 ## Features
@@ -24,6 +24,7 @@ It gives you one clean API for MySQL, MongoDB, Redis, and Redis messaging so you
 - Following data backends are implemented: `MYSQL`, `MONGODB`, `REDIS`, `REDIS_MESSAGING`
 - Platform support: Velocity + Bukkit/Paper
 - Optional Hibernate ORM support for relational workflows (`nl.hauntedmc.dataprovider.api.orm.ORMContext`)
+- Disposable Pub/Sub plus capability-discoverable durable acknowledged Redis messaging
 
 ## Requirements
 
@@ -38,14 +39,13 @@ Resolve the API from your platform runtime:
 Velocity:
 
 ```java
-DataProviderAPI api = proxyServer.getPluginManager()
+DataProviderApiSupplier supplier = proxyServer.getPluginManager()
         .getPlugin("dataprovider")
         .flatMap(container -> container.getInstance()
                 .filter(DataProviderApiSupplier.class::isInstance)
-                .map(DataProviderApiSupplier.class::cast)
-                .map(DataProviderApiSupplier::dataProviderApi))
-        .orElseThrow(() -> new IllegalStateException("DataProvider is unavailable."))
-        .forPlugin(this); // bind once during this plugin's initialization
+                .map(DataProviderApiSupplier.class::cast))
+        .orElseThrow(() -> new IllegalStateException("DataProvider is unavailable."));
+DataProviderAPI api = supplier.dataProviderApiFor(this); // bind once during initialization
 ```
 
 Bukkit/Paper:
@@ -59,12 +59,16 @@ if (registration == null) {
 DataProviderAPI api = registration.getProvider().forPlugin(this); // bind once during onEnable
 ```
 
+Copy the generated backend `default` template to a named connection such as `example`, configure its access policy and credentials, then register that identifier:
+
 ```java
-RelationalDatabaseProvider mysql = (RelationalDatabaseProvider) api.registerDatabaseOrThrow(
-        DatabaseType.MYSQL, "default"
+RelationalDatabaseProvider mysql = api.registerDatabaseOrThrow(
+        DatabaseType.MYSQL,
+        "example",
+        RelationalDatabaseProvider.class
 );
 
-api.unregisterDatabase(DatabaseType.MYSQL, "default");
+api.unregisterDatabase(DatabaseType.MYSQL, "example");
 ```
 
 If you maintain multiple plugins, this gives your team one standard integration model instead of backend-specific code per project.
@@ -74,10 +78,10 @@ If you maintain multiple plugins, this gives your team one standard integration 
 Paper uses `/dataprovider` (alias `/dp`); Velocity uses `/dataproviderproxy` (alias `/dp`). Both use native,
 permission-aware command trees and offer the same formatted operational views.
 
-- `<root> help` lists the available diagnostics and the required permissions.
+- `<root> help` lists only the administrative views the sender can actually use.
 - `<root> status [summary]` shows connection, health, consumer, backend, and ORM state from cached data.
 - `<root> diagnostics` adds per-connection lifecycle, circuit, failure, reconnect, and probe-age detail.
-- `<root> connections [unhealthy|plugin <name>|type <databaseType>]` filters logical database registrations.
+- `<root> connections [unhealthy|plugin <name>|type <databaseType>|page <number>]` filters or pages through logical database registrations.
 - `<root> health` shows connections needing attention; `<root> health check` forces remote health probes asynchronously, then displays the refreshed result.
 - `<root> config` prints the current ORM schema mode and backend enablement.
 - `<root> reload` validates and atomically reloads `config.yml` plus every `databases/*.yml` file. Existing connections retain their current settings until reconnected.
@@ -135,7 +139,7 @@ Maven:
 Gradle (Groovy):
 
 ```groovy
-compileOnly "nl.hauntedmc.dataprovider:dataprovider-api:3.0.9"
+compileOnly "nl.hauntedmc.dataprovider:dataprovider-api:3.1.16"
 ```
 
 GitHub Packages authentication details are in the docs.

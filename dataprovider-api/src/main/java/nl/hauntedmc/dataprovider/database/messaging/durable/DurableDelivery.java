@@ -18,4 +18,24 @@ public interface DurableDelivery<T extends EventMessage> {
     DurableEvent<T> event();
     int attempt();
     CompletableFuture<Void> acknowledge();
+
+    /** Convenience access to the event payload. */
+    default T payload() {
+        return event().payload();
+    }
+
+    /** Convenience access to the producer event identity. */
+    default String eventId() {
+        return event().eventId();
+    }
+
+    /** Convenience access to the business idempotency key. */
+    default String processingKey() {
+        return event().processingKey();
+    }
+
+    /** Whether this delivery has already been attempted at least once before. */
+    default boolean isRedelivery() {
+        return attempt() > 1;
+    }
 }

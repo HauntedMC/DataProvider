@@ -28,6 +28,16 @@ public interface Subscription {
         return SubscriptionState.CLOSED;
     }
 
+    /** Whether this subscription is currently delivering messages. */
+    default boolean isActive() {
+        return state().isActive();
+    }
+
+    /** Whether this subscription has reached a terminal closed or failed state. */
+    default boolean isTerminal() {
+        return state().isTerminal();
+    }
+
     /** Current immutable diagnostics. */
     default SubscriptionSnapshot snapshot() {
         return new SubscriptionSnapshot(

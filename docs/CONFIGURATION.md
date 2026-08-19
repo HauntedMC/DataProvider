@@ -240,7 +240,7 @@ Durable consumers use the same lifecycle (`CONNECTING`, `ACTIVE`, `RECONNECTING`
 - Messaging handler queues drop excess messages rather than allowing unbounded growth; drop counts are included in execution metrics.
 - Redis Pub/Sub delivery is at-most-once. Messages published while a listener is disconnected can be lost and are not replayed.
 - Use `MessagingDatabaseProvider.getDurableDataAccess()` for votes, purchases, punishments and cross-server state changes. A consumer must persist `DurableEvent.processingKey()` under a unique constraint in the same business transaction, then call `delivery.acknowledge()` after commit.
-- Use `default` for single-backend setups and explicit identifiers such as `rw`, `ro` or `analytics` for multi-backend setups.
+- Copy the generated `default` template to a named connection such as `main`, `rw`, `ro`, or `analytics`; use that same identifier in code.
 - Never commit production credentials.
 - During full plugin shutdown, pair cleanup with `unregisterAllDatabasesForPlugin()`.
 

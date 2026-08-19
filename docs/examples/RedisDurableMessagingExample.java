@@ -3,6 +3,7 @@ import nl.hauntedmc.dataprovider.database.messaging.api.EventMessage;
 import nl.hauntedmc.dataprovider.database.messaging.durable.DurableEvent;
 import nl.hauntedmc.dataprovider.database.messaging.durable.DurableMessagingDataAccess;
 import nl.hauntedmc.dataprovider.database.messaging.durable.DurableSubscription;
+import nl.hauntedmc.dataprovider.database.messaging.durable.PublishedDurableEvent;
 
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
@@ -23,11 +24,14 @@ public final class RedisDurableMessagingExample {
     }
 
     DurableSubscription install(MessagingDatabaseProvider provider) {
+        if (!provider.supportsDurableMessaging()) {
+            throw new IllegalArgumentException("This messaging provider does not support durable delivery.");
+        }
         DurableMessagingDataAccess durable = provider.getDurableDataAccess();
         return durable.consume(VOTE_STREAM, GROUP, CONSUMER, "vote_received", VoteReceived.class, delivery -> {
             // In one database transaction: INSERT processing_key with a UNIQUE constraint, then apply the vote.
             // If the key already exists, the transaction makes this a no-op.
-            applyVoteIdempotently(delivery.event().processingKey(), delivery.event().payload());
+            applyVoteIdempotently(delivery.processingKey(), delivery.payload());
             delivery.acknowledge().join(); // Only after the transaction commits.
         });
     }
@@ -36,9 +40,9 @@ public final class RedisDurableMessagingExample {
         awaitShutdown(subscription.closeAsync());
     }
 
-    void recordVote(DurableMessagingDataAccess durable, VoteReceived vote) {
-        DurableEvent<VoteReceived> event = new DurableEvent<>(vote.voteId(), "vote:" + vote.voteId(), vote);
-        durable.publish(VOTE_STREAM, event);
+    CompletableFuture<PublishedDurableEvent> recordVote(DurableMessagingDataAccess durable, VoteReceived vote) {
+        DurableEvent<VoteReceived> event = DurableEvent.create("vote:" + vote.voteId(), vote);
+        return durable.publish(VOTE_STREAM, event);
     }
 
     private void applyVoteIdempotently(String processingKey, VoteReceived vote) {

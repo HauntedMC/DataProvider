@@ -2,8 +2,11 @@ package nl.hauntedmc.dataprovider.database.keyvalue;
 
 import nl.hauntedmc.dataprovider.database.DataAccess;
 
+import java.time.Duration;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
+import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 
@@ -16,11 +19,42 @@ public interface KeyValueDataAccess extends DataAccess {
 
     CompletableFuture<String> getKey(String key);
 
+    /** Returns the stored value as an {@link Optional}, avoiding nullable cache-miss handling. */
+    default CompletableFuture<Optional<String>> getKeyOptional(String key) {
+        return getKey(key).thenApply(Optional::ofNullable);
+    }
+
+    /**
+     * Returns the stored value or the supplied fallback when the key does not exist.
+     */
+    default CompletableFuture<String> getKeyOrDefault(String key, String defaultValue) {
+        Objects.requireNonNull(defaultValue, "Default value cannot be null.");
+        return getKey(key).thenApply(value -> value == null ? defaultValue : value);
+    }
+
     CompletableFuture<Void> deleteKey(String key);
 
     CompletableFuture<List<Map<String, Object>>> queryByPattern(String pattern);
 
     CompletableFuture<Void> setKeyWithExpiry(String key, String value, int ttlSeconds);
+
+    /**
+     * Sets a key with a positive duration, rounding sub-second precision up to the next whole second.
+     */
+    default CompletableFuture<Void> setKeyWithExpiry(String key, String value, Duration ttl) {
+        Objects.requireNonNull(ttl, "TTL cannot be null.");
+        if (ttl.isZero() || ttl.isNegative()) {
+            throw new IllegalArgumentException("TTL must be positive.");
+        }
+        long seconds = ttl.getSeconds();
+        if (seconds > Integer.MAX_VALUE || (seconds == Integer.MAX_VALUE && ttl.getNano() > 0)) {
+            throw new IllegalArgumentException("TTL cannot exceed " + Integer.MAX_VALUE + " seconds.");
+        }
+        if (ttl.getNano() > 0) {
+            seconds++;
+        }
+        return setKeyWithExpiry(key, value, (int) seconds);
+    }
 
     CompletableFuture<Void> pipelineSet(Map<String, String> entries);
 

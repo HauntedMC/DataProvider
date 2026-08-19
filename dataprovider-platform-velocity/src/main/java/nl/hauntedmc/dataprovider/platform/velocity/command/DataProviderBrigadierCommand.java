@@ -70,7 +70,13 @@ public final class DataProviderBrigadierCommand {
                                 .suggests((context, builder) -> suggestions(command, context.getSource(),
                                         new String[]{"connections", "type", builder.getRemaining()}, builder))
                                 .executes(context -> execute(command, context.getSource(), "connections", "type",
-                                        StringArgumentType.getString(context, "type")))));
+                                        StringArgumentType.getString(context, "type")))))
+                .then(BrigadierCommand.literalArgumentBuilder("page")
+                        .then(BrigadierCommand.requiredArgumentBuilder("number", StringArgumentType.word())
+                                .suggests((context, builder) -> suggestions(command, context.getSource(),
+                                        new String[]{"connections", "page", builder.getRemaining()}, builder))
+                                .executes(context -> execute(command, context.getSource(), "connections", "page",
+                                        StringArgumentType.getString(context, "number")))));
     }
 
     private static CompletableFuture<com.mojang.brigadier.suggestion.Suggestions> suggestions(

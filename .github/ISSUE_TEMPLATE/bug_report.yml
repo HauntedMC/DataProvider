@@ -57,7 +57,8 @@ body:
     id: dataprovider_version
     attributes:
       label: DataProvider Version
-      placeholder: 1.20.4
+      description: Use the plugin/API version, not the Minecraft server version.
+      placeholder: "3.x.y"
     validations:
       required: true
   - type: dropdown
@@ -82,7 +83,7 @@ body:
     id: java_version
     attributes:
       label: Java Version
-      placeholder: "21"
+      placeholder: "25"
     validations:
       required: true
   - type: dropdown
@@ -101,9 +102,9 @@ body:
   - type: input
     id: identifier
     attributes:
-      label: Config Identifier (Optional)
-      description: default, analytics, rw
-      placeholder: default
+      label: Connection Identifier (Optional)
+      description: The named connection section used by your plugin, for example main, analytics, or rw. Do not include credentials.
+      placeholder: main
     validations:
       required: false
   - type: textarea
@@ -118,6 +119,6 @@ body:
     id: extra
     attributes:
       label: Additional Context (Optional)
-      description: Config snippets, screenshots, or other helpful details.
+      description: Config snippets, screenshots, or other helpful details. Remove credentials and secrets first.
     validations:
       required: false

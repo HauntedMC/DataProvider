@@ -42,6 +42,7 @@ Run linting:
 
 ```bash
 ./mvnw -B -ntp -DskipTests checkstyle:check
+shellcheck update_version.sh dataprovider-platform-acceptance/run-platform-acceptance.sh
 ```
 
 JaCoCo HTML report:
@@ -68,7 +69,7 @@ The Testcontainers suite verifies:
 
 - `ci-lint.yml`
   - Trigger: pull requests + pushes to `main`
-  - Jobs: Checkstyle and ShellCheck for the platform runner
+  - Jobs: Checkstyle and ShellCheck for release/version tooling and the platform acceptance runner
 - `ci-tests-and-coverage.yml`
   - Trigger: pull requests + pushes to `main`
   - `Tests and Coverage`: `./mvnw -Pintegration-tests verify`
