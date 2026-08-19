@@ -200,8 +200,7 @@ public final class RedisMessagingDatabase implements MessagingDatabaseProvider, 
                     .password(password.isBlank() ? null : password)
                     .database(database)
                     .connectionTimeoutMillis(connectionTimeoutMs)
-                    .socketTimeoutMillis(socketTimeoutMs)
-                    .ssl(tlsEnabled);
+                    .socketTimeoutMillis(socketTimeoutMs);
             if (tlsEnabled) {
                 clientConfigBuilder.sslOptions(createSslOptions(trustStorePath, trustStorePassword, trustStoreType));
             }
