@@ -18,9 +18,20 @@ public interface MessagingDatabaseProvider extends DatabaseProvider {
     @Override
     MessagingDataAccess getDataAccess();
 
-    /** Reports whether this provider exposes durable acknowledged messaging. */
+    /**
+     * Reports whether this provider implements durable acknowledged messaging.
+     *
+     * <p>Providers that override {@link #getDurableDataAccess()} automatically advertise the
+     * capability. Implementations with connection-state-sensitive accessors may override this
+     * method directly.</p>
+     */
     default boolean supportsDurableMessaging() {
-        return false;
+        try {
+            getDurableDataAccess();
+            return true;
+        } catch (UnsupportedOperationException unsupported) {
+            return false;
+        }
     }
 
     /**

@@ -6,6 +6,7 @@ import nl.hauntedmc.dataprovider.database.keyvalue.KeyValueDataAccess;
 import nl.hauntedmc.dataprovider.database.keyvalue.KeyValueDatabaseProvider;
 import nl.hauntedmc.dataprovider.database.messaging.MessagingDataAccess;
 import nl.hauntedmc.dataprovider.database.messaging.MessagingDatabaseProvider;
+import nl.hauntedmc.dataprovider.database.messaging.durable.DurableMessagingDataAccess;
 import nl.hauntedmc.dataprovider.database.relational.RelationalDataAccess;
 import nl.hauntedmc.dataprovider.database.relational.RelationalDatabaseProvider;
 import nl.hauntedmc.dataprovider.database.relational.schema.SchemaManager;
@@ -100,5 +101,27 @@ class DatabaseProviderInterfaceContractTest {
         assertFalse(provider.supportsDurableMessaging());
         assertThrows(UnsupportedOperationException.class, provider::getDataSource);
         assertThrows(UnsupportedOperationException.class, provider::getDurableDataAccess);
+    }
+
+    @Test
+    void messagingProviderAutomaticallyAdvertisesImplementedDurableAccessor() {
+        MessagingDatabaseProvider provider = new MessagingDatabaseProvider() {
+            @Override
+            public boolean isConnected() {
+                return true;
+            }
+
+            @Override
+            public MessagingDataAccess getDataAccess() {
+                return null;
+            }
+
+            @Override
+            public DurableMessagingDataAccess getDurableDataAccess() {
+                return null;
+            }
+        };
+
+        assertTrue(provider.supportsDurableMessaging());
     }
 }
