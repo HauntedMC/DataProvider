@@ -6,11 +6,17 @@ import nl.hauntedmc.dataprovider.core.testutil.RecordingLoggerAdapter;
 import nl.hauntedmc.dataprovider.database.messaging.api.EventMessage;
 import nl.hauntedmc.dataprovider.database.messaging.api.MessageRegistry;
 import nl.hauntedmc.dataprovider.database.messaging.api.SubscriptionState;
+import org.apache.commons.pool2.BasePooledObjectFactory;
+import org.apache.commons.pool2.PooledObject;
+import org.apache.commons.pool2.impl.DefaultPooledObject;
 import org.junit.jupiter.api.Test;
 import redis.clients.jedis.Connection;
+import redis.clients.jedis.ConnectionPoolConfig;
+import redis.clients.jedis.DefaultJedisClientConfig;
 import redis.clients.jedis.JedisPubSub;
 import redis.clients.jedis.RedisClient;
-import redis.clients.jedis.util.Pool;
+import redis.clients.jedis.RedisProtocol;
+import redis.clients.jedis.providers.PooledConnectionProvider;
 
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CountDownLatch;
@@ -24,7 +30,6 @@ import java.util.concurrent.atomic.AtomicReference;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.when;
 
 class RedisMessagingSubscriptionContractTest {
 
@@ -79,6 +84,7 @@ class RedisMessagingSubscriptionContractTest {
         } finally {
             releaseListener.countDown();
             access.shutdown().get(2, TimeUnit.SECONDS);
+            client.close();
         }
         assertEquals(0, execution.activeSubscriptions.get());
         assertEquals(1, execution.releasedSubscriptions.get());
@@ -132,6 +138,8 @@ class RedisMessagingSubscriptionContractTest {
             CompletableFuture<Void> stopped = subscription.unsubscribe();
             releaseListener.countDown();
             stopped.get(2, TimeUnit.SECONDS);
+            firstClient.close();
+            replacementClient.close();
         }
     }
 
@@ -170,6 +178,7 @@ class RedisMessagingSubscriptionContractTest {
             CompletableFuture<Void> stopped = subscription.unsubscribe();
             releaseListener.countDown();
             stopped.get(2, TimeUnit.SECONDS);
+            client.close();
         }
     }
 
@@ -186,14 +195,22 @@ class RedisMessagingSubscriptionContractTest {
         );
     }
 
-    @SuppressWarnings("unchecked")
     private static RedisClient client(Connection connection) {
-        RedisClient client = mock(RedisClient.class);
-        Pool<Connection> pool = mock(Pool.class);
-        when(client.getPool()).thenReturn(pool);
-        when(pool.isClosed()).thenReturn(false);
-        when(pool.getResource()).thenReturn(connection);
-        return client;
+        BasePooledObjectFactory<Connection> factory = new BasePooledObjectFactory<>() {
+            @Override public Connection create() { return connection; }
+            @Override public PooledObject<Connection> wrap(Connection value) {
+                return new DefaultPooledObject<>(value);
+            }
+            @Override public boolean validateObject(PooledObject<Connection> pooled) { return true; }
+        };
+        ConnectionPoolConfig poolConfig = new ConnectionPoolConfig();
+        poolConfig.setMaxTotal(8);
+        poolConfig.setMaxIdle(8);
+        PooledConnectionProvider provider = new PooledConnectionProvider(factory, poolConfig);
+        return RedisClient.builder()
+                .clientConfig(DefaultJedisClientConfig.builder().protocol(RedisProtocol.RESP3).build())
+                .connectionProvider(provider)
+                .build();
     }
 
     private static RedisMessagingDataAccess.PubSubRunner listeningRunner(
