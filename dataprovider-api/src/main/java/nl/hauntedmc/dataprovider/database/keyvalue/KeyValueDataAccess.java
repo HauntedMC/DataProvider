@@ -41,11 +41,11 @@ public interface KeyValueDataAccess extends DataAccess {
             throw new IllegalArgumentException("TTL must be positive.");
         }
         long seconds = ttl.getSeconds();
-        if (ttl.getNano() > 0) {
-            seconds = Math.addExact(seconds, 1L);
-        }
-        if (seconds > Integer.MAX_VALUE) {
+        if (seconds > Integer.MAX_VALUE || (seconds == Integer.MAX_VALUE && ttl.getNano() > 0)) {
             throw new IllegalArgumentException("TTL cannot exceed " + Integer.MAX_VALUE + " seconds.");
+        }
+        if (ttl.getNano() > 0) {
+            seconds++;
         }
         return setKeyWithExpiry(key, value, (int) seconds);
     }
