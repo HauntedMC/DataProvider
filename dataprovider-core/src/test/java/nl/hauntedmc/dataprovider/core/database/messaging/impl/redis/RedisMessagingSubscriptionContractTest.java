@@ -7,9 +7,10 @@ import nl.hauntedmc.dataprovider.database.messaging.api.EventMessage;
 import nl.hauntedmc.dataprovider.database.messaging.api.MessageRegistry;
 import nl.hauntedmc.dataprovider.database.messaging.api.SubscriptionState;
 import org.junit.jupiter.api.Test;
-import redis.clients.jedis.Jedis;
-import redis.clients.jedis.JedisPool;
+import redis.clients.jedis.Connection;
 import redis.clients.jedis.JedisPubSub;
+import redis.clients.jedis.RedisClient;
+import redis.clients.jedis.util.Pool;
 
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CountDownLatch;
@@ -22,27 +23,26 @@ import java.util.concurrent.atomic.AtomicReference;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
-@SuppressWarnings("deprecation")
 class RedisMessagingSubscriptionContractTest {
 
     @Test
     void handlersOnTheSameDestinationShareOneListenerAndUnsubscribeIndependently() throws Exception {
-        JedisPool pool = mock(JedisPool.class);
+        Connection connection = mock(Connection.class);
+        RedisClient client = client(connection);
         AtomicReference<JedisPubSub> listener = new AtomicReference<>();
         CountDownLatch listening = new CountDownLatch(1);
         CountDownLatch releaseListener = new CountDownLatch(1);
-        Jedis jedis = listeningJedis("network.shared", listener, listening, releaseListener);
-        when(pool.getResource()).thenReturn(jedis);
+        RedisMessagingDataAccess.PubSubRunner runner = listeningRunner(
+                "network.shared", listener, listening, releaseListener
+        );
 
         PermissiveExecution execution = new PermissiveExecution();
         RecordingLoggerAdapter logger = new RecordingLoggerAdapter();
         MessageRegistry registry = new MessageRegistry(logger);
-        RedisMessagingDataAccess access = access(pool, execution, logger, registry);
+        RedisMessagingDataAccess access = access(client, execution, logger, registry, runner);
         AtomicInteger firstCalls = new AtomicInteger();
         AtomicInteger secondCalls = new AtomicInteger();
         var first = access.subscribe("network.shared", "test.event", TestEvent.class,
@@ -86,39 +86,33 @@ class RedisMessagingSubscriptionContractTest {
 
     @Test
     void messagesFromAnObsoleteListenerGenerationAreIgnoredAfterRecovery() throws Exception {
-        JedisPool firstPool = mock(JedisPool.class);
-        JedisPool replacementPool = mock(JedisPool.class);
-        Jedis firstJedis = mock(Jedis.class);
-        Jedis replacementJedis = mock(Jedis.class);
-        AtomicReference<JedisPool> currentPool = new AtomicReference<>(firstPool);
+        Connection firstConnection = mock(Connection.class);
+        Connection replacementConnection = mock(Connection.class);
+        RedisClient firstClient = client(firstConnection);
+        RedisClient replacementClient = client(replacementConnection);
+        AtomicReference<RedisClient> currentClient = new AtomicReference<>(firstClient);
         AtomicReference<JedisPubSub> obsoleteListener = new AtomicReference<>();
         AtomicReference<JedisPubSub> activeListener = new AtomicReference<>();
         CountDownLatch recovered = new CountDownLatch(1);
         CountDownLatch releaseListener = new CountDownLatch(1);
-        when(firstPool.getResource()).thenReturn(firstJedis);
-        when(replacementPool.getResource()).thenReturn(replacementJedis);
-        doAnswer(invocation -> {
-            JedisPubSub listener = invocation.getArgument(0);
-            obsoleteListener.set(listener);
-            listener.onSubscribe("network.generation", 1);
-            currentPool.set(replacementPool);
-            throw new IllegalStateException("simulated obsolete listener failure");
-        }).when(firstJedis).subscribe(any(JedisPubSub.class), any(String[].class));
-        doAnswer(invocation -> {
-            JedisPubSub listener = invocation.getArgument(0);
+        RedisMessagingDataAccess.PubSubRunner runner = (connection, listener, destination) -> {
+            listener.onSubscribe(destination, 1);
+            if (connection == firstConnection) {
+                obsoleteListener.set(listener);
+                currentClient.set(replacementClient);
+                throw new IllegalStateException("simulated obsolete listener failure");
+            }
             activeListener.set(listener);
-            listener.onSubscribe("network.generation", 1);
             recovered.countDown();
             awaitLatch(releaseListener);
-            return null;
-        }).when(replacementJedis).subscribe(any(JedisPubSub.class), any(String[].class));
+        };
 
         PermissiveExecution execution = new PermissiveExecution();
         RecordingLoggerAdapter logger = new RecordingLoggerAdapter();
         MessageRegistry registry = new MessageRegistry(logger);
         RedisMessagingDataAccess access = new RedisMessagingDataAccess(
-                currentPool::get, execution, logger, registry, 4, 1_024, 16, 8,
-                0, 0, 0.0D, 0
+                currentClient::get, execution, logger, registry, 4, 1_024, 16, 8,
+                0, 0, 0.0D, 0, runner
         );
         AtomicInteger calls = new AtomicInteger();
         var subscription = access.subscribe("network.generation", "test.event", TestEvent.class,
@@ -143,17 +137,19 @@ class RedisMessagingSubscriptionContractTest {
 
     @Test
     void transientDispatchRejectionDropsOnlyQueuedWorkAndDoesNotWedgeTheHandler() throws Exception {
-        JedisPool pool = mock(JedisPool.class);
+        Connection connection = mock(Connection.class);
+        RedisClient client = client(connection);
         AtomicReference<JedisPubSub> listener = new AtomicReference<>();
         CountDownLatch listening = new CountDownLatch(1);
         CountDownLatch releaseListener = new CountDownLatch(1);
-        Jedis jedis = listeningJedis("network.rejection", listener, listening, releaseListener);
-        when(pool.getResource()).thenReturn(jedis);
+        RedisMessagingDataAccess.PubSubRunner runner = listeningRunner(
+                "network.rejection", listener, listening, releaseListener
+        );
 
         RejectOnceExecution execution = new RejectOnceExecution();
         RecordingLoggerAdapter logger = new RecordingLoggerAdapter();
         MessageRegistry registry = new MessageRegistry(logger);
-        RedisMessagingDataAccess access = access(pool, execution, logger, registry);
+        RedisMessagingDataAccess access = access(client, execution, logger, registry, runner);
         CountDownLatch handled = new CountDownLatch(1);
         var subscription = access.subscribe("network.rejection", "test.event", TestEvent.class,
                 ignored -> handled.countDown());
@@ -178,30 +174,40 @@ class RedisMessagingSubscriptionContractTest {
     }
 
     private static RedisMessagingDataAccess access(
-            JedisPool pool,
+            RedisClient client,
             ExecutionHandle execution,
             RecordingLoggerAdapter logger,
-            MessageRegistry registry
+            MessageRegistry registry,
+            RedisMessagingDataAccess.PubSubRunner runner
     ) {
-        return new RedisMessagingDataAccess(pool, execution, logger, registry, 8, 1_024, 16, 8);
+        return new RedisMessagingDataAccess(
+                () -> client, execution, logger, registry, 8, 1_024, 16, 8,
+                0, 0, 0.0D, 0, runner
+        );
     }
 
-    private static Jedis listeningJedis(
+    @SuppressWarnings("unchecked")
+    private static RedisClient client(Connection connection) {
+        RedisClient client = mock(RedisClient.class);
+        Pool<Connection> pool = mock(Pool.class);
+        when(client.getPool()).thenReturn(pool);
+        when(pool.isClosed()).thenReturn(false);
+        when(pool.getResource()).thenReturn(connection);
+        return client;
+    }
+
+    private static RedisMessagingDataAccess.PubSubRunner listeningRunner(
             String destination,
             AtomicReference<JedisPubSub> listenerReference,
             CountDownLatch listening,
             CountDownLatch release
     ) {
-        Jedis jedis = mock(Jedis.class);
-        doAnswer(invocation -> {
-            JedisPubSub listener = invocation.getArgument(0);
+        return (connection, listener, ignoredDestination) -> {
             listenerReference.set(listener);
             listener.onSubscribe(destination, 1);
             listening.countDown();
             awaitLatch(release);
-            return null;
-        }).when(jedis).subscribe(any(JedisPubSub.class), any(String[].class));
-        return jedis;
+        };
     }
 
     private static void await(CheckedCondition condition) throws Exception {
