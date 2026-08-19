@@ -15,7 +15,9 @@ import nl.hauntedmc.dataprovider.database.messaging.durable.DurableSubscription;
 import nl.hauntedmc.dataprovider.database.messaging.durable.DurableSubscriptionSnapshot;
 import nl.hauntedmc.dataprovider.database.messaging.durable.PublishedDurableEvent;
 import nl.hauntedmc.dataprovider.logging.LoggerAdapter;
+import redis.clients.jedis.Pipeline;
 import redis.clients.jedis.RedisClient;
+import redis.clients.jedis.Response;
 import redis.clients.jedis.StreamEntryID;
 import redis.clients.jedis.exceptions.JedisDataException;
 import redis.clients.jedis.params.XAutoClaimParams;
@@ -691,7 +693,12 @@ final class RedisStreamsDurableMessagingDataAccess implements DurableMessagingDa
     }
 
     private static long redisTimeMillis(RedisClient redis) {
-        List<String> time = redis.time();
+        List<String> time;
+        try (Pipeline pipeline = redis.pipelined()) {
+            Response<List<String>> response = pipeline.time();
+            pipeline.sync();
+            time = response.get();
+        }
         return Math.addExact(Math.multiplyExact(Long.parseLong(time.getFirst()), 1_000L),
                 Long.parseLong(time.get(1)) / 1_000L);
     }
