@@ -2,11 +2,10 @@ package nl.hauntedmc.dataprovider.core.database.keyvalue.impl.redis;
 
 import nl.hauntedmc.dataprovider.core.concurrent.AsyncTaskSupport;
 import nl.hauntedmc.dataprovider.database.keyvalue.KeyValueDataAccess;
-import redis.clients.jedis.Jedis;
-import redis.clients.jedis.JedisPool;
+import redis.clients.jedis.AbstractTransaction;
 import redis.clients.jedis.Pipeline;
+import redis.clients.jedis.RedisClient;
 import redis.clients.jedis.Response;
-import redis.clients.jedis.Transaction;
 import redis.clients.jedis.params.ScanParams;
 import redis.clients.jedis.params.SetParams;
 import redis.clients.jedis.resps.ScanResult;
@@ -21,26 +20,20 @@ import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.Executor;
 
-/**
- * Redis data access routed through the shared Redis lane.
- *
- * <p>The deprecated Jedis pool type is retained deliberately until the Redis client migration
- * can preserve this class's borrowed-connection semantics.
- */
-@SuppressWarnings("deprecation")
+/** Redis data access routed through the shared Redis lane. */
 final class RedisDataAccess implements KeyValueDataAccess {
 
-    private final JedisPool jedisPool;
+    private final RedisClient redisClient;
     private final Executor executor;
     private final int scanCount;
     private final int maxScanResults;
 
-    RedisDataAccess(JedisPool jedisPool, Executor executor) {
-        this(jedisPool, executor, 250, 10_000);
+    RedisDataAccess(RedisClient redisClient, Executor executor) {
+        this(redisClient, executor, 250, 10_000);
     }
 
-    RedisDataAccess(JedisPool jedisPool, Executor executor, int scanCount, int maxScanResults) {
-        this.jedisPool = Objects.requireNonNull(jedisPool, "Jedis pool cannot be null.");
+    RedisDataAccess(RedisClient redisClient, Executor executor, int scanCount, int maxScanResults) {
+        this.redisClient = Objects.requireNonNull(redisClient, "Redis client cannot be null.");
         this.executor = Objects.requireNonNull(executor, "Executor cannot be null.");
         this.scanCount = Math.max(1, scanCount);
         this.maxScanResults = Math.max(1, maxScanResults);
@@ -50,31 +43,19 @@ final class RedisDataAccess implements KeyValueDataAccess {
     public CompletableFuture<Void> setKey(String key, String value) {
         String validatedKey = requireKey(key);
         Objects.requireNonNull(value, "Value cannot be null.");
-        return AsyncTaskSupport.runAsync(executor, "redis.setKey", () -> {
-            try (Jedis jedis = jedisPool.getResource()) {
-                jedis.set(validatedKey, value);
-            }
-        });
+        return AsyncTaskSupport.runAsync(executor, "redis.setKey", () -> redisClient.set(validatedKey, value));
     }
 
     @Override
     public CompletableFuture<String> getKey(String key) {
         String validatedKey = requireKey(key);
-        return AsyncTaskSupport.supplyAsync(executor, "redis.getKey", () -> {
-            try (Jedis jedis = jedisPool.getResource()) {
-                return jedis.get(validatedKey);
-            }
-        });
+        return AsyncTaskSupport.supplyAsync(executor, "redis.getKey", () -> redisClient.get(validatedKey));
     }
 
     @Override
     public CompletableFuture<Void> deleteKey(String key) {
         String validatedKey = requireKey(key);
-        return AsyncTaskSupport.runAsync(executor, "redis.deleteKey", () -> {
-            try (Jedis jedis = jedisPool.getResource()) {
-                jedis.del(validatedKey);
-            }
-        });
+        return AsyncTaskSupport.runAsync(executor, "redis.deleteKey", () -> redisClient.del(validatedKey));
     }
 
     @Override
@@ -82,34 +63,33 @@ final class RedisDataAccess implements KeyValueDataAccess {
         String validatedPattern = requirePattern(pattern);
         return AsyncTaskSupport.supplyAsync(executor, "redis.queryByPattern", () -> {
             List<Map<String, Object>> results = new ArrayList<>();
-            try (Jedis jedis = jedisPool.getResource()) {
-                String cursor = ScanParams.SCAN_POINTER_START;
-                ScanParams scanParams = new ScanParams().match(validatedPattern).count(scanCount);
-                do {
-                    ScanResult<String> scanResult = jedis.scan(cursor, scanParams);
-                    cursor = scanResult.getCursor();
-                    if (!scanResult.getResult().isEmpty()) {
-                        Pipeline pipeline = jedis.pipelined();
-                        Map<String, Response<String>> keyValues = new LinkedHashMap<>();
+            String cursor = ScanParams.SCAN_POINTER_START;
+            ScanParams scanParams = new ScanParams().match(validatedPattern).count(scanCount);
+            do {
+                ScanResult<String> scanResult = redisClient.scan(cursor, scanParams);
+                cursor = scanResult.getCursor();
+                if (!scanResult.getResult().isEmpty()) {
+                    Map<String, Response<String>> keyValues = new LinkedHashMap<>();
+                    try (Pipeline pipeline = redisClient.pipelined()) {
                         for (String foundKey : scanResult.getResult()) {
                             keyValues.put(foundKey, pipeline.get(foundKey));
                         }
                         pipeline.sync();
-                        for (Map.Entry<String, Response<String>> entry : keyValues.entrySet()) {
-                            String value = entry.getValue().get();
-                            if (value != null) {
-                                Map<String, Object> resultEntry = new HashMap<>();
-                                resultEntry.put("key", entry.getKey());
-                                resultEntry.put("value", value);
-                                results.add(resultEntry);
-                                if (results.size() >= maxScanResults) {
-                                    return results;
-                                }
+                    }
+                    for (Map.Entry<String, Response<String>> entry : keyValues.entrySet()) {
+                        String value = entry.getValue().get();
+                        if (value != null) {
+                            Map<String, Object> resultEntry = new HashMap<>();
+                            resultEntry.put("key", entry.getKey());
+                            resultEntry.put("value", value);
+                            results.add(resultEntry);
+                            if (results.size() >= maxScanResults) {
+                                return results;
                             }
                         }
                     }
-                } while (!ScanParams.SCAN_POINTER_START.equals(cursor) && results.size() < maxScanResults);
-            }
+                }
+            } while (!ScanParams.SCAN_POINTER_START.equals(cursor) && results.size() < maxScanResults);
             return results;
         });
     }
@@ -121,11 +101,8 @@ final class RedisDataAccess implements KeyValueDataAccess {
         if (ttlSeconds < 1) {
             throw new IllegalArgumentException("TTL seconds must be greater than zero.");
         }
-        return AsyncTaskSupport.runAsync(executor, "redis.setKeyWithExpiry", () -> {
-            try (Jedis jedis = jedisPool.getResource()) {
-                jedis.set(validatedKey, value, new SetParams().ex(ttlSeconds));
-            }
-        });
+        return AsyncTaskSupport.runAsync(executor, "redis.setKeyWithExpiry",
+                () -> redisClient.set(validatedKey, value, new SetParams().ex(ttlSeconds)));
     }
 
     @Override
@@ -139,8 +116,7 @@ final class RedisDataAccess implements KeyValueDataAccess {
             Objects.requireNonNull(value, "Pipeline value cannot be null for key " + key);
         });
         return AsyncTaskSupport.runAsync(executor, "redis.pipelineSet", () -> {
-            try (Jedis jedis = jedisPool.getResource()) {
-                Pipeline pipeline = jedis.pipelined();
+            try (Pipeline pipeline = redisClient.pipelined()) {
                 safeEntries.forEach(pipeline::set);
                 pipeline.sync();
             }
@@ -152,13 +128,14 @@ final class RedisDataAccess implements KeyValueDataAccess {
         String validatedKey = requireKey(key);
         Objects.requireNonNull(newValue, "New value cannot be null.");
         return AsyncTaskSupport.supplyAsync(executor, "redis.watchCompareAndSet", () -> {
-            try (Jedis jedis = jedisPool.getResource()) {
-                jedis.watch(validatedKey);
-                if (!Objects.equals(jedis.get(validatedKey), oldValue)) {
-                    jedis.unwatch();
+            try (AbstractTransaction transaction = redisClient.transaction(false)) {
+                transaction.watch(validatedKey);
+                Response<String> current = transaction.get(validatedKey);
+                if (!Objects.equals(current.get(), oldValue)) {
+                    transaction.unwatch();
                     return false;
                 }
-                Transaction transaction = jedis.multi();
+                transaction.multi();
                 transaction.set(validatedKey, newValue);
                 List<Object> result = transaction.exec();
                 return result != null && !result.isEmpty();
@@ -177,21 +154,13 @@ final class RedisDataAccess implements KeyValueDataAccess {
             requireKey(field);
             Objects.requireNonNull(value, "Hash value cannot be null for field " + field);
         });
-        return AsyncTaskSupport.runAsync(executor, "redis.hset", () -> {
-            try (Jedis jedis = jedisPool.getResource()) {
-                jedis.hset(validatedHashKey, safeFields);
-            }
-        });
+        return AsyncTaskSupport.runAsync(executor, "redis.hset", () -> redisClient.hset(validatedHashKey, safeFields));
     }
 
     @Override
     public CompletableFuture<Map<String, String>> hgetAll(String hashKey) {
         String validatedHashKey = requireKey(hashKey);
-        return AsyncTaskSupport.supplyAsync(executor, "redis.hgetAll", () -> {
-            try (Jedis jedis = jedisPool.getResource()) {
-                return jedis.hgetAll(validatedHashKey);
-            }
-        });
+        return AsyncTaskSupport.supplyAsync(executor, "redis.hgetAll", () -> redisClient.hgetAll(validatedHashKey));
     }
 
     @Override
@@ -204,11 +173,7 @@ final class RedisDataAccess implements KeyValueDataAccess {
         for (String field : safeFields) {
             requireKey(field);
         }
-        return AsyncTaskSupport.runAsync(executor, "redis.hdel", () -> {
-            try (Jedis jedis = jedisPool.getResource()) {
-                jedis.hdel(validatedHashKey, safeFields);
-            }
-        });
+        return AsyncTaskSupport.runAsync(executor, "redis.hdel", () -> redisClient.hdel(validatedHashKey, safeFields));
     }
 
     @Override
@@ -221,21 +186,13 @@ final class RedisDataAccess implements KeyValueDataAccess {
         for (String member : safeMembers) {
             Objects.requireNonNull(member, "Set member cannot be null.");
         }
-        return AsyncTaskSupport.runAsync(executor, "redis.sadd", () -> {
-            try (Jedis jedis = jedisPool.getResource()) {
-                jedis.sadd(validatedKey, safeMembers);
-            }
-        });
+        return AsyncTaskSupport.runAsync(executor, "redis.sadd", () -> redisClient.sadd(validatedKey, safeMembers));
     }
 
     @Override
     public CompletableFuture<Set<String>> smembers(String key) {
         String validatedKey = requireKey(key);
-        return AsyncTaskSupport.supplyAsync(executor, "redis.smembers", () -> {
-            try (Jedis jedis = jedisPool.getResource()) {
-                return jedis.smembers(validatedKey);
-            }
-        });
+        return AsyncTaskSupport.supplyAsync(executor, "redis.smembers", () -> redisClient.smembers(validatedKey));
     }
 
     @Override
@@ -248,32 +205,21 @@ final class RedisDataAccess implements KeyValueDataAccess {
         for (String member : safeMembers) {
             Objects.requireNonNull(member, "Set member cannot be null.");
         }
-        return AsyncTaskSupport.runAsync(executor, "redis.srem", () -> {
-            try (Jedis jedis = jedisPool.getResource()) {
-                jedis.srem(validatedKey, safeMembers);
-            }
-        });
+        return AsyncTaskSupport.runAsync(executor, "redis.srem", () -> redisClient.srem(validatedKey, safeMembers));
     }
 
     @Override
     public CompletableFuture<Void> zadd(String key, double score, String member) {
         String validatedKey = requireKey(key);
         Objects.requireNonNull(member, "Sorted set member cannot be null.");
-        return AsyncTaskSupport.runAsync(executor, "redis.zadd", () -> {
-            try (Jedis jedis = jedisPool.getResource()) {
-                jedis.zadd(validatedKey, score, member);
-            }
-        });
+        return AsyncTaskSupport.runAsync(executor, "redis.zadd", () -> redisClient.zadd(validatedKey, score, member));
     }
 
     @Override
     public CompletableFuture<List<String>> zrangeByScore(String key, double min, double max) {
         String validatedKey = requireKey(key);
-        return AsyncTaskSupport.supplyAsync(executor, "redis.zrangeByScore", () -> {
-            try (Jedis jedis = jedisPool.getResource()) {
-                return new ArrayList<>(jedis.zrangeByScore(validatedKey, min, max));
-            }
-        });
+        return AsyncTaskSupport.supplyAsync(executor, "redis.zrangeByScore",
+                () -> new ArrayList<>(redisClient.zrangeByScore(validatedKey, min, max)));
     }
 
     private static String requireKey(String key) {
