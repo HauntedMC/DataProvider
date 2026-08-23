@@ -126,6 +126,10 @@
         </repository>
     </repositories>
 
+    <pluginRepositories>
+        <pluginRepository><id>github</id><url>https://maven.pkg.github.com/HauntedMC/*</url></pluginRepository>
+    </pluginRepositories>
+
     <dependencyManagement>
         <dependencies>
             <!-- Pin transitive versions so release builds enforce one convergent runtime graph. -->
