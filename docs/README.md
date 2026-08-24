@@ -9,6 +9,7 @@ This directory contains developer and operational notes for DataProvider.
 - [Best Practices](BEST_PRACTICES.md)
 - [Scoped Lifecycle](SCOPED_LIFECYCLE.md)
 - [Structured Exceptions](EXCEPTIONS.md)
+- [Operation Observation](OBSERVATION.md)
 - [Configuration](CONFIGURATION.md)
 - [Development](DEVELOPMENT.md)
 - [Testing and CI](TESTING_AND_CI.md)
