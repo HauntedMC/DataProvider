@@ -7,7 +7,7 @@
     <parent>
         <groupId>nl.hauntedmc.platform</groupId>
         <artifactId>haunted-library-parent</artifactId>
-        <version>1.1.0</version>
+        <version>1.2.0</version>
         <relativePath/>
     </parent>
 
@@ -91,8 +91,6 @@
         <!-- Test libraries. -->
         <junit.version>${haunted.junit.version}</junit.version>
         <mockito.version>${haunted.mockito.version}</mockito.version>
-        <!-- Build plugins and their plugin dependencies. -->
-        <exec.maven.plugin.version>3.6.3</exec.maven.plugin.version>
         <build.helper.maven.plugin.version>3.6.1</build.helper.maven.plugin.version>
     </properties>
 
@@ -116,81 +114,8 @@
         <pluginRepository><id>github</id><url>https://maven.pkg.github.com/HauntedMC/*</url></pluginRepository>
     </pluginRepositories>
 
-    <dependencyManagement>
-        <dependencies>
-            <!-- This newer annotation release remains intentionally local. -->
-            <dependency>
-                <groupId>com.google.errorprone</groupId>
-                <artifactId>error_prone_annotations</artifactId>
-                <version>${errorprone.annotations.version}</version>
-            </dependency>
-        </dependencies>
-    </dependencyManagement>
-
     <build>
         <plugins>
-            <plugin>
-                <groupId>org.codehaus.mojo</groupId>
-                <artifactId>flatten-maven-plugin</artifactId>
-                <version>${flatten.plugin.version}</version>
-                <configuration>
-                    <flattenMode>resolveCiFriendliesOnly</flattenMode>
-                </configuration>
-                <executions>
-                    <execution>
-                        <id>flatten-pom</id>
-                        <phase>process-resources</phase>
-                        <goals><goal>flatten</goal></goals>
-                    </execution>
-                    <execution>
-                        <id>clean-flattened-pom</id>
-                        <phase>clean</phase>
-                        <goals><goal>clean</goal></goals>
-                    </execution>
-                </executions>
-            </plugin>
-            <plugin>
-                <groupId>org.apache.maven.plugins</groupId>
-                <artifactId>maven-enforcer-plugin</artifactId>
-                <version>${maven.enforcer.version}</version>
-                <executions>
-                    <execution>
-                        <id>enforce-build-environment</id>
-                        <phase>validate</phase>
-                        <goals><goal>enforce</goal></goals>
-                        <configuration>
-                            <rules>
-                                <requireJavaVersion><version>[25,)</version></requireJavaVersion>
-                                <requireMavenVersion><version>[3.8.6,)</version></requireMavenVersion>
-                                <requirePluginVersions/>
-                                <dependencyConvergence/>
-                                <requireUpperBoundDeps/>
-                                <bannedDependencies>
-                                    <searchTransitive>true</searchTransitive>
-                                    <excludes>
-                                        <exclude>net.kyori:adventure-api:[0,5.0.0)</exclude>
-                                        <exclude>net.kyori:adventure-key:[0,5.0.0)</exclude>
-                                        <exclude>net.kyori:adventure-nbt:[0,5.0.0)</exclude>
-                                        <exclude>net.kyori:adventure-resource-pack:[0,5.0.0)</exclude>
-                                        <exclude>net.kyori:adventure-serializer-configurate4:[0,5.0.0)</exclude>
-                                        <exclude>net.kyori:adventure-text-logger-slf4j:[0,5.0.0)</exclude>
-                                        <exclude>net.kyori:adventure-text-minimessage:[0,5.0.0)</exclude>
-                                        <exclude>net.kyori:adventure-text-serializer-ansi:[0,5.0.0)</exclude>
-                                        <exclude>net.kyori:adventure-text-serializer-commons:[0,5.0.0)</exclude>
-                                        <exclude>net.kyori:adventure-text-serializer-gson:[0,5.0.0)</exclude>
-                                        <exclude>net.kyori:adventure-text-serializer-gson-legacy-impl:[0,5.0.0)</exclude>
-                                        <exclude>net.kyori:adventure-text-serializer-json:[0,5.0.0)</exclude>
-                                        <exclude>net.kyori:adventure-text-serializer-json-legacy-impl:[0,5.0.0)</exclude>
-                                        <exclude>net.kyori:adventure-text-serializer-legacy:[0,5.0.0)</exclude>
-                                        <exclude>net.kyori:adventure-text-serializer-plain:[0,5.0.0)</exclude>
-                                    </excludes>
-                                    <message>Adventure 4.x core modules are not supported. Keep the Adventure core dependency graph on 5.x.</message>
-                                </bannedDependencies>
-                            </rules>
-                        </configuration>
-                    </execution>
-                </executions>
-            </plugin>
             <plugin>
                 <groupId>org.jacoco</groupId>
                 <artifactId>jacoco-maven-plugin</artifactId>
@@ -220,7 +145,7 @@
             <plugin>
                 <groupId>org.basepom.maven</groupId>
                 <artifactId>duplicate-finder-maven-plugin</artifactId>
-                <version>2.0.1</version>
+                <version>${duplicate.finder.version}</version>
                 <executions>
                     <execution>
                         <id>reject-duplicate-classes</id>

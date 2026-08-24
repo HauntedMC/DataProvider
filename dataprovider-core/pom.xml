@@ -11,12 +11,6 @@
     <artifactId>dataprovider-core</artifactId>
     <name>DataProvider Core</name>
 
-    <properties>
-        <!-- Kept here because these dependencies are used only by this module. -->
-        <testcontainers.version>1.21.4</testcontainers.version>
-        <maven.failsafe.version>3.5.6</maven.failsafe.version>
-    </properties>
-
     <dependencies>
         <dependency>
             <groupId>${project.groupId}</groupId>
@@ -96,19 +90,16 @@
         <dependency>
             <groupId>org.testcontainers</groupId>
             <artifactId>junit-jupiter</artifactId>
-            <version>${testcontainers.version}</version>
             <scope>test</scope>
         </dependency>
         <dependency>
             <groupId>org.testcontainers</groupId>
             <artifactId>mysql</artifactId>
-            <version>${testcontainers.version}</version>
             <scope>test</scope>
         </dependency>
         <dependency>
             <groupId>org.testcontainers</groupId>
             <artifactId>mongodb</artifactId>
-            <version>${testcontainers.version}</version>
             <scope>test</scope>
         </dependency>
     </dependencies>
