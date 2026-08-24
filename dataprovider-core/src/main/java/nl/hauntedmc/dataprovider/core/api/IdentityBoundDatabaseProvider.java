@@ -80,10 +80,18 @@ final class IdentityBoundDatabaseProvider {
     }
 
     static DatabaseType boundDatabaseType(DataSource dataSource) {
+        return boundObservationTarget(dataSource).databaseType();
+    }
+
+    static OwnerScope boundOwnerScope(DataSource dataSource) {
+        return boundObservationTarget(dataSource).ownerScope();
+    }
+
+    private static ObservationTarget boundObservationTarget(DataSource dataSource) {
         if (!(dataSource instanceof GuardedDataSource guardedDataSource)) {
             throw new IllegalArgumentException("DataSource is not bound to a DataProvider registration.");
         }
-        return guardedDataSource.target.databaseType();
+        return guardedDataSource.target;
     }
 
     private static DatabaseType inferDatabaseType(DatabaseProvider provider) {
