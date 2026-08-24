@@ -1,5 +1,6 @@
 package nl.hauntedmc.dataprovider.api;
 
+import nl.hauntedmc.dataprovider.api.observation.DataProviderObserver;
 import nl.hauntedmc.dataprovider.api.orm.ORMContext;
 import nl.hauntedmc.dataprovider.database.DatabaseProvider;
 import nl.hauntedmc.dataprovider.database.DatabaseType;
@@ -17,6 +18,18 @@ public interface DataProviderAPI {
      */
     default DataProviderAPI forPlugin(Object platformPlugin) {
         throw new UnsupportedOperationException("This DataProvider API does not support plugin binding.");
+    }
+
+    /**
+     * Returns a facade that reports its operations to the supplied vendor-neutral observer.
+     *
+     * <p>The observer remains scoped to this facade, its child scopes, and handles obtained from it;
+     * it is never installed globally. Implementations predating observation support may return this
+     * facade unchanged.</p>
+     */
+    default DataProviderAPI withObserver(DataProviderObserver observer) {
+        Objects.requireNonNull(observer, "DataProvider observer cannot be null.");
+        return this;
     }
 
     /**

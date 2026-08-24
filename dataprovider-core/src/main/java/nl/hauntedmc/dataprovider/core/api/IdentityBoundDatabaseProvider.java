@@ -1,11 +1,17 @@
 package nl.hauntedmc.dataprovider.core.api;
 
+import nl.hauntedmc.dataprovider.api.OwnerScope;
+import nl.hauntedmc.dataprovider.api.observation.DataProviderObserver;
+import nl.hauntedmc.dataprovider.api.observation.DataProviderOperationContext;
 import nl.hauntedmc.dataprovider.core.DataProviderHandler;
 import nl.hauntedmc.dataprovider.core.concurrent.ScopedDataSource;
 import nl.hauntedmc.dataprovider.core.identity.PluginIdentity;
 import nl.hauntedmc.dataprovider.database.DataAccess;
 import nl.hauntedmc.dataprovider.database.DatabaseProvider;
+import nl.hauntedmc.dataprovider.database.DatabaseType;
+import nl.hauntedmc.dataprovider.database.document.DocumentDataAccess;
 import nl.hauntedmc.dataprovider.database.document.DocumentDatabaseProvider;
+import nl.hauntedmc.dataprovider.database.keyvalue.KeyValueDataAccess;
 import nl.hauntedmc.dataprovider.database.keyvalue.KeyValueDatabaseProvider;
 import nl.hauntedmc.dataprovider.database.messaging.MessagingDataAccess;
 import nl.hauntedmc.dataprovider.database.messaging.MessagingDatabaseProvider;
@@ -13,6 +19,7 @@ import nl.hauntedmc.dataprovider.database.messaging.api.Subscription;
 import nl.hauntedmc.dataprovider.database.messaging.durable.DurableDelivery;
 import nl.hauntedmc.dataprovider.database.messaging.durable.DurableMessagingDataAccess;
 import nl.hauntedmc.dataprovider.database.messaging.durable.DurableSubscription;
+import nl.hauntedmc.dataprovider.database.relational.RelationalDataAccess;
 import nl.hauntedmc.dataprovider.database.relational.RelationalDatabaseProvider;
 import nl.hauntedmc.dataprovider.database.relational.schema.SchemaManager;
 
@@ -42,11 +49,66 @@ final class IdentityBoundDatabaseProvider {
         if (provider == null) {
             return null;
         }
-        return (DatabaseProvider) proxy(provider, handler, identity, providerInterfaces(provider));
+        DatabaseType databaseType = inferDatabaseType(provider);
+        ObservationTarget target = new ObservationTarget(
+                DataProviderObserver.noop(),
+                identity.pluginId(),
+                OwnerScope.of(identity.pluginId()),
+                databaseType
+        );
+        return (DatabaseProvider) proxy(provider, handler, identity, providerInterfaces(provider), target);
+    }
+
+    static DatabaseProvider wrap(
+            DataProviderHandler handler,
+            PluginIdentity identity,
+            DatabaseProvider provider,
+            DataProviderObserver observer,
+            String pluginId,
+            OwnerScope ownerScope,
+            DatabaseType databaseType
+    ) {
+        if (provider == null) {
+            return null;
+        }
+        ObservationTarget target = new ObservationTarget(observer, pluginId, ownerScope, databaseType);
+        return (DatabaseProvider) proxy(provider, handler, identity, providerInterfaces(provider), target);
     }
 
     static boolean isBoundDataSource(DataSource dataSource) {
         return dataSource instanceof GuardedDataSource;
+    }
+
+    static DatabaseType boundDatabaseType(DataSource dataSource) {
+        return boundObservationTarget(dataSource).databaseType();
+    }
+
+    static OwnerScope boundOwnerScope(DataSource dataSource) {
+        return boundObservationTarget(dataSource).ownerScope();
+    }
+
+    private static ObservationTarget boundObservationTarget(DataSource dataSource) {
+        if (!(dataSource instanceof GuardedDataSource guardedDataSource)) {
+            throw new IllegalArgumentException("DataSource is not bound to a DataProvider registration.");
+        }
+        return guardedDataSource.target;
+    }
+
+    private static DatabaseType inferDatabaseType(DatabaseProvider provider) {
+        if (provider instanceof RelationalDatabaseProvider) {
+            return DatabaseType.MYSQL;
+        }
+        if (provider instanceof DocumentDatabaseProvider) {
+            return DatabaseType.MONGODB;
+        }
+        if (provider instanceof KeyValueDatabaseProvider) {
+            return DatabaseType.REDIS;
+        }
+        if (provider instanceof MessagingDatabaseProvider) {
+            return DatabaseType.REDIS_MESSAGING;
+        }
+        throw new IllegalArgumentException("Unsupported DataProvider database-provider contract: "
+                + provider.getClass().getName());
     }
 
     private static Class<?>[] providerInterfaces(DatabaseProvider provider) {
@@ -65,12 +127,18 @@ final class IdentityBoundDatabaseProvider {
         return new Class<?>[] {DatabaseProvider.class};
     }
 
-    private static Object proxy(Object delegate, DataProviderHandler handler, PluginIdentity identity, Class<?>[] interfaces) {
+    private static Object proxy(
+            Object delegate,
+            DataProviderHandler handler,
+            PluginIdentity identity,
+            Class<?>[] interfaces,
+            ObservationTarget target
+    ) {
         Objects.requireNonNull(delegate, "Delegate cannot be null.");
         Objects.requireNonNull(handler, "Handler cannot be null.");
         return Proxy.newProxyInstance(
                 IdentityBoundDatabaseProvider.class.getClassLoader(), interfaces,
-                new GuardedInvocation(delegate, handler, identity)
+                new GuardedInvocation(delegate, handler, identity, target)
         );
     }
 
@@ -78,11 +146,18 @@ final class IdentityBoundDatabaseProvider {
         private final Object delegate;
         private final DataProviderHandler handler;
         private final PluginIdentity identity;
+        private final ObservationTarget target;
 
-        private GuardedInvocation(Object delegate, DataProviderHandler handler, PluginIdentity identity) {
+        private GuardedInvocation(
+                Object delegate,
+                DataProviderHandler handler,
+                PluginIdentity identity,
+                ObservationTarget target
+        ) {
             this.delegate = delegate;
             this.handler = handler;
             this.identity = identity;
+            this.target = target;
         }
 
         @Override
@@ -101,10 +176,32 @@ final class IdentityBoundDatabaseProvider {
             if (method.getName().equals("isWrapperFor") && args != null && args.length == 1) {
                 return ((Class<?>) args[0]).isInstance(proxy);
             }
+
+            Object[] invocationArguments = guardedDurableHandlerArguments(
+                    method,
+                    args,
+                    handler,
+                    identity,
+                    target
+            );
+            if (!DataProviderObservations.isEnabled(target.observer())) {
+                return invokeAndBind(method, invocationArguments);
+            }
+            String operation = observationOperation(method);
+            if (operation == null) {
+                return invokeAndBind(method, invocationArguments);
+            }
+            return DataProviderObservations.observeInvocation(
+                    target.observer(),
+                    target.context(operation),
+                    () -> invokeAndBind(method, invocationArguments)
+            );
+        }
+
+        private Object invokeAndBind(Method method, Object[] invocationArguments) throws Throwable {
             try {
-                Object[] invocationArguments = guardedDurableHandlerArguments(method, args, handler, identity);
                 Object result = method.invoke(delegate, invocationArguments);
-                return bindResult(method.getReturnType(), result, handler, identity);
+                return bindResult(method.getReturnType(), result, handler, identity, target);
             } catch (InvocationTargetException exception) {
                 throw exception.getCause();
             }
@@ -115,7 +212,8 @@ final class IdentityBoundDatabaseProvider {
                 Method method,
                 Object[] arguments,
                 DataProviderHandler handler,
-                PluginIdentity identity
+                PluginIdentity identity,
+                ObservationTarget target
         ) {
             if (!method.getName().equals("consume") || arguments == null || arguments.length != 6
                     || !(arguments[5] instanceof Consumer originalHandler)) {
@@ -123,36 +221,88 @@ final class IdentityBoundDatabaseProvider {
             }
             Object[] guarded = arguments.clone();
             guarded[5] = (Consumer<DurableDelivery<?>>) delivery -> originalHandler.accept(
-                    (DurableDelivery<?>) bindResult(DurableDelivery.class, delivery, handler, identity));
+                    (DurableDelivery<?>) bindResult(
+                            DurableDelivery.class,
+                            delivery,
+                            handler,
+                            identity,
+                            target
+                    )
+            );
             return guarded;
         }
     }
 
-    private static Object bindResult(Class<?> returnType, Object result, DataProviderHandler handler, PluginIdentity identity) {
+    private static Object bindResult(
+            Class<?> returnType,
+            Object result,
+            DataProviderHandler handler,
+            PluginIdentity identity,
+            ObservationTarget target
+    ) {
         if (result == null) {
             return null;
         }
         if (result instanceof DataSource dataSource) {
-            return new GuardedDataSource(dataSource, handler, identity);
+            return new GuardedDataSource(dataSource, handler, identity, target);
         }
         if (result instanceof Subscription subscription) {
-            return proxy(subscription, handler, identity, new Class<?>[] {Subscription.class});
+            return proxy(subscription, handler, identity, new Class<?>[] {Subscription.class}, target);
         }
         if (result instanceof DurableSubscription subscription) {
-            return proxy(subscription, handler, identity, new Class<?>[] {DurableSubscription.class});
+            return proxy(subscription, handler, identity, new Class<?>[] {DurableSubscription.class}, target);
         }
         if (result instanceof DurableMessagingDataAccess access) {
-            return proxy(access, handler, identity, new Class<?>[] {DurableMessagingDataAccess.class});
+            return proxy(access, handler, identity, new Class<?>[] {DurableMessagingDataAccess.class}, target);
         }
         if (result instanceof DurableDelivery<?> delivery) {
-            return proxy(delivery, handler, identity, new Class<?>[] {DurableDelivery.class});
+            return proxy(delivery, handler, identity, new Class<?>[] {DurableDelivery.class}, target);
         }
         if (returnType.isInterface() && (DataAccess.class.isAssignableFrom(returnType)
                 || SchemaManager.class.isAssignableFrom(returnType)
                 || returnType.getPackageName().startsWith("java.sql"))) {
-            return proxy(result, handler, identity, new Class<?>[] {returnType});
+            return proxy(result, handler, identity, new Class<?>[] {returnType}, target);
         }
         return result;
+    }
+
+    private static String observationOperation(Method method) {
+        Class<?> declaringClass = method.getDeclaringClass();
+        String methodName = method.getName();
+        if (RelationalDataAccess.class.isAssignableFrom(declaringClass)) {
+            return "relational." + methodName;
+        }
+        if (DocumentDataAccess.class.isAssignableFrom(declaringClass)) {
+            return "document." + methodName;
+        }
+        if (KeyValueDataAccess.class.isAssignableFrom(declaringClass)) {
+            return "keyvalue." + methodName;
+        }
+        if (SchemaManager.class.isAssignableFrom(declaringClass)) {
+            return "schema." + methodName;
+        }
+        if (DurableMessagingDataAccess.class.isAssignableFrom(declaringClass)) {
+            return switch (methodName) {
+                case "publish", "consume", "shutdown" -> "messaging.durable." + methodName;
+                default -> null;
+            };
+        }
+        if (MessagingDataAccess.class.isAssignableFrom(declaringClass)) {
+            return switch (methodName) {
+                case "publish", "subscribe", "shutdown" -> "messaging." + methodName;
+                default -> null;
+            };
+        }
+        if (Subscription.class.isAssignableFrom(declaringClass) && methodName.equals("unsubscribe")) {
+            return "messaging.subscription.unsubscribe";
+        }
+        if (DurableSubscription.class.isAssignableFrom(declaringClass) && methodName.equals("closeAsync")) {
+            return "messaging.durable.subscription.closeAsync";
+        }
+        if (DurableDelivery.class.isAssignableFrom(declaringClass) && methodName.equals("acknowledge")) {
+            return "messaging.durable.acknowledge";
+        }
+        return null;
     }
 
     private static boolean isCleanupMethod(Method method) {
@@ -180,11 +330,18 @@ final class IdentityBoundDatabaseProvider {
         private final DataSource delegate;
         private final DataProviderHandler handler;
         private final PluginIdentity identity;
+        private final ObservationTarget target;
 
-        private GuardedDataSource(DataSource delegate, DataProviderHandler handler, PluginIdentity identity) {
+        private GuardedDataSource(
+                DataSource delegate,
+                DataProviderHandler handler,
+                PluginIdentity identity,
+                ObservationTarget target
+        ) {
             this.delegate = delegate;
             this.handler = handler;
             this.identity = identity;
+            this.target = target;
         }
 
         private void check() {
@@ -193,11 +350,23 @@ final class IdentityBoundDatabaseProvider {
 
         @Override public Connection getConnection() throws SQLException {
             check();
-            return (Connection) bindResult(Connection.class, delegate.getConnection(), handler, identity);
+            return (Connection) bindResult(
+                    Connection.class,
+                    delegate.getConnection(),
+                    handler,
+                    identity,
+                    target
+            );
         }
         @Override public Connection getConnection(String user, String password) throws SQLException {
             check();
-            return (Connection) bindResult(Connection.class, delegate.getConnection(user, password), handler, identity);
+            return (Connection) bindResult(
+                    Connection.class,
+                    delegate.getConnection(user, password),
+                    handler,
+                    identity,
+                    target
+            );
         }
         @Override public PrintWriter getLogWriter() throws SQLException { check(); return delegate.getLogWriter(); }
         @Override public void setLogWriter(PrintWriter writer) throws SQLException { check(); delegate.setLogWriter(writer); }
@@ -220,6 +389,24 @@ final class IdentityBoundDatabaseProvider {
             handler.requireIdentityForCleanup(boundIdentity);
         } else {
             handler.requireIdentity(boundIdentity);
+        }
+    }
+
+    private record ObservationTarget(
+            DataProviderObserver observer,
+            String pluginId,
+            OwnerScope ownerScope,
+            DatabaseType databaseType
+    ) {
+        private ObservationTarget {
+            Objects.requireNonNull(observer, "DataProvider observer cannot be null.");
+            Objects.requireNonNull(pluginId, "Plugin id cannot be null.");
+            Objects.requireNonNull(ownerScope, "Owner scope cannot be null.");
+            Objects.requireNonNull(databaseType, "Database type cannot be null.");
+        }
+
+        private DataProviderOperationContext context(String operation) {
+            return new DataProviderOperationContext(pluginId, ownerScope, databaseType, operation);
         }
     }
 }
