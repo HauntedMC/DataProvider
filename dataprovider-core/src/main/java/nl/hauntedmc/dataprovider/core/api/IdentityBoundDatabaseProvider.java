@@ -176,6 +176,9 @@ final class IdentityBoundDatabaseProvider {
                     identity,
                     target
             );
+            if (!DataProviderObservations.isEnabled(target.observer())) {
+                return invokeAndBind(method, invocationArguments);
+            }
             String operation = observationOperation(method);
             if (operation == null) {
                 return invokeAndBind(method, invocationArguments);

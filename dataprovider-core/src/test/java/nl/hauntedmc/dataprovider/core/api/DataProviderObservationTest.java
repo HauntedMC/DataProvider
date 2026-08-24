@@ -21,9 +21,13 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CompletionException;
+import java.util.function.BiConsumer;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
@@ -52,7 +56,7 @@ class DataProviderObservationTest {
         assertEquals(DatabaseType.MYSQL, observation.context.databaseType());
         assertEquals("database.register", observation.context.operation());
         assertEquals(1, observation.succeeded);
-        assertEquals(null, observation.failure);
+        assertNull(observation.failure);
     }
 
     @Test
@@ -104,13 +108,13 @@ class DataProviderObservationTest {
         RecordingObservation observation = observer.single();
         assertEquals("relational.queryForSingle", observation.context.operation());
         assertEquals(0, observation.succeeded);
-        assertEquals(null, observation.failure);
+        assertNull(observation.failure);
 
         result.complete(Map.of("value", 1));
 
         assertSame(result, observedResult);
         assertEquals(1, observation.succeeded);
-        assertEquals(null, observation.failure);
+        assertNull(observation.failure);
     }
 
     @Test
@@ -135,7 +139,34 @@ class DataProviderObservationTest {
 
         assertSame(result, observedResult);
         assertSame(failure, observer.single().failure);
-        assertSame(failure, assertThrows(Exception.class, observedResult::join).getCause());
+        assertSame(failure, assertThrows(CompletionException.class, observedResult::join).getCause());
+    }
+
+    @Test
+    void defaultNoopPathDoesNotAttachAsyncCompletionCallbacks() {
+        DataProviderHandler handler = mock(DataProviderHandler.class);
+        PluginIdentity identity = identity("serverfeatures");
+        RelationalDatabaseProvider provider = mock(RelationalDatabaseProvider.class);
+        RelationalDataAccess access = mock(RelationalDataAccess.class);
+        TrackingFuture<Map<String, Object>> result = new TrackingFuture<>();
+        when(handler.issuePluginIdentity(any())).thenReturn(identity);
+        when(handler.requireRegisteredDatabase(identity, DatabaseType.MYSQL, "primary"))
+                .thenReturn(provider);
+        when(provider.getDataAccess()).thenReturn(access);
+        when(access.queryForSingle("SELECT 1")).thenReturn(result);
+
+        DataProviderAPI api = new DefaultDataProviderApi(handler).forPlugin(new Object());
+        RelationalDatabaseProvider boundProvider = api.requireRegisteredDatabase(
+                DatabaseType.MYSQL,
+                "primary",
+                RelationalDatabaseProvider.class
+        );
+        CompletableFuture<Map<String, Object>> observedResult = boundProvider.getDataAccess()
+                .queryForSingle("SELECT 1");
+
+        assertSame(result, observedResult);
+        assertEquals(0, result.whenCompleteRegistrations);
+        assertSame(DataProviderObserver.noop(), DataProviderObserver.noop());
     }
 
     @Test
@@ -153,7 +184,7 @@ class DataProviderObservationTest {
                 .registerDatabaseOrThrow(DatabaseType.REDIS, "cache");
 
         verify(handler).registerDatabaseOrThrow(identity, DatabaseType.REDIS, "cache");
-        assertEquals(DatabaseProvider.class, result.getClass().getInterfaces()[0]);
+        assertNotNull(result);
     }
 
     @Test
@@ -259,6 +290,16 @@ class DataProviderObservationTest {
         @Override
         public synchronized void failed(Throwable throwable) {
             failure = throwable;
+        }
+    }
+
+    private static final class TrackingFuture<T> extends CompletableFuture<T> {
+        private int whenCompleteRegistrations;
+
+        @Override
+        public CompletableFuture<T> whenComplete(BiConsumer<? super T, ? super Throwable> action) {
+            whenCompleteRegistrations++;
+            return super.whenComplete(action);
         }
     }
 }

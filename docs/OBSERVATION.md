@@ -11,24 +11,26 @@ DataProviderAPI api = supplier.dataProviderApiFor(this)
         .withObserver(observer);
 ```
 
-The observer is local to that facade. It propagates to child `DataProviderScope` instances and handles obtained through that facade; it is never installed globally and does not affect other plugins using the same DataProvider runtime.
+The observer is local to that facade. It propagates to child `DataProviderScope` instances and handles obtained through that facade; it is never installed globally and does not affect other plugins using the same DataProvider runtime. The built-in no-op observer uses a fast path: it does not create operation contexts or attach completion callbacks to asynchronous data operations.
 
 The public SPI consists of:
 
 - `DataProviderObserver`, which starts one observation;
 - `DataProviderObservation`, which receives exactly one success or failure terminal callback for an observation that was started successfully;
-- `DataProviderOperationContext`, which contains stable plugin ownership, public owner scope, backend type, and operation name.
+- `DataProviderOperationContext`, which contains plugin ownership, public owner scope, backend type, and a stable operation name.
 
 ## Metadata boundary
 
-`DataProviderOperationContext` intentionally contains only bounded operational metadata:
+`DataProviderOperationContext` intentionally contains only payload-free operational metadata:
 
 - platform-derived plugin id;
 - public lifecycle owner scope;
 - `DatabaseType`;
-- a DataProvider-owned operation name such as `database.register`, `relational.queryForSingle`, `keyvalue.getKey`, or `messaging.publish`.
+- a DataProvider-owned bounded operation name such as `database.register`, `relational.queryForSingle`, `keyvalue.getKey`, or `messaging.publish`.
 
 It deliberately does **not** expose connection identifiers, SQL/query text, query parameters, Redis keys or patterns, collection names, messaging destinations or streams, payloads, credentials, or player data. Internal UUID-backed registration scopes are also never exposed; scoped facades report their public `OwnerScope` instead.
+
+A telemetry implementation remains responsible for its own cardinality policy. In particular, a public `OwnerScope` is useful trace context but is consumer-defined and should not automatically become a metric label. Likewise, the `Throwable` supplied for failed observations may contain backend-specific details in its message; exception text must never be used as a metric attribute and should be handled according to the telemetry implementation's logging/privacy policy.
 
 ## Completion semantics
 

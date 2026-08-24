@@ -14,12 +14,19 @@ final class DataProviderObservations {
     private DataProviderObservations() {
     }
 
+    static boolean isEnabled(DataProviderObserver observer) {
+        return observer != null && observer != DataProviderObserver.noop();
+    }
+
     static <T> T observe(
             DataProviderObserver observer,
             DataProviderOperationContext context,
             Supplier<T> operation
     ) {
         Objects.requireNonNull(operation, "Operation cannot be null.");
+        if (!isEnabled(observer)) {
+            return operation.get();
+        }
         DataProviderObservation observation = start(observer, context);
         try {
             T result = operation.get();
@@ -47,6 +54,9 @@ final class DataProviderObservations {
             DataProviderOperationContext context,
             ThrowingOperation operation
     ) throws Throwable {
+        if (!isEnabled(observer)) {
+            return operation.execute();
+        }
         DataProviderObservation observation = start(observer, context);
         final Object result;
         try {
@@ -56,13 +66,17 @@ final class DataProviderObservations {
             throw failure;
         }
         if (result instanceof CompletionStage<?> completionStage) {
-            completionStage.whenComplete((ignored, failure) -> {
-                if (failure == null) {
-                    succeeded(observation);
-                } else {
-                    failed(observation, failure);
-                }
-            });
+            try {
+                completionStage.whenComplete((ignored, failure) -> {
+                    if (failure == null) {
+                        succeeded(observation);
+                    } else {
+                        failed(observation, failure);
+                    }
+                });
+            } catch (RuntimeException ignored) {
+                succeeded(observation);
+            }
         } else {
             succeeded(observation);
         }
@@ -73,9 +87,6 @@ final class DataProviderObservations {
             DataProviderObserver observer,
             DataProviderOperationContext context
     ) {
-        if (observer == null) {
-            return DataProviderObservation.noop();
-        }
         try {
             DataProviderObservation observation = observer.start(context);
             return observation == null ? DataProviderObservation.noop() : observation;

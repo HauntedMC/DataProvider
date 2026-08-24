@@ -16,8 +16,21 @@ public interface DataProviderObserver {
     /** Starts one operation observation. Implementations should return a non-null handle. */
     DataProviderObservation start(DataProviderOperationContext context);
 
-    /** Returns a reusable observer that performs no work. */
+    /** Returns the reusable no-op observer used by the uninstrumented fast path. */
     static DataProviderObserver noop() {
-        return context -> DataProviderObservation.noop();
+        return NoopDataProviderObserver.INSTANCE;
+    }
+}
+
+final class NoopDataProviderObserver implements DataProviderObserver {
+
+    static final NoopDataProviderObserver INSTANCE = new NoopDataProviderObserver();
+
+    private NoopDataProviderObserver() {
+    }
+
+    @Override
+    public DataProviderObservation start(DataProviderOperationContext context) {
+        return DataProviderObservation.noop();
     }
 }

@@ -72,6 +72,9 @@ public final class DefaultDataProviderApi implements DataProviderAPI {
                 handler.getConfiguredOrmSchemaMode(boundIdentity),
                 validatedEntities
         );
+        if (!DataProviderObservations.isEnabled(observer)) {
+            return context;
+        }
         return new ObservedOrmContext(
                 context,
                 observer,
@@ -121,6 +124,17 @@ public final class DefaultDataProviderApi implements DataProviderAPI {
         PluginIdentity boundIdentity = requireIdentity();
         String pluginId = boundIdentity.pluginId();
         OwnerScope ownerScope = OwnerScope.of(pluginId);
+        if (!DataProviderObservations.isEnabled(observer)) {
+            return wrapProvider(
+                    handler,
+                    boundIdentity,
+                    handler.registerDatabaseOrThrow(boundIdentity, databaseType, connectionIdentifier),
+                    observer,
+                    pluginId,
+                    ownerScope,
+                    databaseType
+            );
+        }
         return DataProviderObservations.observe(
                 observer,
                 operationContext(pluginId, ownerScope, databaseType, "database.register"),
@@ -152,6 +166,10 @@ public final class DefaultDataProviderApi implements DataProviderAPI {
     @Override
     public void unregisterDatabase(DatabaseType databaseType, String connectionIdentifier) {
         PluginIdentity boundIdentity = requireIdentity();
+        if (!DataProviderObservations.isEnabled(observer)) {
+            handler.unregisterDatabase(boundIdentity, databaseType, connectionIdentifier);
+            return;
+        }
         String pluginId = boundIdentity.pluginId();
         DataProviderObservations.observe(
                 observer,

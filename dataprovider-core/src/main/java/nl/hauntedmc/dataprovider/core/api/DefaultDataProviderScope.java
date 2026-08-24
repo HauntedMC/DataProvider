@@ -66,23 +66,13 @@ public final class DefaultDataProviderScope implements DataProviderScope {
     public DatabaseProvider registerDatabaseOrThrow(DatabaseType databaseType, String connectionIdentifier) {
         synchronized (lifecycleMonitor) {
             requireStructuredOpen("scope.registerDatabase");
+            if (!DataProviderObservations.isEnabled(observer)) {
+                return registerAndWrap(databaseType, connectionIdentifier);
+            }
             return DataProviderObservations.observe(
                     observer,
                     operationContext(databaseType, "database.register"),
-                    () -> DefaultDataProviderApi.wrapProvider(
-                            handler,
-                            identity,
-                            handler.registerDatabaseForScopeOrThrow(
-                                    identity,
-                                    registrationScope,
-                                    databaseType,
-                                    connectionIdentifier
-                            ),
-                            observer,
-                            pluginId,
-                            ownerScope,
-                            databaseType
-                    )
+                    () -> registerAndWrap(databaseType, connectionIdentifier)
             );
         }
     }
@@ -91,6 +81,10 @@ public final class DefaultDataProviderScope implements DataProviderScope {
     public void unregisterDatabase(DatabaseType databaseType, String connectionIdentifier) {
         synchronized (lifecycleMonitor) {
             requireCleanupOpen("scope.unregisterDatabase");
+            if (!DataProviderObservations.isEnabled(observer)) {
+                handler.unregisterDatabaseForScope(identity, registrationScope, databaseType, connectionIdentifier);
+                return;
+            }
             DataProviderObservations.observe(
                     observer,
                     operationContext(databaseType, "database.unregister"),
@@ -149,6 +143,23 @@ public final class DefaultDataProviderScope implements DataProviderScope {
                 throw failure;
             }
         }
+    }
+
+    private DatabaseProvider registerAndWrap(DatabaseType databaseType, String connectionIdentifier) {
+        return DefaultDataProviderApi.wrapProvider(
+                handler,
+                identity,
+                handler.registerDatabaseForScopeOrThrow(
+                        identity,
+                        registrationScope,
+                        databaseType,
+                        connectionIdentifier
+                ),
+                observer,
+                pluginId,
+                ownerScope,
+                databaseType
+        );
     }
 
     private DataProviderOperationContext operationContext(DatabaseType databaseType, String operation) {
