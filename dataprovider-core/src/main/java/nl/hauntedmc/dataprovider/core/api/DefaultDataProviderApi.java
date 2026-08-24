@@ -80,7 +80,7 @@ public final class DefaultDataProviderApi implements DataProviderAPI {
                 observer,
                 operationContext(
                         pluginId,
-                        OwnerScope.of(pluginId),
+                        IdentityBoundDatabaseProvider.boundOwnerScope(dataSource),
                         IdentityBoundDatabaseProvider.boundDatabaseType(dataSource),
                         "orm.runInTransaction"
                 )
