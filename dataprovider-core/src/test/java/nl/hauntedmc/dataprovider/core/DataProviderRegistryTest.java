@@ -6,7 +6,6 @@ import nl.hauntedmc.dataprovider.database.DataAccess;
 import nl.hauntedmc.dataprovider.database.DatabaseConnectionKey;
 import nl.hauntedmc.dataprovider.database.DatabaseProvider;
 import nl.hauntedmc.dataprovider.database.DatabaseType;
-import nl.hauntedmc.dataprovider.core.ManagedDatabaseProvider;
 import nl.hauntedmc.dataprovider.core.testutil.RecordingLoggerAdapter;
 import org.junit.jupiter.api.Test;
 import org.spongepowered.configurate.CommentedConfigurationNode;

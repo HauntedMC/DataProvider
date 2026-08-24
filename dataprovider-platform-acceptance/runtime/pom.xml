@@ -17,7 +17,7 @@
             <plugin>
                 <groupId>org.codehaus.mojo</groupId>
                 <artifactId>exec-maven-plugin</artifactId>
-                <version>${exec.maven.plugin.version}</version>
+                <version>${maven.exec.version}</version>
                 <executions>
                     <execution>
                         <id>boot-packaged-platform-artifacts</id>

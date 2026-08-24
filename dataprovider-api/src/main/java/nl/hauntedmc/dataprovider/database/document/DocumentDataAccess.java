@@ -13,7 +13,7 @@ import java.util.concurrent.CompletableFuture;
 /**
  * DocumentDataAccess defines typical CRUD and index operations for
  * a document–based database in a technology–agnostic way.
- * Each "document" is represented as a Map<String, Object>. Document values may include null,
+ * Each "document" is represented as a {@code Map<String, Object>}. Document values may include null,
  * nested maps, and nested lists when supported by the selected document backend.
  * Queries and updates are represented by custom DSL classes
  * (DocumentQuery, DocumentUpdate, DocumentUpdateOptions).
