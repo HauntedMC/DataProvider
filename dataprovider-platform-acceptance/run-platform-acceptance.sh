@@ -193,7 +193,9 @@ ${connection_identifier}:
     shared_with: []
   host: 127.0.0.1
   port: ${redis_port}
+  user: default
   password: acceptance-redis
+  network_namespace: dataprovider-platform-acceptance
   pool:
     connections: 2
     min_idle: 0
@@ -208,7 +210,9 @@ ${connection_identifier}:
     shared_with: []
   host: 127.0.0.1
   port: ${redis_port}
+  user: default
   password: acceptance-redis
+  network_namespace: dataprovider-platform-acceptance
   pool:
     connections: 2
     min_idle: 0

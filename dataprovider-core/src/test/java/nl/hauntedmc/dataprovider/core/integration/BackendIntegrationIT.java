@@ -35,6 +35,8 @@ import java.util.Map;
 import java.util.concurrent.CompletionException;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
+import java.time.Duration;
+import java.util.UUID;
 import java.nio.file.Files;
 import java.nio.file.Path;
 
@@ -195,6 +197,49 @@ class BackendIntegrationIT {
         assertFalse(database.isConnected());
         assertNull(database.getDataAccess());
         assertFalse(database.probeRemoteHealth());
+    }
+
+    @Test
+    void redisCoordinationFencesFormerOwnersAndMaintainsCompleteIndexes() throws Exception {
+        CommentedConfigurationNode config = redisConfig(REDIS_PASSWORD);
+        config.node("network_namespace").set("coordination-it");
+        RedisDatabase database = new RedisDatabase(config, logger());
+        try {
+            database.connect();
+            assertTrue(database.isConnected());
+            var coordination = database.getCoordinationDataAccess();
+            String id = UUID.randomUUID().toString();
+            String resource = "session:" + id;
+            String valueKey = "provider:session:" + id;
+            String index = "sessions";
+
+            var first = coordination.acquire(resource, "proxy-1/epoch-1", Duration.ofSeconds(5))
+                    .join().orElseThrow();
+            assertTrue(coordination.acquire(resource, "proxy-2/epoch-2", Duration.ofSeconds(5))
+                    .join().isEmpty());
+            assertTrue(coordination.writeFencedIndexed(first, valueKey, "first", Duration.ofSeconds(5),
+                    index, id).join());
+            assertEquals(Map.of(id, "first"), coordination.readIndexedValues(index).join());
+
+            var secondClaim = coordination.claim(resource, "proxy-2/epoch-2", Duration.ofSeconds(5)).join();
+            var second = secondClaim.lease();
+            assertTrue(second.fencingToken() > first.fencingToken());
+            assertEquals("proxy-1/epoch-1", secondClaim.previousOwner().orElseThrow());
+            assertTrue(coordination.renew(first, Duration.ofSeconds(5)).join().isEmpty());
+            assertFalse(coordination.writeFencedIndexed(first, valueKey, "stale", Duration.ofSeconds(5),
+                    index, id).join());
+            assertFalse(coordination.deleteFencedIndexed(first, valueKey, index, id).join());
+            assertFalse(coordination.release(first).join());
+
+            assertTrue(coordination.writeFencedIndexed(second, valueKey, "second", Duration.ofMillis(100),
+                    index, id).join());
+            assertEquals(Map.of(id, "second"), coordination.readIndexedValues(index).join());
+            Thread.sleep(150L);
+            assertEquals(Map.of(), coordination.readIndexedValues(index).join());
+            assertTrue(coordination.release(second).join());
+        } finally {
+            database.disconnect();
+        }
     }
 
     @Test
@@ -475,6 +520,7 @@ class BackendIntegrationIT {
         config.node("port").set(REDIS.getMappedPort(6379));
         config.node("password").set(password);
         config.node("database").set(0);
+        config.node("network_namespace").set("dataprovider-it");
         config.node("pool", "connections").set(2);
         config.node("pool", "threads").set(2);
         config.node("pool", "min_idle").set(0);

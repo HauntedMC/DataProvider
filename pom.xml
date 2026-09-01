@@ -39,7 +39,7 @@
         <connection>scm:git:git://github.com/HauntedMC/DataProvider.git</connection>
         <developerConnection>scm:git:ssh://git@github.com/HauntedMC/DataProvider.git</developerConnection>
         <url>https://github.com/HauntedMC/DataProvider</url>
-        <tag>HEAD</tag>
+        <tag>v3.4.0</tag>
     </scm>
 
     <distributionManagement>
@@ -60,7 +60,7 @@
 
     <properties>
         <!-- Project identity and compiler configuration. -->
-        <revision>3.3.0</revision>
+        <revision>3.4.0</revision>
 
         <!-- Platform APIs and production dependencies. -->
         <paper.version>26.2.build.112-stable</paper.version>

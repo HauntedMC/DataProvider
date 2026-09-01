@@ -905,11 +905,16 @@ class DatabaseFactory {
 
     private static final class KeyValueLease extends SharedProviderLease implements KeyValueDatabaseProvider {
         private final nl.hauntedmc.dataprovider.database.keyvalue.KeyValueDataAccess stableAccess = new StableKeyValueAccess(this);
+        private final nl.hauntedmc.dataprovider.database.coordination.CoordinationDataAccess stableCoordination =
+                new StableCoordinationAccess(this);
         private KeyValueLease(PhysicalResource r, ExecutionHandle e, ConcurrentMap<ResourceKey, PhysicalResource> rs) {
             super(r, e, rs);
         }
         @Override public nl.hauntedmc.dataprovider.database.keyvalue.KeyValueDataAccess getDataAccess() {
             return stableAccess;
+        }
+        @Override public nl.hauntedmc.dataprovider.database.coordination.CoordinationDataAccess getCoordinationDataAccess() {
+            return stableCoordination;
         }
     }
 
@@ -1017,6 +1022,25 @@ class DatabaseFactory {
         @Override public java.util.concurrent.CompletableFuture<Void> srem(String key, String... members) { return call("srem", () -> delegate().srem(key, members)); }
         @Override public java.util.concurrent.CompletableFuture<Void> zadd(String key, double score, String member) { return call("zadd", () -> delegate().zadd(key, score, member)); }
         @Override public java.util.concurrent.CompletableFuture<java.util.List<String>> zrangeByScore(String key, double minimum, double maximum) { return call("zrangeByScore", () -> delegate().zrangeByScore(key, minimum, maximum)); }
+    }
+
+    private static final class StableCoordinationAccess extends StableAccess
+            implements nl.hauntedmc.dataprovider.database.coordination.CoordinationDataAccess {
+        private StableCoordinationAccess(SharedProviderLease lease) { super(lease); }
+        private nl.hauntedmc.dataprovider.database.coordination.CoordinationDataAccess delegate() {
+            return ((KeyValueDatabaseProvider) lease().view()).getCoordinationDataAccess();
+        }
+        @Override public java.util.concurrent.CompletableFuture<java.util.Optional<nl.hauntedmc.dataprovider.database.coordination.FencedLease>> acquire(String resource, String owner, java.time.Duration ttl) { return call("coordination.acquire", () -> delegate().acquire(resource, owner, ttl)); }
+        @Override public java.util.concurrent.CompletableFuture<nl.hauntedmc.dataprovider.database.coordination.LeaseClaim> claim(String resource, String owner, java.time.Duration ttl) { return call("coordination.claim", () -> delegate().claim(resource, owner, ttl)); }
+        @Override public java.util.concurrent.CompletableFuture<java.util.Optional<nl.hauntedmc.dataprovider.database.coordination.FencedLease>> renew(nl.hauntedmc.dataprovider.database.coordination.FencedLease lease, java.time.Duration ttl) { return call("coordination.renew", () -> delegate().renew(lease, ttl)); }
+        @Override public java.util.concurrent.CompletableFuture<Boolean> release(nl.hauntedmc.dataprovider.database.coordination.FencedLease lease) { return call("coordination.release", () -> delegate().release(lease)); }
+        @Override public java.util.concurrent.CompletableFuture<Boolean> writeFenced(nl.hauntedmc.dataprovider.database.coordination.FencedLease lease, String key, String value, java.time.Duration ttl) { return call("coordination.writeFenced", () -> delegate().writeFenced(lease, key, value, ttl)); }
+        @Override public java.util.concurrent.CompletableFuture<Boolean> deleteFenced(nl.hauntedmc.dataprovider.database.coordination.FencedLease lease, String key) { return call("coordination.deleteFenced", () -> delegate().deleteFenced(lease, key)); }
+        @Override public java.util.concurrent.CompletableFuture<Boolean> writeFencedIndexed(nl.hauntedmc.dataprovider.database.coordination.FencedLease lease, String key, String value, java.time.Duration ttl, String index, String member) { return call("coordination.writeFencedIndexed", () -> delegate().writeFencedIndexed(lease, key, value, ttl, index, member)); }
+        @Override public java.util.concurrent.CompletableFuture<Boolean> deleteFencedIndexed(nl.hauntedmc.dataprovider.database.coordination.FencedLease lease, String key, String index, String member) { return call("coordination.deleteFencedIndexed", () -> delegate().deleteFencedIndexed(lease, key, index, member)); }
+        @Override public java.util.concurrent.CompletableFuture<java.util.Map<String, String>> readIndexedValues(String index) { return call("coordination.readIndexedValues", () -> delegate().readIndexedValues(index)); }
+        @Override public java.util.concurrent.CompletableFuture<Boolean> compareAndSetWithTtl(String key, String expected, String value, java.time.Duration ttl) { return call("coordination.compareAndSetWithTtl", () -> delegate().compareAndSetWithTtl(key, expected, value, ttl)); }
+        @Override public java.util.concurrent.CompletableFuture<Boolean> compareAndDelete(String key, String expected) { return call("coordination.compareAndDelete", () -> delegate().compareAndDelete(key, expected)); }
     }
 
     private static final class StableMessagingAccess extends StableAccess

@@ -5,6 +5,7 @@ import nl.hauntedmc.dataprovider.core.concurrent.ExecutionHandle;
 import nl.hauntedmc.dataprovider.core.logging.RateLimitedLogger;
 import nl.hauntedmc.dataprovider.database.keyvalue.KeyValueDataAccess;
 import nl.hauntedmc.dataprovider.database.keyvalue.KeyValueDatabaseProvider;
+import nl.hauntedmc.dataprovider.database.coordination.CoordinationDataAccess;
 import nl.hauntedmc.dataprovider.logging.LoggerAdapter;
 import org.spongepowered.configurate.CommentedConfigurationNode;
 import redis.clients.jedis.ConnectionPoolConfig;
@@ -30,11 +31,13 @@ public class RedisDatabase implements KeyValueDatabaseProvider, ManagedDatabaseP
     private final RateLimitedLogger outageLogger = new RateLimitedLogger(Duration.ofSeconds(30));
     private volatile RedisClient redisClient;
     private volatile RedisDataAccess dataAccess;
+    private volatile RedisCoordinationDataAccess coordinationDataAccess;
     private volatile boolean connected;
     private volatile Throwable lifecycleFailure;
     private volatile int scanCount;
     private volatile int maxScanResults;
     private volatile int connectionPoolSize;
+    private volatile String networkNamespace;
 
     public RedisDatabase(CommentedConfigurationNode config, LoggerAdapter logger) {
         this(config, logger, ExecutionHandle.direct());
@@ -82,6 +85,7 @@ public class RedisDatabase implements KeyValueDatabaseProvider, ManagedDatabaseP
             String trustStorePassword = config.node("tls", "trust_store_password").getString("");
             String trustStoreType = config.node("tls", "trust_store_type").getString("");
             boolean requireSecureTransport = config.node("require_secure_transport").getBoolean(false);
+            String networkNamespace = requireNamespace(config.node("network_namespace").getString());
 
             if (requireSecureTransport && !tlsEnabled) {
                 throw new IllegalStateException("Redis require_secure_transport=true but tls.enabled=false");
@@ -128,6 +132,8 @@ public class RedisDatabase implements KeyValueDatabaseProvider, ManagedDatabaseP
             this.scanCount = scanCount;
             this.maxScanResults = maxScanResults;
             dataAccess = new RedisDataAccess(redisClient, execution, scanCount, maxScanResults);
+            coordinationDataAccess = new RedisCoordinationDataAccess(redisClient, execution, networkNamespace);
+            this.networkNamespace = networkNamespace;
             connected = true;
             lifecycleFailure = null;
             logger.info(String.format(
@@ -140,6 +146,7 @@ public class RedisDatabase implements KeyValueDatabaseProvider, ManagedDatabaseP
             connected = false;
             redisClient = null;
             dataAccess = null;
+            coordinationDataAccess = null;
             outageLogger.error(logger, "[RedisDatabase] Connection failed. (" + e.getClass().getSimpleName() + ").");
         }
     }
@@ -153,6 +160,7 @@ public class RedisDatabase implements KeyValueDatabaseProvider, ManagedDatabaseP
         }
         redisClient = null;
         dataAccess = null;
+        coordinationDataAccess = null;
         connected = false;
     }
 
@@ -184,6 +192,11 @@ public class RedisDatabase implements KeyValueDatabaseProvider, ManagedDatabaseP
         return dataAccess;
     }
 
+    @Override
+    public CoordinationDataAccess getCoordinationDataAccess() {
+        return coordinationDataAccess;
+    }
+
     public int executionCapacity() {
         if (!isConnected() || connectionPoolSize < 1) {
             throw new IllegalStateException("[RedisDatabase] Redis client not initialized!");
@@ -198,9 +211,12 @@ public class RedisDatabase implements KeyValueDatabaseProvider, ManagedDatabaseP
             throw new IllegalStateException("[RedisDatabase] Redis client not initialized!");
         }
         KeyValueDataAccess accessView = new RedisDataAccess(source, scopedExecution, scanCount, maxScanResults);
+        CoordinationDataAccess coordinationView = new RedisCoordinationDataAccess(
+                source, scopedExecution, networkNamespace);
         return new KeyValueDatabaseProvider() {
             @Override public boolean isConnected() { return RedisDatabase.this.isConnected() && !scopedExecution.isClosed(); }
             @Override public KeyValueDataAccess getDataAccess() { return accessView; }
+            @Override public CoordinationDataAccess getCoordinationDataAccess() { return coordinationView; }
         };
     }
 
@@ -248,6 +264,15 @@ public class RedisDatabase implements KeyValueDatabaseProvider, ManagedDatabaseP
         String normalized = requireNonBlank(host, "host");
         if (!HOST_PATTERN.matcher(normalized).matches()) {
             throw new IllegalArgumentException("Redis config 'host' contains unsupported characters: " + normalized);
+        }
+        return normalized;
+    }
+
+    private static String requireNamespace(String value) {
+        String normalized = requireNonBlank(value, "network_namespace").toLowerCase(java.util.Locale.ROOT);
+        if (!normalized.matches("[a-z0-9._-]{1,64}")) {
+            throw new IllegalArgumentException(
+                    "Redis config 'network_namespace' must match [a-z0-9._-]{1,64}.");
         }
         return normalized;
     }
