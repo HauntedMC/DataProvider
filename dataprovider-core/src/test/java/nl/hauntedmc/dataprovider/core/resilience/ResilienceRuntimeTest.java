@@ -306,17 +306,17 @@ class ResilienceRuntimeTest {
     }
 
     @Test
-    void threadTerminationIsNeverConsumedAsAProbeFailure() {
+    void fatalErrorsAreNeverConsumedAsProbeFailures() {
         ManualScheduler scheduler = new ManualScheduler();
         ScriptedProvider provider = new ScriptedProvider(true) {
             @Override
             public boolean probeRemoteHealth() {
-                throw new ThreadDeath();
+                throw new StackOverflowError();
             }
         };
         ResilienceRuntime runtime = runtime(new DirectExecutorService(), scheduler, 3);
 
-        assertThrows(ThreadDeath.class, () ->
+        assertThrows(StackOverflowError.class, () ->
                 runtime.track("resource", provider, () -> ProviderLifecycleState.READY));
         runtime.close();
     }

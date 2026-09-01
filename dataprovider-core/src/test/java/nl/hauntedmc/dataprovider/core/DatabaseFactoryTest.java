@@ -82,15 +82,15 @@ class DatabaseFactoryTest {
     @Test
     void connectionFingerprintExcludesPolicyButDetectsCredentialsEndpointsTlsAndPoolSettings() {
         CommentedConfigurationNode baseline = connection("db.internal", "first-secret", 8);
-        CommentedConfigurationNode accessOnly = (CommentedConfigurationNode) baseline.copy();
+        CommentedConfigurationNode accessOnly = baseline.copy();
         accessOnly.node("access", "shared_with").raw(List.of("another-plugin"));
-        CommentedConfigurationNode passwordChanged = (CommentedConfigurationNode) baseline.copy();
+        CommentedConfigurationNode passwordChanged = baseline.copy();
         passwordChanged.node("password").raw("rotated-secret");
-        CommentedConfigurationNode endpointChanged = (CommentedConfigurationNode) baseline.copy();
+        CommentedConfigurationNode endpointChanged = baseline.copy();
         endpointChanged.node("host").raw("new-db.internal");
-        CommentedConfigurationNode tlsChanged = (CommentedConfigurationNode) baseline.copy();
+        CommentedConfigurationNode tlsChanged = baseline.copy();
         tlsChanged.node("tls", "enabled").raw(true);
-        CommentedConfigurationNode poolChanged = (CommentedConfigurationNode) baseline.copy();
+        CommentedConfigurationNode poolChanged = baseline.copy();
         poolChanged.node("pool_size").raw(16);
 
         String fingerprint = DatabaseFactory.connectionFingerprint(baseline);

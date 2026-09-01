@@ -441,6 +441,7 @@ class BackendIntegrationIT {
                   port: %d
                   password: %s
                   database: 0
+                  network_namespace: resilience-it
                   pool:
                     connections: 2
                     min_idle: 0

@@ -120,8 +120,7 @@ class TransactionalSessionTest {
         Session delegate = mock(Session.class);
         Connection physicalConnection = connectionWithState();
         AtomicReference<Connection> retained = new AtomicReference<>();
-        when(delegate.doReturningWork(any(ReturningWork.class))).thenAnswer(invocation -> {
-            @SuppressWarnings("unchecked")
+        when(delegate.doReturningWork(org.mockito.ArgumentMatchers.<ReturningWork<Object>>any())).thenAnswer(invocation -> {
             ReturningWork<Object> work = invocation.getArgument(0);
             return work.execute(physicalConnection);
         });

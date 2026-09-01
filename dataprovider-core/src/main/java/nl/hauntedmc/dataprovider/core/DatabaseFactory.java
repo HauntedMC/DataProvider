@@ -985,7 +985,7 @@ class DatabaseFactory {
         @Override public java.util.concurrent.CompletableFuture<Object> queryForSingleValue(String query, Object... params) { return call("queryForSingleValue", () -> delegate().queryForSingleValue(query, params)); }
         @Override public java.util.concurrent.CompletableFuture<Void> executeBatchUpdate(String query, java.util.List<Object[]> batch) { return call("executeBatchUpdate", () -> delegate().executeBatchUpdate(query, batch)); }
         @Override public <T> java.util.concurrent.CompletableFuture<T> executeTransactionally(nl.hauntedmc.dataprovider.database.relational.TransactionCallback<T> callback) { return call("executeTransactionally", () -> delegate().executeTransactionally(callback)); }
-        @Override public java.util.concurrent.CompletableFuture<Object> executeInsert(String sql, Object[] parameters) { return call("executeInsert", () -> delegate().executeInsert(sql, parameters)); }
+        @Override public java.util.concurrent.CompletableFuture<Object> executeInsert(String sql, Object... parameters) { return call("executeInsert", () -> delegate().executeInsert(sql, parameters)); }
     }
 
     private static final class StableDocumentAccess extends StableAccess

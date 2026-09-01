@@ -170,7 +170,14 @@
                         <parameters>true</parameters>
                     </configuration>
                 </plugin>
-                <plugin><artifactId>maven-surefire-plugin</artifactId><version>${maven.surefire.version}</version></plugin>
+                <plugin>
+                    <artifactId>maven-surefire-plugin</artifactId>
+                    <version>${maven.surefire.version}</version>
+                    <configuration>
+                        <!-- JaCoCo supplies argLine late; Mockito must be loaded as an agent before tests start on JDK 25. -->
+                        <argLine>@{argLine} -javaagent:${settings.localRepository}/org/mockito/mockito-core/${mockito.version}/mockito-core-${mockito.version}.jar --enable-native-access=ALL-UNNAMED</argLine>
+                    </configuration>
+                </plugin>
                 <plugin><artifactId>maven-jar-plugin</artifactId><version>${maven.jar.version}</version></plugin>
                 <plugin><artifactId>maven-clean-plugin</artifactId><version>${maven.clean.version}</version></plugin>
                 <plugin><artifactId>maven-resources-plugin</artifactId><version>${maven.resources.version}</version></plugin>

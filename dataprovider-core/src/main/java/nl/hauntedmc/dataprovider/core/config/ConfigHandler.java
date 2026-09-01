@@ -42,7 +42,7 @@ public class ConfigHandler {
 
         ensureConfigFileExists();
         reconcileWithBundledDefaults();
-        reloadConfig();
+        snapshot = readSnapshot();
     }
 
     private void ensureConfigFileExists() {
@@ -51,7 +51,7 @@ public class ConfigHandler {
             Files.createDirectories(parentDirectory);
             FilePermissionHardening.restrictDirectoryToOwner(parentDirectory, logger, "DataProvider config directory");
             if (!Files.exists(configFile)) {
-                try (InputStream in = getClass().getResourceAsStream("/config.yml")) {
+                try (InputStream in = ConfigHandler.class.getResourceAsStream("/config.yml")) {
                     if (in != null) {
                         Files.copy(in, configFile);
                     } else {
@@ -72,6 +72,10 @@ public class ConfigHandler {
 
     /** Loads and validates a complete candidate configuration without changing the active snapshot. */
     public ConfigSnapshot loadSnapshot() {
+        return readSnapshot();
+    }
+
+    private ConfigSnapshot readSnapshot() {
         try {
             CommentedConfigurationNode candidate = loader.load();
             EnumMap<DatabaseType, Boolean> enabledTypes = new EnumMap<>(DatabaseType.class);
@@ -121,12 +125,12 @@ public class ConfigHandler {
     }
 
     private CommentedConfigurationNode loadBundledDefaults() throws IOException {
-        if (getClass().getResource("/config.yml") == null) {
+        if (ConfigHandler.class.getResource("/config.yml") == null) {
             throw new IOException("Bundled config.yml resource is missing.");
         }
         return YamlConfigurationLoader.builder()
                 .source(() -> new BufferedReader(new InputStreamReader(
-                        Objects.requireNonNull(getClass().getResourceAsStream("/config.yml")), StandardCharsets.UTF_8
+                        Objects.requireNonNull(ConfigHandler.class.getResourceAsStream("/config.yml")), StandardCharsets.UTF_8
                 )))
                 .build()
                 .load();
@@ -178,6 +182,6 @@ public class ConfigHandler {
     }
 
     private static CommentedConfigurationNode copyNode(CommentedConfigurationNode node) {
-        return (CommentedConfigurationNode) node.copy();
+        return node.copy();
     }
 }
