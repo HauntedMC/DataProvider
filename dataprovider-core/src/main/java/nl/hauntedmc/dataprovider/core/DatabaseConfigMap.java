@@ -335,7 +335,7 @@ class DatabaseConfigMap {
     }
 
     private static CommentedConfigurationNode copyNode(CommentedConfigurationNode node) {
-        return (CommentedConfigurationNode) node.copy();
+        return node.copy();
     }
 
     protected record AuthorizedConnection(CommentedConfigurationNode config, ConnectionAccessPolicy accessPolicy) {

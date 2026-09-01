@@ -2,6 +2,7 @@ package nl.hauntedmc.dataprovider.database;
 
 import nl.hauntedmc.dataprovider.database.document.DocumentDataAccess;
 import nl.hauntedmc.dataprovider.database.document.DocumentDatabaseProvider;
+import nl.hauntedmc.dataprovider.database.coordination.CoordinationDataAccess;
 import nl.hauntedmc.dataprovider.database.keyvalue.KeyValueDataAccess;
 import nl.hauntedmc.dataprovider.database.keyvalue.KeyValueDatabaseProvider;
 import nl.hauntedmc.dataprovider.database.messaging.MessagingDataAccess;
@@ -77,6 +78,12 @@ class DatabaseProviderInterfaceContractTest {
             public KeyValueDataAccess getDataAccess() {
                 return null;
             }
+
+            @Override
+            public CoordinationDataAccess getCoordinationDataAccess() {
+                return null;
+            }
+
         };
 
         assertFalse(provider.supportsDataSource());
