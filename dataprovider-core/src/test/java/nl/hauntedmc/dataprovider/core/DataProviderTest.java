@@ -106,6 +106,7 @@ class DataProviderTest {
     }
 
     @Test
+    @SuppressWarnings("deprecation") // The JDK currently has no non-deprecated equivalent for a custom URL handler.
     void resourceReadFailuresAreNotReportedAsMissing() throws Exception {
         try (URLClassLoader failingLoader = new URLClassLoader(
                 new URL[0],

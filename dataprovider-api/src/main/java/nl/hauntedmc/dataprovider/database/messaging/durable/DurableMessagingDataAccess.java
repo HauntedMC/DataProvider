@@ -29,4 +29,9 @@ public interface DurableMessagingDataAccess extends DataAccess {
     List<DurableSubscriptionSnapshot> subscriptions();
 
     CompletableFuture<Void> shutdown();
+
+    /** Creates an explicitly recipient-addressed view over this durable transport. */
+    default TargetedDurableMessagingDataAccess targeted(String namespace) {
+        return TargetedDurableMessagingDataAccess.create(this, namespace);
+    }
 }

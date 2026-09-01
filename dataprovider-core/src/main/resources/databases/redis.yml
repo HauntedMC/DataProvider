@@ -11,6 +11,8 @@ default:
   user: "plugin"
   password: ""
   database: 0
+  # Shared Redis databases must use a different namespace for every independent Minecraft network/environment.
+  network_namespace: ""
   require_secure_transport: false
   tls:
     enabled: false

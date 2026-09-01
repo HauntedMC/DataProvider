@@ -100,6 +100,29 @@ update_velocity_plugin_annotation() {
   mv "$tmp_file" "$VELOCITY_FILE"
 }
 
+update_scm_tag() {
+  local new_version="$1"
+  local tmp_file
+  tmp_file="$(mktemp)"
+
+  awk -v v="$new_version" '
+    BEGIN { in_scm = 0; replaced = 0 }
+    /<scm>/ { in_scm = 1 }
+    in_scm && !replaced && $0 ~ /<tag>[^<]+<\/tag>/ {
+      sub(/<tag>[^<]+<\/tag>/, "<tag>v" v "</tag>")
+      replaced = 1
+    }
+    { print }
+    /<\/scm>/ { in_scm = 0 }
+    END { if (!replaced) exit 2 }
+  ' "$POM_FILE" > "$tmp_file" || {
+    rm -f "$tmp_file"
+    die "Could not update the SCM tag in ${POM_FILE}."
+  }
+
+  mv "$tmp_file" "$POM_FILE"
+}
+
 update_readme_dependency_versions() {
   local new_version="$1"
   local tmp_file
@@ -192,6 +215,7 @@ resolved_after_bump="$(resolve_maven_version)"
 }
 
 update_velocity_plugin_annotation "$new_version"
+update_scm_tag "$new_version"
 update_readme_dependency_versions "$new_version"
 
 git add "$POM_FILE" "$README_FILE" "$VELOCITY_FILE"

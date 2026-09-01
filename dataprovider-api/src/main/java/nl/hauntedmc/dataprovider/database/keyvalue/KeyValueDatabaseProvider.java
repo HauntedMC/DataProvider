@@ -1,6 +1,7 @@
 package nl.hauntedmc.dataprovider.database.keyvalue;
 
 import nl.hauntedmc.dataprovider.database.DatabaseProvider;
+import nl.hauntedmc.dataprovider.database.coordination.CoordinationDataAccess;
 
 import javax.sql.DataSource;
 
@@ -12,6 +13,9 @@ public interface KeyValueDatabaseProvider extends DatabaseProvider {
 
     @Override
     KeyValueDataAccess getDataAccess();
+
+    /** Returns the atomic coordination surface for this Redis connection. */
+    CoordinationDataAccess getCoordinationDataAccess();
 
     @Override
     default DataSource getDataSource() {
