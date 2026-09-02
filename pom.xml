@@ -165,6 +165,14 @@
                         <!-- JaCoCo supplies argLine late; Mockito must be loaded as an agent before tests start on JDK 25. -->
                         <argLine>@{argLine} -javaagent:${settings.localRepository}/org/mockito/mockito-core/${mockito.version}/mockito-core-${mockito.version}.jar --enable-native-access=ALL-UNNAMED</argLine>
                     </configuration>
+                    <dependencies>
+                        <!-- Resolve the exact agent artifact before the test JVM is forked in modules that do not use Mockito directly. -->
+                        <dependency>
+                            <groupId>org.mockito</groupId>
+                            <artifactId>mockito-core</artifactId>
+                            <version>${mockito.version}</version>
+                        </dependency>
+                    </dependencies>
                 </plugin>
             </plugins>
         </pluginManagement>
