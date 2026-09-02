@@ -8,6 +8,7 @@ This directory contains developer and operational notes for DataProvider.
 - [Usage Guide](USAGE_GUIDE.md)
 - [Best Practices](BEST_PRACTICES.md)
 - [Scoped Lifecycle](SCOPED_LIFECYCLE.md)
+- [Distributed Coordination](COORDINATION.md)
 - [Structured Exceptions](EXCEPTIONS.md)
 - [Operation Observation](OBSERVATION.md)
 - [Configuration](CONFIGURATION.md)

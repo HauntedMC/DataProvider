@@ -25,6 +25,7 @@ It gives you one clean API for MySQL, MongoDB, Redis, and Redis messaging so you
 - Platform support: Velocity + Bukkit/Paper
 - Optional Hibernate ORM support for relational workflows (`nl.hauntedmc.dataprovider.api.orm.ORMContext`)
 - Disposable Pub/Sub plus capability-discoverable durable acknowledged Redis messaging
+- Atomic Redis coordination with renewable fenced leases, monotonic fencing tokens, fenced writes/deletes, and compare-and-set operations
 
 ## Requirements
 
@@ -72,6 +73,8 @@ api.unregisterDatabase(DatabaseType.MYSQL, "example");
 ```
 
 If you maintain multiple plugins, this gives your team one standard integration model instead of backend-specific code per project.
+
+For distributed ownership/fencing semantics, see [Distributed coordination](docs/COORDINATION.md).
 
 ## Admin Commands
 
@@ -131,7 +134,7 @@ Maven:
 <dependency>
   <groupId>nl.hauntedmc.dataprovider</groupId>
   <artifactId>dataprovider-api</artifactId>
-  <version>3.4.1</version>
+  <version>3.4.2</version>
   <scope>provided</scope>
 </dependency>
 ```
@@ -139,7 +142,7 @@ Maven:
 Gradle (Groovy):
 
 ```groovy
-compileOnly "nl.hauntedmc.dataprovider:dataprovider-api:3.4.1"
+compileOnly "nl.hauntedmc.dataprovider:dataprovider-api:3.4.2"
 ```
 
 GitHub Packages authentication details are in the docs.
@@ -172,6 +175,7 @@ Build outputs:
 - [Documentation index](docs/README.md)
 - [Architecture](docs/ARCHITECTURE.md)
 - [Usage guide](docs/USAGE_GUIDE.md)
+- [Distributed coordination](docs/COORDINATION.md)
 - [Configuration](docs/CONFIGURATION.md)
 - [Development](docs/DEVELOPMENT.md)
 - [Testing and CI](docs/TESTING_AND_CI.md)
