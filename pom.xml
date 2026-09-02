@@ -119,7 +119,6 @@
             <plugin>
                 <groupId>org.jacoco</groupId>
                 <artifactId>jacoco-maven-plugin</artifactId>
-                <version>${jacoco.version}</version>
                 <executions>
                     <execution>
                         <id>enforce-coverage-minimum</id>
@@ -145,7 +144,6 @@
             <plugin>
                 <groupId>org.basepom.maven</groupId>
                 <artifactId>duplicate-finder-maven-plugin</artifactId>
-                <version>${duplicate.finder.version}</version>
                 <executions>
                     <execution>
                         <id>reject-duplicate-classes</id>
@@ -162,29 +160,12 @@
         <pluginManagement>
             <plugins>
                 <plugin>
-                    <groupId>org.apache.maven.plugins</groupId>
-                    <artifactId>maven-compiler-plugin</artifactId>
-                    <version>${maven.compiler.plugin.version}</version>
-                    <configuration>
-                        <release>${maven.compiler.release}</release>
-                        <parameters>true</parameters>
-                    </configuration>
-                </plugin>
-                <plugin>
                     <artifactId>maven-surefire-plugin</artifactId>
-                    <version>${maven.surefire.version}</version>
                     <configuration>
                         <!-- JaCoCo supplies argLine late; Mockito must be loaded as an agent before tests start on JDK 25. -->
                         <argLine>@{argLine} -javaagent:${settings.localRepository}/org/mockito/mockito-core/${mockito.version}/mockito-core-${mockito.version}.jar --enable-native-access=ALL-UNNAMED</argLine>
                     </configuration>
                 </plugin>
-                <plugin><artifactId>maven-jar-plugin</artifactId><version>${maven.jar.version}</version></plugin>
-                <plugin><artifactId>maven-clean-plugin</artifactId><version>${maven.clean.version}</version></plugin>
-                <plugin><artifactId>maven-resources-plugin</artifactId><version>${maven.resources.version}</version></plugin>
-                <plugin><artifactId>maven-install-plugin</artifactId><version>${maven.install.version}</version></plugin>
-                <plugin><artifactId>maven-deploy-plugin</artifactId><version>${maven.deploy.version}</version></plugin>
-                <plugin><artifactId>maven-site-plugin</artifactId><version>${maven.site.version}</version></plugin>
-                <plugin><artifactId>maven-shade-plugin</artifactId><version>${maven.shade.version}</version></plugin>
             </plugins>
         </pluginManagement>
     </build>
