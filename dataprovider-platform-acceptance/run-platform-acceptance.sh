@@ -78,7 +78,7 @@ download_runtime() {
         "https://fill.papermc.io/v3/projects/${project}/versions/${version}/builds")"
     url="$(jq --raw-output --argjson build "$build" \
         '.[] | select(.id == $build) | .downloads["server:default"].url' <<<"$build_metadata")"
-    [[ "$url" != "null" ]] || fail "No ${project} ${version} build ${build} server download exists."
+    [[ -n "$url" && "$url" != "null" ]] || fail "No ${project} ${version} build ${build} server download exists."
     curl --fail --silent --show-error --location --retry 3 --retry-all-errors --connect-timeout 15 --max-time 120 \
         --output "$destination" "$url"
     actual_checksum="$(sha256sum "$destination" | awk '{print $1}')"
