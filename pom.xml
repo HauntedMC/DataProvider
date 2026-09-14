@@ -7,7 +7,7 @@
     <parent>
         <groupId>nl.hauntedmc.platform</groupId>
         <artifactId>haunted-library-parent</artifactId>
-        <version>1.6.4</version>
+        <version>1.6.5</version>
         <relativePath/>
     </parent>
 
@@ -75,7 +75,7 @@
         <configurate.version>${haunted.configurate.version}</configurate.version>
         <mysql.version>26.7.0</mysql.version>
         <hikari.version>7.1.0</hikari.version>
-        <mongodb.driver.version>5.11.0</mongodb.driver.version>
+        <mongodb.driver.version>5.11.1</mongodb.driver.version>
         <jedis.version>8.0.1</jedis.version>
         <hibernate.version>${haunted.hibernate.version}</hibernate.version>
         <jakarta.persistence.version>${haunted.jpa.version}</jakarta.persistence.version>
@@ -85,7 +85,7 @@
         <errorprone.annotations.version>${haunted.errorprone.version}</errorprone.annotations.version>
         <jetbrains.annotations.version>${haunted.jetbrains.annotations.version}</jetbrains.annotations.version>
         <jspecify.version>${haunted.jspecify.version}</jspecify.version>
-        <slf4j.version>${haunted.slf4j.version}</slf4j.version>
+        <slf4j.version>2.0.19</slf4j.version>
         <gson.version>${haunted.gson.version}</gson.version>
 
         <!-- Test libraries. -->
