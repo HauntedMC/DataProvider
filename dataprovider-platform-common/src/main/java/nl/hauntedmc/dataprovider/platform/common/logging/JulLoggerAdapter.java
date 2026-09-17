@@ -16,6 +16,11 @@ public final class JulLoggerAdapter implements LoggerAdapter {
     }
 
     @Override
+    public void debug(String message) {
+        logger.fine(message);
+    }
+
+    @Override
     public void log(LogLevel level, String message, Throwable throwable) {
         Objects.requireNonNull(level, "Log level cannot be null.");
         Level julLevel = switch (level) {
