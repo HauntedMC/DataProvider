@@ -7,7 +7,9 @@ public interface LoggerAdapter {
 
     void log(LogLevel level, String message, Throwable throwable);
 
-    void log(LogLevel level, String message);
+    default void log(LogLevel level, String message) {
+        log(level, message, null);
+    }
 
     /**
      * Emits optional diagnostic detail that should not appear in normal production startup output.
