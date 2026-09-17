@@ -67,7 +67,7 @@
         <paper.runtime.version>26.2</paper.runtime.version>
         <paper.runtime.build>65</paper.runtime.build>
         <paper.runtime.sha256>d290ee2a3ae92fea10afb0c74f797023d74cfd72cbcee44314e0c50d5551f2c6</paper.runtime.sha256>
-        <velocity.version>4.1.1</velocity.version>
+        <velocity.version>4.2.0</velocity.version>
         <velocity.runtime.build>24</velocity.runtime.build>
         <velocity.runtime.sha256>846411d2d0560fed0f23496ffb89681be528d2c0650ecdcf21724d2d7bd9c1ee</velocity.runtime.sha256>
         <adventure.version>${haunted.adventure.version}</adventure.version>
@@ -75,9 +75,9 @@
         <configurate.version>${haunted.configurate.version}</configurate.version>
         <mysql.version>26.7.0</mysql.version>
         <hikari.version>7.1.0</hikari.version>
-        <mongodb.driver.version>5.11.0</mongodb.driver.version>
+        <mongodb.driver.version>5.11.1</mongodb.driver.version>
         <jedis.version>8.0.1</jedis.version>
-        <hibernate.version>${haunted.hibernate.version}</hibernate.version>
+        <hibernate.version>7.4.8.Final</hibernate.version>
         <jakarta.persistence.version>${haunted.jpa.version}</jakarta.persistence.version>
         <jakarta.xml.bind.version>${haunted.jaxb.api.version}</jakarta.xml.bind.version>
         <jaxb.runtime.version>${haunted.jaxb.runtime.version}</jaxb.runtime.version>
@@ -85,13 +85,13 @@
         <errorprone.annotations.version>${haunted.errorprone.version}</errorprone.annotations.version>
         <jetbrains.annotations.version>${haunted.jetbrains.annotations.version}</jetbrains.annotations.version>
         <jspecify.version>${haunted.jspecify.version}</jspecify.version>
-        <slf4j.version>${haunted.slf4j.version}</slf4j.version>
+        <slf4j.version>2.0.19</slf4j.version>
         <gson.version>${haunted.gson.version}</gson.version>
 
         <!-- Test libraries. -->
         <junit.version>${haunted.junit.version}</junit.version>
         <mockito.version>${haunted.mockito.version}</mockito.version>
-        <build.helper.maven.plugin.version>3.6.1</build.helper.maven.plugin.version>
+        <build.helper.maven.plugin.version>3.6.2</build.helper.maven.plugin.version>
     </properties>
 
     <repositories>
