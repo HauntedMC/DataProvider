@@ -95,8 +95,10 @@ public class ORMContext implements nl.hauntedmc.dataprovider.api.orm.ORMContext 
     private void initialize(Class<?>... entityClasses) {
         try {
             // DataProvider owns local JDBC transactions; explicitly selecting the non-JTA platform avoids
-            // repeated Hibernate JTA auto-discovery for every feature-scoped SessionFactory.
+            // repeated Hibernate JTA auto-discovery for every feature-scoped SessionFactory. The custom JDBC
+            // environment initiator only redirects Hibernate's routine connection-info block to our DEBUG logger.
             registry = new StandardServiceRegistryBuilder()
+                    .addInitiator(new DataProviderJdbcEnvironmentInitiator(logger))
                     .applySetting("hibernate.connection.datasource", dataSource)
                     .applySetting("hibernate.hbm2ddl.auto", schemaMode)
                     .applySetting("hibernate.show_sql", "false")
