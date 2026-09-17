@@ -144,7 +144,7 @@ class DataProviderRegistry {
             readLock.unlock();
         }
 
-        logger.info(pluginId.value() + " registered " + databaseType.name() + " connection ("
+        logger.debug(pluginId.value() + " registered " + databaseType.name() + " connection ("
                 + connectionIdentifier.value() + "), active references=" + slot.referenceCount());
         return provider;
     }
