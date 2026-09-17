@@ -9,9 +9,15 @@ import java.util.List;
 
 public final class RecordingLoggerAdapter implements LoggerAdapter {
 
+    private final List<String> debugMessages = Collections.synchronizedList(new ArrayList<>());
     private final List<String> infoMessages = Collections.synchronizedList(new ArrayList<>());
     private final List<String> warnMessages = Collections.synchronizedList(new ArrayList<>());
     private final List<String> errorMessages = Collections.synchronizedList(new ArrayList<>());
+
+    @Override
+    public void debug(String message) {
+        debugMessages.add(message);
+    }
 
     @Override
     public void log(LogLevel level, String message, Throwable throwable) {
@@ -23,6 +29,10 @@ public final class RecordingLoggerAdapter implements LoggerAdapter {
             case WARN -> warnMessages.add(rendered);
             case ERROR -> errorMessages.add(rendered);
         }
+    }
+
+    public List<String> debugMessages() {
+        return List.copyOf(debugMessages);
     }
 
     public List<String> infoMessages() {
