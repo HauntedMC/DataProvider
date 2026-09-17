@@ -10,6 +10,7 @@ import org.hibernate.boot.Metadata;
 import org.hibernate.boot.MetadataSources;
 import org.hibernate.boot.registry.StandardServiceRegistry;
 import org.hibernate.boot.registry.StandardServiceRegistryBuilder;
+import org.hibernate.engine.transaction.jta.platform.internal.NoJtaPlatform;
 
 import javax.sql.DataSource;
 import java.util.Locale;
@@ -93,38 +94,38 @@ public class ORMContext implements nl.hauntedmc.dataprovider.api.orm.ORMContext 
      */
     private void initialize(Class<?>... entityClasses) {
         try {
-            // Build the StandardServiceRegistry using hibernate.cfg.xml and override the connection settings with our DataSource.
+            // DataProvider owns local JDBC transactions; explicitly selecting the non-JTA platform avoids
+            // repeated Hibernate JTA auto-discovery for every feature-scoped SessionFactory.
             registry = new StandardServiceRegistryBuilder()
                     .applySetting("hibernate.connection.datasource", dataSource)
                     .applySetting("hibernate.hbm2ddl.auto", schemaMode)
                     .applySetting("hibernate.show_sql", "false")
                     .applySetting("hibernate.format_sql", "false")
                     .applySetting("hibernate.use_sql_comments", "false")
+                    .applySetting("hibernate.transaction.jta.platform", NoJtaPlatform.INSTANCE)
                     .build();
 
-            // Create MetadataSources and register each provided entity class.
             MetadataSources metadataSources = new MetadataSources(registry);
 
             for (Class<?> entityClass : entityClasses) {
                 metadataSources.addAnnotatedClass(entityClass);
-                logger.info("Initializing Annotated Class: " + entityClass.getName());
+                logger.debug("Initializing annotated class: " + entityClass.getName());
             }
 
-            // Build the Metadata and SessionFactory.
             Metadata metadata = metadataSources.getMetadataBuilder().build();
 
             if (metadata.getEntityBindings().isEmpty()) {
                 logger.warn("No entity bindings were found in metadata");
             } else {
                 metadata.getEntityBindings().forEach(
-                        entityBinding -> logger.info("Entity binding: " + entityBinding.getEntityName())
+                        entityBinding -> logger.debug("Entity binding: " + entityBinding.getEntityName())
                 );
             }
 
             sessionFactory = metadata.getSessionFactoryBuilder().build();
 
-            logger.info("Hibernate schema mode for plugin " + plugin + ": " + schemaMode);
-            logger.info("Hibernate ORMContext initialized successfully for plugin: " + plugin);
+            logger.debug("Hibernate schema mode for plugin " + plugin + ": " + schemaMode);
+            logger.debug("Hibernate ORMContext initialized successfully for plugin: " + plugin);
         } catch (Exception e) {
             logger.error("Failed to initialize Hibernate ORMContext for plugin: " + plugin, e);
             throw new RuntimeException("ORMContext initialization failed", e);
@@ -164,7 +165,7 @@ public class ORMContext implements nl.hauntedmc.dataprovider.api.orm.ORMContext 
      *
      * @param callback The transactional work to execute.
      * @param <T>      The return type of the work.
-     * @return The result of the transactional work.
+     * @return The result of the work.
      * @throws RuntimeException if the transaction fails.
      */
     public <T> T runInTransaction(TransactionCallback<T> callback) {
@@ -219,7 +220,7 @@ public class ORMContext implements nl.hauntedmc.dataprovider.api.orm.ORMContext 
             StandardServiceRegistryBuilder.destroy(registry);
             registry = null;
         }
-        logger.info("Hibernate ORMContext shut down for plugin: " + plugin);
+        logger.debug("Hibernate ORMContext shut down for plugin: " + plugin);
     }
 
     /**
