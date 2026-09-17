@@ -10,7 +10,6 @@ import org.hibernate.boot.Metadata;
 import org.hibernate.boot.MetadataSources;
 import org.hibernate.boot.registry.StandardServiceRegistry;
 import org.hibernate.boot.registry.StandardServiceRegistryBuilder;
-import org.hibernate.engine.transaction.jta.platform.internal.NoJtaPlatform;
 
 import javax.sql.DataSource;
 import java.util.Locale;
@@ -94,17 +93,17 @@ public class ORMContext implements nl.hauntedmc.dataprovider.api.orm.ORMContext 
      */
     private void initialize(Class<?>... entityClasses) {
         try {
-            // DataProvider owns local JDBC transactions; explicitly selecting the non-JTA platform avoids
-            // repeated Hibernate JTA auto-discovery for every feature-scoped SessionFactory. The custom JDBC
-            // environment initiator only redirects Hibernate's routine connection-info block to our DEBUG logger.
+            // DataProvider owns local JDBC transactions. Installing its non-JTA service directly prevents
+            // Hibernate's default JTA initiator from emitting HHH000489 for every feature-scoped SessionFactory.
+            // The JDBC environment initiator likewise redirects the routine database-info block to DEBUG.
             registry = new StandardServiceRegistryBuilder()
+                    .addInitiator(new DataProviderJtaPlatformInitiator(logger))
                     .addInitiator(new DataProviderJdbcEnvironmentInitiator(logger))
                     .applySetting("hibernate.connection.datasource", dataSource)
                     .applySetting("hibernate.hbm2ddl.auto", schemaMode)
                     .applySetting("hibernate.show_sql", "false")
                     .applySetting("hibernate.format_sql", "false")
                     .applySetting("hibernate.use_sql_comments", "false")
-                    .applySetting("hibernate.transaction.jta.platform", NoJtaPlatform.INSTANCE)
                     .build();
 
             MetadataSources metadataSources = new MetadataSources(registry);
