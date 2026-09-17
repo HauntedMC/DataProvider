@@ -15,6 +15,11 @@ public final class Slf4jLoggerAdapter implements LoggerAdapter {
     }
 
     @Override
+    public void debug(String message) {
+        logger.debug(message);
+    }
+
+    @Override
     public void log(LogLevel level, String message, Throwable throwable) {
         Objects.requireNonNull(level, "Log level cannot be null.");
         switch (level) {
