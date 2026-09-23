@@ -52,16 +52,7 @@ fail() {
 pom_property() {
     local property_name=$1
     local value
-    value="$(awk -v opening_tag="<${property_name}>" -v closing_tag="</${property_name}>" '
-        index($0, opening_tag) {
-            value = substr($0, index($0, opening_tag) + length(opening_tag))
-            closing_tag_index = index(value, closing_tag)
-            if (closing_tag_index > 0) {
-                print substr(value, 1, closing_tag_index - 1)
-            }
-            exit
-        }
-    ' "$ROOT_DIRECTORY/pom.xml")"
+    value="$(cd "$ROOT_DIRECTORY" && mvn -q help:evaluate -Dexpression="$property_name" -DforceStdout)"
     [[ -n "$value" ]] || fail "Missing Maven property ${property_name}."
     printf '%s' "$value"
 }
@@ -284,17 +275,17 @@ readonly PAPER_BUNDLE="$ROOT_DIRECTORY/dataprovider-platform-paper/target/datapr
 readonly VELOCITY_BUNDLE="$ROOT_DIRECTORY/dataprovider-platform-velocity/target/dataprovider-platform-velocity-${RELEASE_VERSION}-bundled.jar"
 readonly PAPER_CONSUMER="$ACCEPTANCE_DIRECTORY/consumer-paper/target/dataprovider-acceptance-consumer-paper-${RELEASE_VERSION}.jar"
 readonly VELOCITY_CONSUMER="$ACCEPTANCE_DIRECTORY/consumer-velocity/target/dataprovider-acceptance-consumer-velocity-${RELEASE_VERSION}.jar"
-PAPER_VERSION="$(pom_property paper.runtime.version)"
+PAPER_VERSION="$(pom_property haunted.paper.runtime.version)"
 readonly PAPER_VERSION
-PAPER_BUILD="$(pom_property paper.runtime.build)"
+PAPER_BUILD="$(pom_property haunted.paper.runtime.build)"
 readonly PAPER_BUILD
-PAPER_SHA256="$(pom_property paper.runtime.sha256)"
+PAPER_SHA256="$(pom_property haunted.paper.runtime.sha256)"
 readonly PAPER_SHA256
-VELOCITY_VERSION="$(pom_property velocity.version)"
+VELOCITY_VERSION="$(pom_property haunted.velocity.version)"
 readonly VELOCITY_VERSION
-VELOCITY_BUILD="$(pom_property velocity.runtime.build)"
+VELOCITY_BUILD="$(pom_property haunted.velocity.runtime.build)"
 readonly VELOCITY_BUILD
-VELOCITY_SHA256="$(pom_property velocity.runtime.sha256)"
+VELOCITY_SHA256="$(pom_property haunted.velocity.runtime.sha256)"
 readonly VELOCITY_SHA256
 
 for artifact in "$PAPER_BUNDLE" "$VELOCITY_BUNDLE" "$PAPER_CONSUMER" "$VELOCITY_CONSUMER"; do

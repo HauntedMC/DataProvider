@@ -17,7 +17,7 @@ import nl.hauntedmc.dataprovider.database.messaging.durable.PublishedDurableEven
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.testcontainers.containers.GenericContainer;
-import org.testcontainers.containers.MySQLContainer;
+import org.testcontainers.mysql.MySQLContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.utility.DockerImageName;
@@ -57,7 +57,7 @@ class RedisDurableMessagingIT {
                     + "'; sleep 0.1; fi; done");
 
     @Container
-    private static final MySQLContainer<?> BUSINESS_DATABASE = new MySQLContainer<>(DockerImageName.parse("mysql:8.4"))
+    private static final MySQLContainer BUSINESS_DATABASE = new MySQLContainer(DockerImageName.parse("mysql:8.4"))
             .withDatabaseName("durable_business")
             .withUsername("durable_business")
             .withPassword("durable-business-secret");

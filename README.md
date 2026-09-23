@@ -30,7 +30,7 @@ It gives you one clean API for MySQL, MongoDB, Redis, and Redis messaging so you
 ## Requirements
 
 - Java 25
-- The currently pinned Paper and Velocity runtime builds (see the root `pom.xml`)
+- The Paper and Velocity runtime builds selected by HauntedPlatform
 - MySQL, MongoDB, and/or Redis for the backends you enable
 
 ## Quick Start

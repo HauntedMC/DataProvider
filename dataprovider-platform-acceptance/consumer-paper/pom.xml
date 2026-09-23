@@ -22,7 +22,7 @@
         <dependency>
             <groupId>io.papermc.paper</groupId>
             <artifactId>paper-api</artifactId>
-            <version>${paper.version}</version>
+            <version>${haunted.paper.version}</version>
             <scope>provided</scope>
         </dependency>
     </dependencies>

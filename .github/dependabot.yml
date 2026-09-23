@@ -9,6 +9,9 @@ updates:
       timezone: "Europe/Amsterdam"
     open-pull-requests-limit: 10
     groups:
+      haunted-platform-parent:
+        patterns:
+          - "nl.hauntedmc.platform:haunted-library-parent"
       routine-maven-updates:
         patterns:
           - "*"
