@@ -65,7 +65,7 @@
         <revision>3.4.3</revision>
 
         <!-- Build tooling specific to DataProvider. -->
-        <build.helper.maven.plugin.version>3.6.1</build.helper.maven.plugin.version>
+        <build.helper.maven.plugin.version>3.6.2</build.helper.maven.plugin.version>
     </properties>
 
     <repositories>
