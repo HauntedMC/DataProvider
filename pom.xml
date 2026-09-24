@@ -7,7 +7,7 @@
     <parent>
         <groupId>nl.hauntedmc.platform</groupId>
         <artifactId>haunted-library-parent</artifactId>
-        <version>1.6.10</version>
+        <version>2.0.0</version>
         <relativePath/>
     </parent>
 
@@ -39,7 +39,7 @@
         <connection>scm:git:git://github.com/HauntedMC/DataProvider.git</connection>
         <developerConnection>scm:git:ssh://git@github.com/HauntedMC/DataProvider.git</developerConnection>
         <url>https://github.com/HauntedMC/DataProvider</url>
-        <tag>v3.4.4</tag>
+        <tag>v3.4.5</tag>
     </scm>
 
     <distributionManagement>
@@ -61,12 +61,11 @@
 
     <properties>
         <!-- Compatibility target for the optional Theme integration. -->
-        <haunted.theme.version>1.2.0</haunted.theme.version>
+        <haunted.theme.version>1.2.2</haunted.theme.version>
         <!-- Project identity and compiler configuration. -->
-        <revision>3.4.4</revision>
+        <revision>3.4.5</revision>
 
         <!-- Build tooling specific to DataProvider. -->
-        <build.helper.maven.plugin.version>3.6.2</build.helper.maven.plugin.version>
     </properties>
 
     <repositories>
