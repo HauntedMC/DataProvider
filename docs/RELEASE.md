@@ -1,66 +1,9 @@
-# Release Process
+# Release process
 
-## 1. Prepare
+DataProvider publishes its own `dataprovider-bom`, which manages its public modules. Theme palette is its internal dependency.
 
-- Work from a clean `main` branch.
-- Ensure CI is green.
-- Verify local checks:
+Prepare a reviewed PR from a clean worktree with `./update_version.sh patch` (or `minor`/`major` for an intentional API change). The helper updates version metadata and leaves the changes for review. Merge only after the repository's CI passes. Do not create or push a release tag manually.
 
-```bash
-./mvnw -B -ntp -Pintegration-tests,platform-acceptance verify
-```
+A version change on `main` starts `.github/workflows/release-package.yml`. The workflow runs the `integration-tests,platform-acceptance` release profiles, deploys the verified Maven reactor with `deployAtEnd`, resolves the published coordinates from an empty Maven repository, and only then creates tag `vX.Y.Z` and a GitHub Release with the bundled Paper and Velocity jars. The release dispatches HauntedPlatform's dependency reconciler, which proposes reviewed downstream PRs only after the package is available.
 
-## 2. Bump and Tag
-
-Use `update_version.sh` to bump `major`, `minor`, or `patch`:
-
-```bash
-./update_version.sh patch
-```
-
-The script uses the repository Maven Wrapper and updates:
-
-- `pom.xml` (`revision` via Maven `versions:set-property`; source of truth for every module)
-- `dataprovider-platform-velocity/src/main/java/nl/hauntedmc/dataprovider/platform/velocity/VelocityDataProvider.java`
-- the Maven and Gradle `dataprovider-api` dependency examples in `README.md`
-
-Then it commits and tags (`vX.Y.Z`) locally.
-Push when ready:
-
-```bash
-git push && git push origin vX.Y.Z
-```
-
-## 3. GitHub Actions Release
-
-Workflow: `.github/workflows/release-package.yml`
-
-Trigger:
-
-- push tag matching `v*` (for example `v1.20.5`)
-
-What it does:
-
-1. Checks that the tag matches `revision`.
-2. Runs the full reactor release gate on the tag checkout: unit tests, container-backed
-   backend integration tests, Checkstyle, JaCoCo thresholds, dependency convergence,
-   upper-bound dependency checks, duplicate-class checks, shaded platform packaging, and
-   the API-only Paper and Velocity consumer fixtures.
-3. As the final reactor module, downloads the pinned Paper and Velocity runtime builds with SHA-256 verification,
-   starts each real platform with its bundled DataProvider JAR, and validates MySQL,
-   MongoDB, Redis, Redis messaging, configuration reload, per-provider thread cleanup,
-   and clean shutdown.
-4. Uses Maven `deployAtEnd`, so it deploys the already-verified Maven artifacts only after every gate succeeds; the acceptance fixtures themselves are not published.
-5. Uploads the Paper and Velocity bundled jars and creates a GitHub Release with them.
-
-The platform acceptance runner is at
-`dataprovider-platform-acceptance/run-platform-acceptance.sh`. It uses the pinned runtime
-build properties and SHA-256 checksums in the root POM; update the corresponding version,
-build, and checksum together whenever the Paper or Velocity API dependency is advanced.
-
-## 4. Artifacts
-
-- Repository: `https://maven.pkg.github.com/HauntedMC/DataProvider`
-- GroupId: `nl.hauntedmc.dataprovider`
-- ArtifactIds: `dataprovider-api`, `dataprovider-core`, `dataprovider-platform-common`, `dataprovider-platform-paper`, and `dataprovider-platform-velocity`
-- Version: release version (without leading `v`)
+If publication fails before the tag, inspect whether any immutable coordinates were uploaded, fix the problem, then retry with `workflow_dispatch`. Do not overwrite a published version or move a tag. If dispatch fails after the tag, manually run HauntedPlatform's **Reconcile internal dependency PRs** workflow with this repository name and the published version. The [organization release guide](https://github.com/HauntedMC/HauntedPlatform/blob/main/docs/releasing.md) describes the graph and GitHub App setup.

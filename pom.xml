@@ -39,7 +39,7 @@
         <connection>scm:git:git://github.com/HauntedMC/DataProvider.git</connection>
         <developerConnection>scm:git:ssh://git@github.com/HauntedMC/DataProvider.git</developerConnection>
         <url>https://github.com/HauntedMC/DataProvider</url>
-        <tag>v3.4.3</tag>
+        <tag>v3.4.4</tag>
     </scm>
 
     <distributionManagement>
@@ -51,6 +51,7 @@
     </distributionManagement>
 
     <modules>
+        <module>dataprovider-bom</module>
         <module>dataprovider-api</module>
         <module>dataprovider-core</module>
         <module>dataprovider-platform-common</module>
@@ -62,7 +63,7 @@
         <!-- Compatibility target for the optional Theme integration. -->
         <haunted.theme.version>1.2.0</haunted.theme.version>
         <!-- Project identity and compiler configuration. -->
-        <revision>3.4.3</revision>
+        <revision>3.4.4</revision>
 
         <!-- Build tooling specific to DataProvider. -->
         <build.helper.maven.plugin.version>3.6.1</build.helper.maven.plugin.version>
