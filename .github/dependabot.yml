@@ -1,27 +1,6 @@
 version: 2
+# Maven versions come from HauntedPlatform and the reviewed internal release reconciler.
 updates:
-  - package-ecosystem: "maven"
-    directory: "/"
-    schedule:
-      interval: "weekly"
-      day: "monday"
-      time: "06:00"
-      timezone: "Europe/Amsterdam"
-    open-pull-requests-limit: 10
-    groups:
-      haunted-platform-parent:
-        patterns:
-          - "nl.hauntedmc.platform:haunted-library-parent"
-      routine-maven-updates:
-        patterns:
-          - "*"
-        update-types:
-          - "minor"
-          - "patch"
-    labels:
-      - "dependencies"
-      - "java"
-
   - package-ecosystem: "github-actions"
     directory: "/"
     schedule:

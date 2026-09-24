@@ -78,5 +78,5 @@ The Testcontainers suite verifies:
   - Artifacts: JaCoCo reports (`**/target/site/jacoco`) and Failsafe reports (`**/target/failsafe-reports`)
   - Platform logs are uploaded for every acceptance run
 - `release-package.yml`
-  - Trigger: tag push `v*`
-  - Job: package build, GitHub Packages deploy, GitHub Release creation
+  - Trigger: reviewed version change merged to `main`
+  - Job: release profile, GitHub Packages deploy, fresh-cache resolution, then tag and GitHub Release creation
