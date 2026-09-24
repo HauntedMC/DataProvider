@@ -22,7 +22,7 @@
         <dependency>
             <groupId>com.velocitypowered</groupId>
             <artifactId>velocity-api</artifactId>
-            <version>${velocity.version}</version>
+            <version>${haunted.velocity.version}</version>
             <scope>provided</scope>
         </dependency>
     </dependencies>
@@ -40,7 +40,7 @@
                         <path>
                             <groupId>com.velocitypowered</groupId>
                             <artifactId>velocity-api</artifactId>
-                            <version>${velocity.version}</version>
+                            <version>${haunted.velocity.version}</version>
                         </path>
                     </annotationProcessorPaths>
                 </configuration>
