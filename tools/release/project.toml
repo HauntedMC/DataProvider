@@ -1,7 +1,7 @@
 [project]
 name = "DataProvider"
 repository = "HauntedMC/DataProvider"
-tool_version = "1.0.0"
+tool_version = "1.0.1"
 mode = "bump"
 prepare = "tools/release/prepare-version.sh"
 verify = ["./mvnw", "-B", "-ntp", "verify"]

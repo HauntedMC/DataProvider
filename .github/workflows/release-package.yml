@@ -28,7 +28,7 @@ jobs:
       - name: Install pinned release CLI
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh extension install HauntedMC/gh-haunted-release --pin 86bed2fdf7438ea3d6cc3b76f5c7cc36a58a46bf
+        run: gh extension install HauntedMC/gh-haunted-release --pin ed440a0a2d5ab23af30c36bb22132f8ffa0ea33f
       - id: version
         name: Detect a reviewed version change
         env:
@@ -54,7 +54,7 @@ jobs:
       - name: Install pinned release CLI
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh extension install HauntedMC/gh-haunted-release --pin 86bed2fdf7438ea3d6cc3b76f5c7cc36a58a46bf
+        run: gh extension install HauntedMC/gh-haunted-release --pin ed440a0a2d5ab23af30c36bb22132f8ffa0ea33f
       - name: Set up JDK 25 and Maven package credentials
         uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
         with:
