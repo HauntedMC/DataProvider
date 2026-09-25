@@ -13,7 +13,7 @@ concurrency:
 jobs:
   maven-policy:
     name: Shared Maven policy
-    uses: HauntedMC/HauntedPlatform/.github/workflows/maven-ci.yml@v2.0.0
+    uses: HauntedMC/HauntedPlatform/.github/workflows/maven-ci.yml@v1.6.8
     with:
       maven-command: ./mvnw -U -B -ntp validate
     secrets:
