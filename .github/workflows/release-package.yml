@@ -25,12 +25,16 @@ jobs:
         with:
           fetch-depth: 0
           persist-credentials: false
+      - name: Install pinned release CLI
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh extension install HauntedMC/gh-haunted-release --pin 86bed2fdf7438ea3d6cc3b76f5c7cc36a58a46bf
       - id: version
         name: Detect a reviewed version change
         env:
           GITHUB_EVENT_BEFORE: ${{ github.event.before }}
           GITHUB_EVENT_NAME: ${{ github.event_name }}
-        run: python3 scripts/release-gate.py pom.xml
+        run: gh haunted-release gate
 
   publish:
     needs: gate
@@ -47,6 +51,10 @@ jobs:
         with:
           fetch-depth: 0
           persist-credentials: false
+      - name: Install pinned release CLI
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh extension install HauntedMC/gh-haunted-release --pin 86bed2fdf7438ea3d6cc3b76f5c7cc36a58a46bf
       - name: Set up JDK 25 and Maven package credentials
         uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
         with:
@@ -67,7 +75,7 @@ jobs:
           PLATFORM_ACCEPTANCE_WORK_DIRECTORY: ${{ runner.temp }}/dataprovider-platform-acceptance
         run: ./mvnw -U -B -ntp -DdeployAtEnd=true -Pintegration-tests,platform-acceptance deploy
       - name: Resolve every published artifact from a fresh Maven repository
-        run: python3 scripts/verify-published.py "${{ needs.gate.outputs.version }}" DataProvider
+        run: gh haunted-release verify-published "${{ needs.gate.outputs.version }}"
       - name: Create the release tag only after publication is resolvable
         run: gh release create "${{ needs.gate.outputs.tag }}" --target "$GITHUB_SHA" --title "DataProvider ${{ needs.gate.outputs.tag }}" --generate-notes dataprovider-platform-paper/target/dataprovider-platform-paper-${{ needs.gate.outputs.version }}-bundled.jar dataprovider-platform-velocity/target/dataprovider-platform-velocity-${{ needs.gate.outputs.version }}-bundled.jar
       - name: Create cross-repository GitHub App token

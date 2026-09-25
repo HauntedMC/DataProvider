@@ -13,9 +13,9 @@ concurrency:
 jobs:
   maven-policy:
     name: Shared Maven policy
-    uses: HauntedMC/HauntedPlatform/.github/workflows/maven-ci.yml@v1.6.8
+    uses: HauntedMC/HauntedPlatform/.github/workflows/maven-ci.yml@v2.0.0
     with:
-      maven-command: ./mvnw -U -B -ntp -DskipTests verify
+      maven-command: ./mvnw -U -B -ntp validate
     secrets:
       PACKAGES_USER: ${{ secrets.HAUNTEDMC_PACKAGES_USERNAME }}
       PACKAGES_TOKEN: ${{ secrets.HAUNTEDMC_PACKAGES_TOKEN }}
@@ -25,4 +25,4 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - run: shellcheck update_version.sh dataprovider-platform-acceptance/run-platform-acceptance.sh
+      - run: shellcheck tools/release/update-version tools/release/prepare-version.sh dataprovider-platform-acceptance/run-platform-acceptance.sh
