@@ -1,6 +1,6 @@
 # Version updates
 
-Install the pinned shared CLI once with `gh extension install HauntedMC/gh-haunted-release --pin v1.0.2`. This folder keeps the project-specific version adapter and its configuration.
+Install the pinned shared CLI once with `gh extension install HauntedMC/gh-haunted-release --pin v1.0.3`. This folder keeps the project-specific version adapter and its configuration.
 
 If an older pinned extension is installed, run `gh extension remove haunted-release` and then the install command above. Check `gh haunted-release --version` before preparing a release.
 
