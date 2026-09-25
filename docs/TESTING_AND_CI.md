@@ -42,7 +42,7 @@ Run linting:
 
 ```bash
 ./mvnw -B -ntp -DskipTests checkstyle:check
-shellcheck update_version.sh dataprovider-platform-acceptance/run-platform-acceptance.sh
+shellcheck tools/release/update-version tools/release/prepare-version.sh dataprovider-platform-acceptance/run-platform-acceptance.sh
 ```
 
 JaCoCo HTML report:

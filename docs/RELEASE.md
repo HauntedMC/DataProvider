@@ -2,7 +2,7 @@
 
 DataProvider publishes its own `dataprovider-bom`, which manages its public modules. Theme palette is its internal dependency.
 
-Prepare a reviewed PR from a clean worktree with `./update_version.sh patch` (or `minor`/`major` for an intentional API change). The helper updates version metadata and leaves the changes for review. Merge only after the repository's CI passes. Do not create or push a release tag manually.
+From clean, current `main`, run `./tools/release/update-version patch --pr` (or `minor`/`major` for an intentional API change). The command checks the project-specific version metadata, commits the changes, and opens a reviewed PR. Without `--pr`, it only prepares a local diff; `--dry-run` changes nothing. Merge after CI passes. Do not create or push a release tag manually.
 
 A version change on `main` starts `.github/workflows/release-package.yml`. The workflow runs the `integration-tests,platform-acceptance` release profiles, deploys the verified Maven reactor with `deployAtEnd`, resolves the published coordinates from an empty Maven repository, and only then creates tag `vX.Y.Z` and a GitHub Release with the bundled Paper and Velocity jars. The release dispatches HauntedPlatform's dependency reconciler, which proposes reviewed downstream PRs only after the package is available.
 
