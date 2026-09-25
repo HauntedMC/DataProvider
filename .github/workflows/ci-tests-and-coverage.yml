@@ -21,15 +21,17 @@ concurrency:
 jobs:
   tests:
     name: Tests and Coverage
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 30
     env:
-      PACKAGES_USER: ${{ secrets.HAUNTEDMC_PACKAGES_USERNAME }}
-      PACKAGES_TOKEN: ${{ secrets.HAUNTEDMC_PACKAGES_TOKEN }}
+      PACKAGES_USER: ${{ secrets.HAUNTEDMC_PACKAGES_USERNAME || github.actor }}
+      PACKAGES_TOKEN: ${{ secrets.HAUNTEDMC_PACKAGES_TOKEN || github.token }}
 
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
       - name: Verify dependency version ownership
         run: python3 scripts/verify-version-ownership.py
@@ -55,13 +57,14 @@ jobs:
         if: failure() && steps.tests.outcome == 'failure'
         shell: bash
         run: |
+          # shellcheck disable=SC2016
           find . -type f \( -path '*/target/surefire-reports/*.txt' -o -path '*/target/failsafe-reports/*.txt' \) -print0 \
             | sort -z \
             | xargs -0 -r -n1 sh -c 'echo "::group::$0"; cat "$0"; echo "::endgroup::"'
 
       - name: Upload JaCoCo Report
         if: always()
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: jacoco-report
           if-no-files-found: warn
@@ -69,7 +72,7 @@ jobs:
 
       - name: Upload Test Reports
         if: always()
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: test-reports
           if-no-files-found: warn
@@ -80,15 +83,17 @@ jobs:
 
   platform-acceptance:
     name: Bundled Platform Acceptance
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 20
     env:
-      PACKAGES_USER: ${{ secrets.HAUNTEDMC_PACKAGES_USERNAME }}
-      PACKAGES_TOKEN: ${{ secrets.HAUNTEDMC_PACKAGES_TOKEN }}
+      PACKAGES_USER: ${{ secrets.HAUNTEDMC_PACKAGES_USERNAME || github.actor }}
+      PACKAGES_TOKEN: ${{ secrets.HAUNTEDMC_PACKAGES_TOKEN || github.token }}
 
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
       - name: Set up JDK 25
         uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
@@ -111,7 +116,7 @@ jobs:
 
       - name: Upload platform acceptance logs
         if: always()
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: platform-acceptance-logs
           if-no-files-found: warn
@@ -119,3 +124,42 @@ jobs:
             ${{ runner.temp }}/dataprovider-platform-acceptance/paper/logs/latest.log
             ${{ runner.temp }}/dataprovider-platform-acceptance/backend.log
             ${{ runner.temp }}/dataprovider-platform-acceptance/velocity/logs/latest.log
+
+  maven-policy:
+    name: Shared Maven policy
+    uses: HauntedMC/HauntedPlatform/.github/workflows/maven-ci.yml@10dfbacc8515208bf3b0ee236a8c7688fda49c9e # release hardening
+    with:
+      maven-command: ./mvnw -U -B -ntp validate
+    secrets:
+      PACKAGES_USER: ${{ secrets.HAUNTEDMC_PACKAGES_USERNAME || github.actor }}
+      PACKAGES_TOKEN: ${{ secrets.HAUNTEDMC_PACKAGES_TOKEN || github.token }}
+
+  shellcheck:
+    name: ShellCheck
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - run: shellcheck tools/release/update-version tools/release/prepare-version.sh dataprovider-platform-acceptance/run-platform-acceptance.sh
+
+  ci-required:
+    name: ci-required
+    if: ${{ always() }}
+    needs: [tests, platform-acceptance, maven-policy, shellcheck]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    env:
+      CHECK_RESULTS: ${{ toJSON(needs) }}
+    steps:
+      - name: Require every validation job
+        run: |
+          python3 - <<'PYTHON'
+          import json
+          import os
+          results = {name: job['result'] for name, job in json.loads(os.environ['CHECK_RESULTS']).items()}
+          failed = {name: result for name, result in results.items() if result != 'success'}
+          if failed:
+              raise SystemExit(f'Validation did not pass: {failed}')
+          PYTHON

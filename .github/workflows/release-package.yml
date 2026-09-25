@@ -10,8 +10,7 @@ concurrency:
   cancel-in-progress: false
 
 permissions:
-  contents: write
-  packages: write
+  contents: read
 
 jobs:
   gate:
@@ -28,7 +27,7 @@ jobs:
       - name: Install pinned release CLI
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh extension install HauntedMC/gh-haunted-release --pin ed440a0a2d5ab23af30c36bb22132f8ffa0ea33f
+        run: gh extension install HauntedMC/gh-haunted-release --pin 5165e777de588ab722af44b43b87c26d2baaafb9
       - id: version
         name: Detect a reviewed version change
         env:
@@ -38,6 +37,9 @@ jobs:
 
   publish:
     needs: gate
+    permissions:
+      contents: write
+      packages: write
     if: needs.gate.outputs.publish == 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 45
@@ -54,7 +56,7 @@ jobs:
       - name: Install pinned release CLI
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh extension install HauntedMC/gh-haunted-release --pin ed440a0a2d5ab23af30c36bb22132f8ffa0ea33f
+        run: gh extension install HauntedMC/gh-haunted-release --pin 5165e777de588ab722af44b43b87c26d2baaafb9
       - name: Set up JDK 25 and Maven package credentials
         uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
         with:
@@ -70,17 +72,21 @@ jobs:
             echo 'HAUNTEDMC_PACKAGES_USERNAME and HAUNTEDMC_PACKAGES_TOKEN are required.' >&2
             exit 1
           fi
+      - id: preflight
+        name: Inspect already published Maven coordinates
+        run: gh haunted-release published-state "${{ needs.gate.outputs.version }}"
       - name: Verify and publish with backend and platform acceptance
         env:
+          DEPLOY_GOAL: ${{ steps.preflight.outputs.state == 'complete' && 'verify' || 'deploy' }}
           PLATFORM_ACCEPTANCE_WORK_DIRECTORY: ${{ runner.temp }}/dataprovider-platform-acceptance
-        run: ./mvnw -U -B -ntp -DdeployAtEnd=true -Pintegration-tests,platform-acceptance deploy
+        run: ./mvnw -U -B -ntp -DdeployAtEnd=true -Pintegration-tests,platform-acceptance "$DEPLOY_GOAL"
       - name: Resolve every published artifact from a fresh Maven repository
         run: gh haunted-release verify-published "${{ needs.gate.outputs.version }}"
       - name: Create the release tag only after publication is resolvable
         run: gh release create "${{ needs.gate.outputs.tag }}" --target "$GITHUB_SHA" --title "DataProvider ${{ needs.gate.outputs.tag }}" --generate-notes dataprovider-platform-paper/target/dataprovider-platform-paper-${{ needs.gate.outputs.version }}-bundled.jar dataprovider-platform-velocity/target/dataprovider-platform-velocity-${{ needs.gate.outputs.version }}-bundled.jar
       - name: Create cross-repository GitHub App token
         id: app
-        uses: actions/create-github-app-token@v3
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3
         with:
           app-id: ${{ vars.HAUNTEDMC_RELEASE_APP_ID }}
           private-key: ${{ secrets.HAUNTEDMC_RELEASE_APP_PRIVATE_KEY }}
