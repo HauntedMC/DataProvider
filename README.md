@@ -8,7 +8,7 @@
 
 Build plugins and services, not database plumbing.
 
-`DataProvider` is shared infrastructure for plugin developers on Velocity and Bukkit/Paper.  
+`DataProvider` is shared infrastructure for plugin developers on Velocity and Bukkit/Paper, with a small standalone host for other Java services.
 It gives you one clean API for MySQL, MongoDB, Redis, and Redis messaging so your plugin code can stay focused on gameplay and business logic.
 
 ## Why Use DataProvider?
@@ -22,7 +22,7 @@ It gives you one clean API for MySQL, MongoDB, Redis, and Redis messaging so you
 ## Features
 
 - Following data backends are implemented: `MYSQL`, `MONGODB`, `REDIS`, `REDIS_MESSAGING`
-- Platform support: Velocity + Bukkit/Paper
+- Platform support: Velocity + Bukkit/Paper; `dataprovider-standalone` hosts core in a plain JVM
 - Optional Hibernate ORM support for relational workflows (`nl.hauntedmc.dataprovider.api.orm.ORMContext`)
 - Disposable Pub/Sub plus capability-discoverable durable acknowledged Redis messaging
 - Atomic Redis coordination with renewable fenced leases, monotonic fencing tokens, fenced writes/deletes, and compare-and-set operations
@@ -134,7 +134,7 @@ Maven:
 <dependency>
   <groupId>nl.hauntedmc.dataprovider</groupId>
   <artifactId>dataprovider-api</artifactId>
-  <version>3.4.5</version>
+  <version>3.5.0</version>
   <scope>provided</scope>
 </dependency>
 ```
@@ -142,7 +142,7 @@ Maven:
 Gradle (Groovy):
 
 ```groovy
-compileOnly "nl.hauntedmc.dataprovider:dataprovider-api:3.4.5"
+compileOnly "nl.hauntedmc.dataprovider:dataprovider-api:3.5.0"
 ```
 
 GitHub Packages authentication details are in the docs.
