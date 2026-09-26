@@ -14,6 +14,7 @@
         <dependencies>
             <dependency><groupId>${project.groupId}</groupId><artifactId>dataprovider-api</artifactId><version>${project.version}</version></dependency>
             <dependency><groupId>${project.groupId}</groupId><artifactId>dataprovider-core</artifactId><version>${project.version}</version></dependency>
+            <dependency><groupId>${project.groupId}</groupId><artifactId>dataprovider-standalone</artifactId><version>${project.version}</version></dependency>
             <dependency><groupId>${project.groupId}</groupId><artifactId>dataprovider-platform-common</artifactId><version>${project.version}</version></dependency>
             <dependency><groupId>${project.groupId}</groupId><artifactId>dataprovider-platform-paper</artifactId><version>${project.version}</version></dependency>
             <dependency><groupId>${project.groupId}</groupId><artifactId>dataprovider-platform-velocity</artifactId><version>${project.version}</version></dependency>
