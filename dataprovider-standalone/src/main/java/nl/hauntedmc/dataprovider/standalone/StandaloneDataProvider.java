@@ -27,7 +27,8 @@ public final class StandaloneDataProvider implements AutoCloseable {
     private final DataProviderAPI api;
     private volatile boolean closed;
 
-    private StandaloneDataProvider(Path temporaryConfig, String ownerId, MysqlConnection connection, LoggerAdapter logger) {
+    private StandaloneDataProvider(Path temporaryConfig, String ownerId, MysqlConnection connection,
+                                   RedisMessagingConnection messaging, LoggerAdapter logger) {
         this.temporaryConfig = temporaryConfig;
         Object owner = new Owner();
         ClassLoader loader = StandaloneDataProvider.class.getClassLoader();
@@ -47,19 +48,31 @@ public final class StandaloneDataProvider implements AutoCloseable {
                 return identities.isKnownPlugin(pluginId);
             }
         };
-        writeConfiguration(temporaryConfig, ownerId, connection);
+        writeConfiguration(temporaryConfig, ownerId, connection, messaging);
         provider = new DataProvider(logger, temporaryConfig, loader, resolver);
         api = new DefaultDataProviderApi(provider.getDataProviderHandler()).forPlugin(owner);
     }
 
     public static StandaloneDataProvider open(String ownerId, MysqlConnection connection, LoggerAdapter logger) {
+        return open(ownerId, connection, null, logger);
+    }
+
+    public static StandaloneDataProvider open(String ownerId, RedisMessagingConnection messaging,
+                                              LoggerAdapter logger) {
+        return open(ownerId, null, messaging, logger);
+    }
+
+    public static StandaloneDataProvider open(String ownerId, MysqlConnection connection,
+                                              RedisMessagingConnection messaging, LoggerAdapter logger) {
         ownerId = Objects.requireNonNull(ownerId, "ownerId").trim().toLowerCase(Locale.ROOT);
-        Objects.requireNonNull(connection, "connection");
+        if (connection == null && messaging == null) {
+            throw new IllegalArgumentException("At least one standalone connection is required");
+        }
         Objects.requireNonNull(logger, "logger");
         Path directory = null;
         try {
             directory = Files.createTempDirectory("haunted-dataprovider-");
-            StandaloneDataProvider runtime = new StandaloneDataProvider(directory, ownerId, connection, logger);
+            StandaloneDataProvider runtime = new StandaloneDataProvider(directory, ownerId, connection, messaging, logger);
             deleteConfiguration(directory);
             return runtime;
         } catch (IOException failure) {
@@ -97,28 +110,58 @@ public final class StandaloneDataProvider implements AutoCloseable {
         } catch (IOException ignored) { /* Same cleanup best effort. */ }
     }
 
-    private static void writeConfiguration(Path directory, String ownerId, MysqlConnection connection) {
+    private static void writeConfiguration(Path directory, String ownerId, MysqlConnection connection,
+                                           RedisMessagingConnection messaging) {
         try {
             Path databases = Files.createDirectories(directory.resolve("databases"));
             CommentedConfigurationNode general = CommentedConfigurationNode.root();
             general.node("orm", "schema_mode").set("validate");
             YamlConfigurationLoader.builder().path(directory.resolve("config.yml")).build().save(general);
 
-            CommentedConfigurationNode mysql = CommentedConfigurationNode.root();
-            var named = mysql.node(connection.connectionId());
-            named.node("access", "owner_plugin").set(ownerId);
-            named.node("host").set(connection.host());
-            named.node("port").set(connection.port());
-            named.node("database").set(connection.database());
-            named.node("username").set(connection.username());
-            named.node("password").set(connection.password());
-            named.node("ssl_mode").set(connection.sslMode());
-            named.node("pool_size").set(connection.poolSize());
-            named.node("min_idle").set(0);
-            named.node("connection_timeout_ms").set(3000);
-            named.node("connect_timeout_ms").set(3000);
-            named.node("socket_timeout_ms").set(3000);
-            YamlConfigurationLoader.builder().path(databases.resolve("mysql.yml")).build().save(mysql);
+            if (connection != null) {
+                CommentedConfigurationNode mysql = CommentedConfigurationNode.root();
+                var named = mysql.node(connection.connectionId());
+                named.node("access", "owner_plugin").set(ownerId);
+                named.node("host").set(connection.host());
+                named.node("port").set(connection.port());
+                named.node("database").set(connection.database());
+                named.node("username").set(connection.username());
+                named.node("password").set(connection.password());
+                named.node("ssl_mode").set(connection.sslMode());
+                named.node("pool_size").set(connection.poolSize());
+                named.node("min_idle").set(0);
+                named.node("connection_timeout_ms").set(3000);
+                named.node("connect_timeout_ms").set(3000);
+                named.node("socket_timeout_ms").set(3000);
+                YamlConfigurationLoader.builder().path(databases.resolve("mysql.yml")).build().save(mysql);
+            }
+
+            if (messaging != null) {
+                CommentedConfigurationNode redis = CommentedConfigurationNode.root();
+                var namedRedis = redis.node(messaging.connectionId());
+                namedRedis.node("access", "owner_plugin").set(ownerId);
+                namedRedis.node("host").set(messaging.host());
+                namedRedis.node("port").set(messaging.port());
+                namedRedis.node("user").set(messaging.username());
+                namedRedis.node("password").set(messaging.password());
+                namedRedis.node("database").set(messaging.database());
+                namedRedis.node("require_secure_transport").set(messaging.tls());
+                namedRedis.node("tls", "enabled").set(messaging.tls());
+                namedRedis.node("tls", "verify_hostname").set(true);
+                namedRedis.node("pool", "connections").set(4);
+                namedRedis.node("pool", "min_idle").set(0);
+                namedRedis.node("pool", "max_subscriptions").set(8);
+                namedRedis.node("durable", "batch_size").set(32);
+                namedRedis.node("durable", "read_block_ms").set(500);
+                namedRedis.node("durable", "reclaim_idle_ms").set(30000);
+                namedRedis.node("durable", "max_attempts").set(8);
+                namedRedis.node("durable", "retention_ms").set(604800000);
+                namedRedis.node("durable", "retention_max_entries").set(1000000);
+                namedRedis.node("durable", "deduplication_ttl_seconds").set(604800);
+                namedRedis.node("connection_timeout_ms").set(2000);
+                namedRedis.node("socket_timeout_ms").set(2000);
+                YamlConfigurationLoader.builder().path(databases.resolve("redis_messaging.yml")).build().save(redis);
+            }
         } catch (IOException failure) {
             throw new IllegalStateException("Cannot prepare standalone DataProvider configuration.", failure);
         }
@@ -143,6 +186,19 @@ public final class StandaloneDataProvider implements AutoCloseable {
         private static String require(String value, String name) {
             if (value == null || value.isBlank()) throw new IllegalArgumentException(name + " is required.");
             return value;
+        }
+    }
+
+    public record RedisMessagingConnection(String connectionId, String host, int port, String username,
+                                           String password, int database, boolean tls) {
+        public RedisMessagingConnection {
+            connectionId = MysqlConnection.require(connectionId, "connectionId");
+            host = MysqlConnection.require(host, "host");
+            username = MysqlConnection.require(username, "username");
+            password = Objects.requireNonNull(password, "password");
+            if (port < 1 || port > 65535 || database < 0) {
+                throw new IllegalArgumentException("Invalid standalone Redis messaging configuration");
+            }
         }
     }
 
