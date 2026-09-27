@@ -25,4 +25,12 @@ class StandaloneDataProviderTest {
         assertThrows(IllegalArgumentException.class, () -> new StandaloneDataProvider.MysqlConnection(
                 "player_data_rw", "localhost", 0, "test", "reader", "secret", "PREFERRED", 1));
     }
+
+    @Test void canHostRedisWithoutCopyingPlayerDatabaseCredentials() {
+        StandaloneDataProvider host = StandaloneDataProvider.open("webapp-events",
+                new StandaloneDataProvider.RedisMessagingConnection("player_events", "localhost", 6379,
+                        "default", "secret", 0, false), SILENT);
+        assertNotNull(host.api());
+        host.close();
+    }
 }
