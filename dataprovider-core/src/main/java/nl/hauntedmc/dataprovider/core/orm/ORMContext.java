@@ -8,10 +8,13 @@ import org.hibernate.SessionFactory;
 import org.hibernate.Transaction;
 import org.hibernate.boot.Metadata;
 import org.hibernate.boot.MetadataSources;
+import org.hibernate.boot.registry.BootstrapServiceRegistry;
 import org.hibernate.boot.registry.StandardServiceRegistry;
 import org.hibernate.boot.registry.StandardServiceRegistryBuilder;
+import org.hibernate.boot.registry.BootstrapServiceRegistryBuilder;
 
 import javax.sql.DataSource;
+import java.util.Arrays;
 import java.util.Locale;
 import java.util.Objects;
 import java.util.Set;
@@ -92,11 +95,21 @@ public class ORMContext implements nl.hauntedmc.dataprovider.api.orm.ORMContext 
      * @param entityClasses The entity classes to register.
      */
     private void initialize(Class<?>... entityClasses) {
+        BootstrapServiceRegistry bootstrapRegistry = null;
         try {
+            // Plugin reloads create new classes with the same names. Resolve names through
+            // the supplied entities' loaders before the provider's or an inherited TCCL.
+            var bootstrap = new BootstrapServiceRegistryBuilder();
+            Arrays.stream(entityClasses)
+                    .map(Class::getClassLoader)
+                    .filter(Objects::nonNull)
+                    .distinct()
+                    .forEach(bootstrap::applyClassLoader);
             // DataProvider owns local JDBC transactions. Installing its non-JTA service directly prevents
             // Hibernate's default JTA initiator from emitting HHH000489 for every feature-scoped SessionFactory.
             // The JDBC environment initiator likewise redirects the routine database-info block to DEBUG.
-            registry = new StandardServiceRegistryBuilder()
+            bootstrapRegistry = bootstrap.build();
+            registry = new StandardServiceRegistryBuilder(bootstrapRegistry)
                     .addInitiator(new DataProviderJtaPlatformInitiator(logger))
                     .addInitiator(new DataProviderJdbcEnvironmentInitiator(logger))
                     .applySetting("hibernate.connection.datasource", dataSource)
@@ -128,6 +141,16 @@ public class ORMContext implements nl.hauntedmc.dataprovider.api.orm.ORMContext 
             logger.debug("Hibernate schema mode for plugin " + plugin + ": " + schemaMode);
             logger.debug("Hibernate ORMContext initialized successfully for plugin: " + plugin);
         } catch (Exception e) {
+            try {
+                if (registry != null) {
+                    StandardServiceRegistryBuilder.destroy(registry);
+                    registry = null;
+                } else if (bootstrapRegistry != null) {
+                    BootstrapServiceRegistryBuilder.destroy(bootstrapRegistry);
+                }
+            } catch (RuntimeException cleanup) {
+                if (cleanup != e) e.addSuppressed(cleanup);
+            }
             logger.error("Failed to initialize Hibernate ORMContext for plugin: " + plugin, e);
             throw new RuntimeException("ORMContext initialization failed", e);
         }
