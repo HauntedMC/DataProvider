@@ -58,7 +58,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: gh extension install HauntedMC/gh-haunted-release --pin de43c102d81797001eef36fe45725744fdd22031
       - name: Set up JDK 25 and Maven package credentials
-        uses: actions/setup-java@77dd5b2ce225ea11469928ac317850245a74ae78 # v6.2.0
+        uses: actions/setup-java@d1374f8ac74474200d16ef8ecee22c7ae7a51880 # v6.3.0
         with:
           distribution: temurin
           java-version: '25'
@@ -86,7 +86,7 @@ jobs:
         run: gh release create "${{ needs.gate.outputs.tag }}" --target "$GITHUB_SHA" --title "DataProvider ${{ needs.gate.outputs.tag }}" --generate-notes dataprovider-platform-paper/target/dataprovider-platform-paper-${{ needs.gate.outputs.version }}-bundled.jar dataprovider-platform-velocity/target/dataprovider-platform-velocity-${{ needs.gate.outputs.version }}-bundled.jar
       - name: Create cross-repository GitHub App token
         id: app
-        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3
+        uses: actions/create-github-app-token@f418cff399f7aef4c2f0ad47e25ca7a6abbdd6fc # v3
         with:
           app-id: ${{ vars.HAUNTEDMC_RELEASE_APP_ID }}
           private-key: ${{ secrets.HAUNTEDMC_RELEASE_APP_PRIVATE_KEY }}
